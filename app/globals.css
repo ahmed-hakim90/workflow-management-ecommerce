@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+/* Default = dark (overridden by ThemeScript + ThemeProvider via data-theme) */
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-contrast: #ffffff;
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+
+  --color-bg: #0f172a;
+  --color-bg-subtle: #020617;
+  --color-card: #111827;
+  --color-border: #1f2937;
+  --color-border-strong: #374151;
+
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+
+  --color-muted-bg: rgba(255, 255, 255, 0.06);
+  --color-hover-bg: rgba(255, 255, 255, 0.06);
+  --color-skeleton: rgba(255, 255, 255, 0.08);
+
+  --color-overlay: rgba(0, 0, 0, 0.55);
+  --color-code-bg: rgba(255, 255, 255, 0.08);
+  --color-code-border: rgba(255, 255, 255, 0.1);
+
+  --color-kanban-column: rgba(15, 23, 42, 0.65);
+  --color-kanban-header: #e5e7eb;
+
+  --color-dev-badge-bg: rgba(245, 158, 11, 0.12);
+  --color-dev-badge-border: rgba(251, 191, 36, 0.35);
+  --color-dev-badge-text: #fcd34d;
+
+  --color-callout-success-bg: rgba(34, 197, 94, 0.12);
+  --color-callout-success-border: rgba(34, 197, 94, 0.35);
+  --color-callout-success-text: #86efac;
+
+  --color-callout-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-callout-warning-border: rgba(251, 191, 36, 0.35);
+  --color-callout-warning-text: #fcd34d;
+
+  --color-chart-grid: #334155;
+  --color-chart-axis: #94a3b8;
+  --color-chart-bar: #818cf8;
+  --color-chart-line: #818cf8;
+  --color-tooltip-bg: #1e293b;
+  --color-tooltip-border: #334155;
+  --color-tooltip-text: #e2e8f0;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  --font-size-heading: 24px;
+  --font-size-subheading: 18px;
+  --font-size-body: 14px;
+  --font-size-small: 12px;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-contrast: #ffffff;
+
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #2563eb;
+
+  --color-bg: #f8fafc;
+  --color-bg-subtle: #f1f5f9;
+  --color-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+
+  --color-muted-bg: rgba(15, 23, 42, 0.05);
+  --color-hover-bg: rgba(15, 23, 42, 0.06);
+  --color-skeleton: rgba(15, 23, 42, 0.08);
+
+  --color-overlay: rgba(15, 23, 42, 0.45);
+  --color-code-bg: #f1f5f9;
+  --color-code-border: #e2e8f0;
+
+  --color-kanban-column: #f1f5f9;
+  --color-kanban-header: #0f172a;
+
+  --color-dev-badge-bg: #fffbeb;
+  --color-dev-badge-border: #fcd34d;
+  --color-dev-badge-text: #92400e;
+
+  --color-callout-success-bg: #ecfdf5;
+  --color-callout-success-border: #6ee7b7;
+  --color-callout-success-text: #065f46;
+
+  --color-callout-warning-bg: #fffbeb;
+  --color-callout-warning-border: #fcd34d;
+  --color-callout-warning-text: #92400e;
+
+  --color-chart-grid: #e2e8f0;
+  --color-chart-axis: #64748b;
+  --color-chart-bar: #4f46e5;
+  --color-chart-line: #4f46e5;
+  --color-tooltip-bg: #ffffff;
+  --color-tooltip-border: #e2e8f0;
+  --color-tooltip-text: #0f172a;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+
+  /* Hakimo responsive breakpoints (Tailwind defaults) */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  font-family: var(--font-inter), Inter, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+/* Mobile: slightly smaller body for density (13–14px) */
+@media (max-width: 639px) {
+  body {
+    font-size: 13px;
+  }
+}
+
+/* Safe area for notched devices + mobile bottom actions */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}

@@ -1,0 +1,321 @@
+import { getDb } from "@/lib/db/firebase-admin";
+import { COLLECTIONS } from "@/lib/db/collections";
+import type { Order, OrderStatus, Shipment } from "@/lib/types/models";
+import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
+import {
+  mockListOrders,
+  mockGetOrder,
+  mockUpsertOrderFromWooCommerce,
+  mockConfirmOrder,
+  mockInvoiceOrder,
+  mockCancelOrder,
+  mockAssignOrder,
+} from "@/lib/dev/mock-backend";
+import { assertTransition } from "@/lib/logic/order-state-machine";
+import {
+  shouldAutoCreateShipment,
+  orderNeedsDeliveryShipment,
+} from "@/lib/logic/automation";
+import { getTenantAutomation } from "@/lib/services/tenant-settings.service";
+import {
+  createShipmentForOrder,
+  listShipmentsForOrder,
+} from "@/lib/services/shipments.service";
+import { logActivity } from "@/lib/services/activity.service";
+import { incrementUserStat } from "@/lib/services/user-stats.service";
+
+export async function listOrders(
+  tenantId: string,
+  opts?: { status?: OrderStatus; assignedTo?: string },
+): Promise<Order[]> {
+  if (isDevMockDataEnabled()) return mockListOrders(tenantId, opts);
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.orders)
+    .where("tenantId", "==", tenantId)
+    .orderBy("updatedAt", "desc")
+    .limit(500)
+    .get();
+  let rows = snap.docs.map((d) => d.data() as Order);
+  if (opts?.status) {
+    rows = rows.filter((o) => o.status === opts.status);
+  }
+  if (opts?.assignedTo) {
+    rows = rows.filter((o) => o.assigned_to === opts.assignedTo);
+  }
+  return rows.slice(0, 200);
+}
+
+export async function getOrder(
+  tenantId: string,
+  orderId: string,
+): Promise<Order | null> {
+  if (isDevMockDataEnabled()) return mockGetOrder(tenantId, orderId);
+  const db = getDb();
+  const snap = await db.collection(COLLECTIONS.orders).doc(orderId).get();
+  const o = snap.data() as Order | undefined;
+  if (!o || o.tenantId !== tenantId) return null;
+  return o;
+}
+
+export async function getOrderDetailBundle(
+  tenantId: string,
+  orderId: string,
+): Promise<{ order: Order; shipments: Shipment[] } | null> {
+  const order = await getOrder(tenantId, orderId);
+  if (!order) return null;
+  const shipments = await listShipmentsForOrder(tenantId, orderId);
+  return { order, shipments };
+}
+
+export async function upsertOrderFromWooCommerce(input: {
+  tenantId: string;
+  wooOrderId: string;
+  customer: Order["customer"];
+  payment: Order["payment"];
+  actorUserId: string;
+  lineItems?: Order["lineItems"];
+  shipping?: Order["shipping"];
+  notes?: string;
+}): Promise<Order> {
+  if (isDevMockDataEnabled()) return mockUpsertOrderFromWooCommerce(input);
+  const db = getDb();
+  const existing = await db
+    .collection(COLLECTIONS.orders)
+    .where("tenantId", "==", input.tenantId)
+    .where("wooCommerceOrderId", "==", input.wooOrderId)
+    .limit(1)
+    .get();
+
+  const now = new Date().toISOString();
+  if (!existing.empty) {
+    const ref = existing.docs[0].ref;
+    const prev = existing.docs[0].data() as Order;
+    const next: Order = {
+      ...prev,
+      customer: input.customer,
+      payment: input.payment,
+      lineItems: input.lineItems ?? prev.lineItems,
+      shipping: input.shipping ?? prev.shipping,
+      notes: input.notes ?? prev.notes,
+      updatedAt: now,
+    };
+    await ref.set(next);
+    await logActivity({
+      tenantId: input.tenantId,
+      action: "order.upsert_webhook",
+      entityType: "order",
+      entityId: prev.id,
+      userId: input.actorUserId,
+    });
+    return next;
+  }
+
+  const id = crypto.randomUUID();
+  const order: Order = {
+    id,
+    tenantId: input.tenantId,
+    customer: input.customer,
+    payment: input.payment,
+    status: "pending_confirmation",
+    shipmentIds: [],
+    wooCommerceOrderId: input.wooOrderId,
+    lineItems: input.lineItems,
+    shipping: input.shipping,
+    notes: input.notes,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.collection(COLLECTIONS.orders).doc(id).set(order);
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "order.created_webhook",
+    entityType: "order",
+    entityId: id,
+    userId: input.actorUserId,
+  });
+  return order;
+}
+
+async function transition(
+  tenantId: string,
+  orderId: string,
+  to: OrderStatus,
+  actorUserId: string,
+  extra?: Partial<Order>,
+) {
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.orders).doc(orderId);
+  const snap = await ref.get();
+  const order = snap.data() as Order | undefined;
+  if (!order || order.tenantId !== tenantId) throw new Error("Order not found");
+  assertTransition(order.status, to);
+  const now = new Date().toISOString();
+  const prevStatus = order.status;
+  const next: Order = { ...order, ...extra, status: to, updatedAt: now };
+  await ref.set(next);
+
+  await logActivity({
+    tenantId,
+    action: `order.status.${to}`,
+    entityType: "order",
+    entityId: orderId,
+    userId: actorUserId,
+    metadata: { from: prevStatus },
+  });
+
+  const automation = await getTenantAutomation(tenantId);
+  if (
+    shouldAutoCreateShipment(prevStatus, to, automation) &&
+    orderNeedsDeliveryShipment(next)
+  ) {
+    await createShipmentForOrder({
+      tenantId,
+      orderId,
+      type: "delivery",
+      actorUserId,
+    });
+  }
+
+  return { prevStatus, order: next };
+}
+
+export async function confirmOrder(input: {
+  tenantId: string;
+  orderId: string;
+  actorUserId: string;
+}) {
+  if (isDevMockDataEnabled()) return mockConfirmOrder(input);
+  const { order } = await transition(
+    input.tenantId,
+    input.orderId,
+    "confirmed",
+    input.actorUserId,
+  );
+  await incrementUserStat({
+    tenantId: input.tenantId,
+    userId: input.actorUserId,
+    field: "confirmed",
+  });
+  return order;
+}
+
+export async function invoiceOrder(input: {
+  tenantId: string;
+  orderId: string;
+  invoiceNumber: string;
+  actorUserId: string;
+}) {
+  if (isDevMockDataEnabled()) return mockInvoiceOrder(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.orders).doc(input.orderId);
+  const snap = await ref.get();
+  let current = snap.data() as Order | undefined;
+  if (!current || current.tenantId !== input.tenantId) {
+    throw new Error("Order not found");
+  }
+
+  const invoice = {
+    number: input.invoiceNumber,
+    issuedAt: new Date().toISOString(),
+  };
+
+  if (current.status === "confirmed") {
+    assertTransition(current.status, "invoicing");
+    const prevStatus = current.status;
+    const now = new Date().toISOString();
+    current = {
+      ...current,
+      status: "invoicing",
+      invoice,
+      updatedAt: now,
+    };
+    await ref.set(current);
+    await logActivity({
+      tenantId: input.tenantId,
+      action: "order.status.invoicing",
+      entityType: "order",
+      entityId: input.orderId,
+      userId: input.actorUserId,
+      metadata: { from: prevStatus },
+    });
+
+    const automation = await getTenantAutomation(input.tenantId);
+    if (
+      shouldAutoCreateShipment(prevStatus, "invoicing", automation) &&
+      orderNeedsDeliveryShipment(current)
+    ) {
+      await createShipmentForOrder({
+        tenantId: input.tenantId,
+        orderId: input.orderId,
+        type: "delivery",
+        actorUserId: input.actorUserId,
+      });
+    }
+  }
+
+  if (current.status !== "invoicing") {
+    throw new Error(`Cannot invoice from status ${current.status}`);
+  }
+
+  const { order: final } = await transition(
+    input.tenantId,
+    input.orderId,
+    "ready_for_warehouse",
+    input.actorUserId,
+    { invoice },
+  );
+
+  await incrementUserStat({
+    tenantId: input.tenantId,
+    userId: input.actorUserId,
+    field: "invoiced",
+  });
+
+  return final;
+}
+
+export async function cancelOrder(input: {
+  tenantId: string;
+  orderId: string;
+  actorUserId: string;
+}) {
+  if (isDevMockDataEnabled()) return mockCancelOrder(input);
+  const { order } = await transition(
+    input.tenantId,
+    input.orderId,
+    "cancelled",
+    input.actorUserId,
+  );
+  return order;
+}
+
+export async function assignOrder(input: {
+  tenantId: string;
+  orderId: string;
+  assigneeUserId: string | null;
+  actorUserId: string;
+}) {
+  if (isDevMockDataEnabled()) return mockAssignOrder(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.orders).doc(input.orderId);
+  const snap = await ref.get();
+  const order = snap.data() as Order | undefined;
+  if (!order || order.tenantId !== input.tenantId) throw new Error("Order not found");
+  const now = new Date().toISOString();
+  const next: Order = {
+    ...order,
+    assigned_to: input.assigneeUserId,
+    updatedAt: now,
+  };
+  await ref.set(next);
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "order.assigned",
+    entityType: "order",
+    entityId: input.orderId,
+    userId: input.actorUserId,
+    metadata: { assigneeUserId: input.assigneeUserId },
+  });
+  return next;
+}
