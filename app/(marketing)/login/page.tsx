@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loadSessionFromIdToken } from "@/lib/auth/client-session";
+import {
+  loadSessionFromIdToken,
+  syncSessionFromMe,
+} from "@/lib/auth/client-session";
 import {
   getFirebaseClientAuth,
   isFirebaseClientConfigured,
@@ -67,6 +70,11 @@ export default function LoginPage() {
         tenantId: tid,
         role: "admin",
       });
+      try {
+        await syncSessionFromMe();
+      } catch {
+        /* optional: /api/auth/me not available in mock mode */
+      }
       router.push("/analytics");
     } catch (unknown) {
       const msg =

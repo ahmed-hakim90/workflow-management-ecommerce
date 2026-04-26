@@ -76,6 +76,7 @@ export function Sidebar() {
   const router = useRouter();
   const signOut = useSessionStore((s) => s.signOut);
   const displayName = useSessionStore((s) => s.displayName);
+  const tenantName = useSessionStore((s) => s.tenantName);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
@@ -175,7 +176,7 @@ export function Sidebar() {
                   Store OMS
                 </span>
                 <span className="truncate text-[11px] text-[color:var(--color-text-muted)]">
-                  Order Management
+                  {tenantName?.trim() || "Order Management"}
                 </span>
               </span>
             </>

@@ -50,6 +50,15 @@ export async function POST(req: Request) {
     payloadSummary: { bytes: rawBody.length },
   });
   if (claim === "duplicate") {
+    console.info(
+      JSON.stringify({
+        event: "woocommerce_webhook_duplicate_delivery",
+        message:
+          "Idempotent replay: this delivery was already stored; no new order is created for this request.",
+        tenantId,
+        deliveryId,
+      }),
+    );
     return jsonOk({ duplicate: true });
   }
 
@@ -67,12 +76,22 @@ export async function POST(req: Request) {
     });
     return jsonOk({ orderId: order.id });
   } catch (e) {
+    const msg = e instanceof Error ? e.message : "Webhook processing failed";
     await releaseIntegrationEventClaim({
       tenantId,
       source: "woocommerce",
       deliveryId,
     });
-    const msg = e instanceof Error ? e.message : "Webhook processing failed";
+    console.error(
+      JSON.stringify({
+        event: "woocommerce_webhook_order_not_persisted",
+        message:
+          "HMAC OK and integration idempotency slot was taken, but order mapping/upsert failed. Slot released so WooCommerce can retry. Check payload shape (Order topic) and Firestore below.",
+        tenantId,
+        deliveryId,
+        error: msg,
+      }),
+    );
     return jsonError(msg, 400);
   }
 }

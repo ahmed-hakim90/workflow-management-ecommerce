@@ -10,6 +10,7 @@ import { AppDrawer } from "@/components/layout/drawer";
 import { NewOrderSubscriber } from "@/components/notifications/new-order-subscriber";
 import { NewOrderToasts } from "@/components/notifications/new-order-toasts";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { syncSessionFromMe } from "@/lib/auth/client-session";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 
@@ -24,12 +25,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const ready = sessionReady && authReady;
   const hasCredentials =
     Boolean(idToken?.trim()) || Boolean(apiSecret?.trim());
+  const tenantName = useSessionStore((s) => s.tenantName);
 
   useEffect(() => {
     void Promise.resolve(useSessionStore.persist.rehydrate())
       .then(() => setSessionReady(true))
       .catch(() => setSessionReady(true));
   }, []);
+
+  useEffect(() => {
+    if (!ready || !hasCredentials || tenantName?.trim()) return;
+    void syncSessionFromMe();
+  }, [ready, hasCredentials, tenantName]);
 
   return (
     <div className="flex min-h-[100dvh] min-h-screen bg-[color:var(--color-shell)] text-[color:var(--color-text-primary)]">

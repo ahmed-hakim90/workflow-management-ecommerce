@@ -13,6 +13,8 @@ export interface SessionState {
   userId: string;
   /** Display name for shell (from profile / email). */
   displayName: string;
+  /** Company/merchant name from `tenants` (see GET /api/auth/me). */
+  tenantName: string;
   role: UserRole;
   /**
    * True after Firebase Auth has emitted its first `onIdTokenChanged`, or immediately
@@ -31,6 +33,7 @@ export interface SessionState {
         | "userId"
         | "role"
         | "displayName"
+        | "tenantName"
       >
     >,
   ) => void;
@@ -50,6 +53,7 @@ export const useSessionStore = create<SessionState>()(
       tenantId: defaultTenant,
       userId: "user-admin-1",
       displayName: "",
+      tenantName: "",
       role: "admin",
       authReady: false,
       setAuthReady: (ready) => set({ authReady: ready }),
@@ -60,6 +64,7 @@ export const useSessionStore = create<SessionState>()(
           idToken: "",
           userId: "",
           displayName: "",
+          tenantName: "",
           tenantId: defaultTenant,
           role: "admin",
         }),
@@ -72,6 +77,7 @@ export const useSessionStore = create<SessionState>()(
         tenantId: s.tenantId,
         userId: s.userId,
         displayName: s.displayName,
+        tenantName: s.tenantName,
         role: s.role,
       }),
     },

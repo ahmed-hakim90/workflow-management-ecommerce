@@ -24,6 +24,7 @@ export function Topbar() {
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
   const displayName = useSessionStore((s) => s.displayName);
+  const tenantName = useSessionStore((s) => s.tenantName);
   const [mockOn, setMockOn] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -190,6 +191,11 @@ export function Topbar() {
             aria-hidden
           />
           <div className="min-w-0 text-start text-xs">
+            {tenantName?.trim() ? (
+              <div className="truncate text-[10px] font-medium uppercase tracking-wide text-[color:var(--color-text-secondary)] min-[400px]:text-[11px]">
+                {tenantName.trim()}
+              </div>
+            ) : null}
             <div className="truncate font-medium text-[color:var(--color-text-primary)]">
               {displayName?.trim() || userId || "Guest"}
             </div>

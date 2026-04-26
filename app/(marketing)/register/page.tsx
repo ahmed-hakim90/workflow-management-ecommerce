@@ -80,6 +80,7 @@ export default function RegisterPage() {
           tenantId: json.data.tenantId,
           userId: json.data.userId,
           displayName: adminName.trim(),
+          tenantName: companyName.trim(),
           role: "admin",
         });
         router.push("/analytics");
