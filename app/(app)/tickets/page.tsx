@@ -20,9 +20,21 @@ import { cn } from "@/lib/ui/cn";
 type ColumnId = "new" | "in_progress" | "pending_response";
 
 const COLUMNS: KanbanColumn<ColumnId>[] = [
-  { id: "new", title: "New" },
-  { id: "in_progress", title: "In progress" },
-  { id: "pending_response", title: "Pending response" },
+  {
+    id: "new",
+    title: "New",
+    statusDotClass: "bg-[color:var(--color-primary)]",
+  },
+  {
+    id: "in_progress",
+    title: "In progress",
+    statusDotClass: "bg-violet-500",
+  },
+  {
+    id: "pending_response",
+    title: "Pending response",
+    statusDotClass: "bg-orange-500",
+  },
 ];
 
 function columnForTicket(t: Ticket): ColumnId {
@@ -154,58 +166,58 @@ export default function TicketsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Ticket management"
-        description="Visual support queue — drag-free kanban for triage and ownership."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[160px]">
-              <Search className="pointer-events-none absolute start-2 top-1/2 size-4 -translate-y-1/2 text-[color:var(--color-text-muted)]" />
-              <Input
-                className="h-10 ps-8"
-                placeholder="Search tickets…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              className="gap-1"
-              aria-label="Sort (coming soon)"
-            >
-              Recently updated
-              <ChevronDown className="size-4 opacity-70" />
-            </Button>
-            <Button type="button" onClick={openCreateDrawer}>
-              <Plus className="size-4" aria-hidden />
-              Create ticket
-            </Button>
-          </div>
-        }
+        title="Ticket Management"
+        description="Triage support work across new, in-progress, and pending response queues."
       />
 
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["all", "All tickets"],
-            ["mine", "Assigned to me"],
-            ["urgent", "Urgent only"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["all", "All Tickets"],
+              ["mine", "Assigned to Me"],
+              ["urgent", "Urgent Only"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setChip(id)}
+              className={cn(
+                "rounded-full px-4 py-2 text-sm font-medium transition-all",
+                chip === id
+                  ? "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)] ring-1 ring-[color:var(--color-primary)]/25"
+                  : "bg-[color:var(--color-card)] text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)]",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[180px] flex-1 sm:flex-initial">
+            <Search className="pointer-events-none absolute start-2 top-1/2 size-4 -translate-y-1/2 text-[color:var(--color-text-muted)]" />
+            <Input
+              className="h-10 ps-8"
+              placeholder="Search tickets, IDs, or agents…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <Button
             type="button"
-            onClick={() => setChip(id)}
-            className={cn(
-              "rounded-xl px-3 py-2 text-sm font-medium transition-all",
-              chip === id
-                ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-                : "shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)]",
-            )}
+            variant="secondary"
+            className="gap-1"
+            aria-label="Sort (coming soon)"
           >
-            {label}
-          </button>
-        ))}
+            Recently updated
+            <ChevronDown className="size-4 opacity-70" />
+          </Button>
+          <Button type="button" onClick={openCreateDrawer}>
+            <Plus className="size-4" aria-hidden />
+            Create Ticket
+          </Button>
+        </div>
       </div>
 
       {err ? (
@@ -221,7 +233,6 @@ export default function TicketsPage() {
 
       <ResponsiveKanban<ColumnId>
         columns={COLUMNS}
-        countNoun="tickets"
         countFor={(id) => byColumn(id).length}
         renderColumnCards={(columnId) =>
           byColumn(columnId).map((t) => {

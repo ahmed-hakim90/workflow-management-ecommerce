@@ -3,5 +3,7 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="min-h-screen bg-[color:var(--color-bg)]">{children}</div>;
+  return (
+    <div className="min-h-screen bg-[color:var(--color-shell)]">{children}</div>
+  );
 }

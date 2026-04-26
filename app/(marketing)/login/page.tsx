@@ -55,9 +55,14 @@ export default function LoginPage() {
       const uid =
         userIdIn.trim() ||
         (email.trim().split("@")[0] || "user").replace(/[^a-zA-Z0-9_-]/g, "");
+      const local = email.trim().split("@")[0] || "User";
+      const displayName = local
+        .replace(/[._-]+/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
       setSession({
         idToken: "",
         userId: uid,
+        displayName,
         apiSecret: password.trim() || "demo-token",
         tenantId: tid,
         role: "admin",
@@ -74,25 +79,28 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen md:grid-cols-2">
-      <div className="relative hidden flex-col justify-between bg-gradient-to-br from-[color:var(--color-primary)]/25 via-[color:var(--color-bg)] to-[color:var(--color-bg-subtle)] p-10 shadow-[var(--shadow-neo-inset)] md:flex">
-        <Link href="/" className="text-lg font-semibold text-[color:var(--color-text-primary)]">
+      <div className="relative hidden flex-col justify-between bg-gradient-to-br from-[color:var(--color-primary)] via-[#0747a6] to-[#0c2d6b] p-10 text-[color:var(--color-primary-contrast)] md:flex">
+        <Link
+          href="/"
+          className="text-lg font-semibold text-[color:var(--color-primary-contrast)]"
+        >
           Hakimo OMS
         </Link>
         <div className="space-y-4">
           <h1 className="text-3xl font-bold leading-tight">
             Precision logistics, one login away.
           </h1>
-          <p className="max-w-md text-[color:var(--color-text-secondary)]">
+          <p className="max-w-md text-sm text-white/85">
             Unified orders, shipments, and support workflows — built for teams
             that cannot afford downtime.
           </p>
         </div>
-        <p className="text-xs text-[color:var(--color-text-muted)]">
+        <p className="text-xs text-white/60">
           © {new Date().getFullYear()} Hakimo OMS
         </p>
       </div>
-      <div className="flex flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md rounded-2xl bg-[color:var(--color-card)] p-8 shadow-[var(--shadow-neo-raised-lg)] md:p-10">
+      <div className="flex flex-col items-center justify-center bg-[color:var(--color-app-main)] px-4 py-12">
+        <div className="w-full max-w-md rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-shell)] p-8 shadow-[var(--shadow-neo-raised-lg)] md:p-10">
           <h2 className="text-xl font-semibold">Sign in</h2>
           <p className="mt-1 text-sm text-[color:var(--color-text-secondary)]">
             {firebaseOn

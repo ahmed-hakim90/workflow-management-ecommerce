@@ -1151,29 +1151,77 @@ export function mockSetTenantWooCommerceWebhookSecret(
   }
 }
 
+export function mockSetTenantWooCommerceRestFields(
+  tenantId: string,
+  fields: {
+    storeUrl?: string | null;
+    consumerKey?: string | null;
+    consumerSecret?: string | null;
+  },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const woo = { ...(integrations.woocommerce ?? {}) };
+  const apply = (
+    key: "storeUrl" | "consumerKey" | "consumerSecret",
+    val: string | null | undefined,
+  ) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete woo[key];
+    } else {
+      woo[key] = val.trim();
+    }
+  };
+  apply("storeUrl", fields.storeUrl);
+  apply("consumerKey", fields.consumerKey);
+  apply("consumerSecret", fields.consumerSecret);
+  if (Object.keys(woo).length === 0) {
+    delete integrations.woocommerce;
+  } else {
+    integrations.woocommerce = woo;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
 export function mockSetTenantBostaFields(
   tenantId: string,
-  fields: { apiKey?: string | null; baseUrl?: string | null },
+  fields: {
+    apiKey?: string | null;
+    baseUrl?: string | null;
+    defaultCityId?: string | null;
+    defaultZoneId?: string | null;
+    defaultBuildingNumber?: string | null;
+    defaultAddressLine?: string | null;
+    packageDescription?: string | null;
+  },
 ) {
   const s = ctx();
   const integrations: TenantIntegrationsDoc = {
     ...(s.tenantIntegrations[tenantId] ?? {}),
   };
   const bosta = { ...(integrations.bosta ?? {}) };
-  if (fields.apiKey !== undefined) {
-    if (fields.apiKey === null || fields.apiKey.trim() === "") {
-      delete bosta.apiKey;
+  const apply = (key: keyof typeof bosta, val: string | null | undefined) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete bosta[key];
     } else {
-      bosta.apiKey = fields.apiKey.trim();
+      (bosta as Record<string, string>)[key as string] = val.trim();
     }
-  }
-  if (fields.baseUrl !== undefined) {
-    if (fields.baseUrl === null || fields.baseUrl.trim() === "") {
-      delete bosta.baseUrl;
-    } else {
-      bosta.baseUrl = fields.baseUrl.trim();
-    }
-  }
+  };
+  apply("apiKey", fields.apiKey);
+  apply("baseUrl", fields.baseUrl);
+  apply("defaultCityId", fields.defaultCityId);
+  apply("defaultZoneId", fields.defaultZoneId);
+  apply("defaultBuildingNumber", fields.defaultBuildingNumber);
+  apply("defaultAddressLine", fields.defaultAddressLine);
+  apply("packageDescription", fields.packageDescription);
   if (Object.keys(bosta).length === 0) {
     delete integrations.bosta;
   } else {

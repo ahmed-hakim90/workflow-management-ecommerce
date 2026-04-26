@@ -3,13 +3,16 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/ui/cn";
 
-export type KanbanColumn<T extends string> = { id: T; title: string };
+export type KanbanColumn<T extends string> = {
+  id: T;
+  title: string;
+  /** Optional status dot (Tailwind classes for background color). */
+  statusDotClass?: string;
+};
 
 type ResponsiveKanbanProps<T extends string> = {
   columns: KanbanColumn<T>[];
   countFor: (columnId: T) => number;
-  /** Shown after the count in column headers, e.g. "orders" / "tickets". */
-  countNoun?: string;
   renderMobileFlowLabel?: boolean;
   renderColumnCards: (columnId: T) => ReactNode;
 };
@@ -17,7 +20,6 @@ type ResponsiveKanbanProps<T extends string> = {
 export function ResponsiveKanban<T extends string>({
   columns,
   countFor,
-  countNoun = "items",
   renderColumnCards,
   renderMobileFlowLabel = true,
 }: ResponsiveKanbanProps<T>) {
@@ -30,11 +32,21 @@ export function ResponsiveKanban<T extends string>({
             className="flex w-[min(220px,70vw)] shrink-0 flex-col rounded-2xl border-0 bg-[color:var(--color-kanban-column)] shadow-[var(--shadow-neo-raised)] md:w-[240px] lg:w-[280px]"
           >
             <div className="border-b border-[color:var(--color-divider)] px-3 py-2.5">
-              <div className="text-sm font-semibold text-[color:var(--color-kanban-header)]">
-                {c.title}
-              </div>
-              <div className="text-xs text-[color:var(--color-text-muted)]">
-                {countFor(c.id)} {countNoun}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  {c.statusDotClass ? (
+                    <span
+                      className={`size-2 shrink-0 rounded-full ${c.statusDotClass}`}
+                      aria-hidden
+                    />
+                  ) : null}
+                  <span className="truncate text-sm font-semibold uppercase tracking-wide text-[color:var(--color-kanban-header)]">
+                    {c.title}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                    {countFor(c.id)}
+                  </span>
+                </div>
               </div>
             </div>
             <div
@@ -62,11 +74,17 @@ export function ResponsiveKanban<T extends string>({
             ) : null}
             <h2
               id={`kanban-col-${c.id}`}
-              className="mb-2 text-sm font-semibold text-[color:var(--color-kanban-header)]"
+              className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-[color:var(--color-kanban-header)]"
             >
-              {c.title}
-              <span className="ms-2 font-normal text-[color:var(--color-text-muted)]">
-                ({countFor(c.id)})
+              {c.statusDotClass ? (
+                <span
+                  className={`size-2 rounded-full ${c.statusDotClass}`}
+                  aria-hidden
+                />
+              ) : null}
+              <span className="uppercase tracking-wide">{c.title}</span>
+              <span className="rounded-full bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[color:var(--color-text-secondary)]">
+                {countFor(c.id)}
               </span>
             </h2>
             <div className="flex flex-col gap-3">{renderColumnCards(c.id)}</div>

@@ -68,7 +68,10 @@ export async function POST(req: Request) {
     try {
       decoded = await getFirebaseAuth().verifyIdToken(body.idToken);
     } catch {
-      return jsonError("Invalid or expired ID token", 401);
+      return jsonError(
+        "Could not verify ID token. Use one Firebase project for both: NEXT_PUBLIC_FIREBASE_* (web app) and FIREBASE_SERVICE_ACCOUNT_JSON (service account JSON from the same project). Then restart the dev server.",
+        401,
+      );
     }
 
     const existingUser = await getUserByFirebaseUid(decoded.uid);

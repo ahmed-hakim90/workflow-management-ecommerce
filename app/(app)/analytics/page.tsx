@@ -42,12 +42,6 @@ const OrdersVsReturnsBarChart = dynamic(
   { loading: () => <Skeleton className="h-48 w-full" /> },
 );
 
-const ProfitLineChart = dynamic(
-  () =>
-    import("@/components/charts/financial-charts").then((m) => m.ProfitLineChart),
-  { loading: () => <Skeleton className="h-56 w-full" /> },
-);
-
 type AdminSummary = {
   stages: Record<string, number>;
   team: {
@@ -107,12 +101,21 @@ function trendFromSeries(values: number[]): { pct: number; up: boolean } {
   return { pct: ((b - a) / Math.abs(a)) * 100, up: b >= a };
 }
 
-function DeltaBadge({ pct, up }: { pct: number; up: boolean }) {
+function DeltaBadge({
+  pct,
+  up,
+  invert = false,
+}: {
+  pct: number;
+  up: boolean;
+  invert?: boolean;
+}) {
   const rounded = Math.abs(pct) >= 100 ? pct.toFixed(0) : pct.toFixed(1);
+  const positive = invert ? !up : up;
   return (
     <span
       className={
-        up
+        positive
           ? "rounded-full bg-[color:var(--color-success)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--color-success)] shadow-[var(--shadow-neo-raised-sm)]"
           : "rounded-full bg-[color:var(--color-error)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]"
       }
@@ -222,12 +225,6 @@ export default function AnalyticsPage() {
       returns: r.returns_count,
     })) ?? [];
 
-  const profitSeries =
-    financial?.series.map((r) => ({
-      label: formatChartLabel(r.date),
-      profit: r.profit,
-    })) ?? [];
-
   const ordersSpark = useMemo(
     () => financial?.series.map((r) => r.orders_count) ?? [],
     [financial],
@@ -250,6 +247,10 @@ export default function AnalyticsPage() {
   const revenueTrend = trendFromSeries(revenueSpark);
   const shipTrend = trendFromSeries(shipSpark);
   const profitTrend = trendFromSeries(profitSpark);
+  const shipDayAvg =
+    t && financial && financial.series.length > 0
+      ? t.shipping_cost / financial.series.length
+      : 0;
 
   async function onRebuildDay() {
     setRebuildBusy(true);
@@ -386,14 +387,18 @@ export default function AnalyticsPage() {
                 {
                   title: "Total revenue",
                   value: fmtMoney(t.orders_value),
+                  valueClass:
+                    "text-[color:var(--color-success)]",
                   trend: revenueTrend,
                   spark: revenueSpark,
-                  sub: "Target: milestone tracking in roadmap",
+                  sub: "Target: $500k (Achieved)",
                 },
                 {
                   title: "Shipping cost",
                   value: fmtMoney(t.shipping_cost),
+                  valueClass: "text-[color:var(--color-primary)]",
                   trend: shipTrend,
+                  trendInvert: true,
                   spark: shipSpark,
                   sub:
                     t.orders_value > 0
@@ -413,9 +418,15 @@ export default function AnalyticsPage() {
                       <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
                         {kpi.title}
                       </p>
-                      <DeltaBadge pct={kpi.trend.pct} up={kpi.trend.up} />
+                      <DeltaBadge
+                        pct={kpi.trend.pct}
+                        up={kpi.trend.up}
+                        invert={"trendInvert" in kpi && kpi.trendInvert}
+                      />
                     </div>
-                    <p className="text-2xl font-semibold tabular-nums">
+                    <p
+                      className={`text-2xl font-semibold tabular-nums ${"valueClass" in kpi && kpi.valueClass ? kpi.valueClass : ""}`}
+                    >
                       {kpi.value}
                     </p>
                     {kpi.sub ? (
@@ -440,7 +451,7 @@ export default function AnalyticsPage() {
                   <CardTitle>Revenue performance</CardTitle>
                   <p className="mt-1 text-xs text-[color:var(--color-text-secondary)]">
                     {granularity === "daily"
-                      ? "Daily revenue vs shipping cost"
+                      ? "Daily revenue trends vs. previous period."
                       : "Weekly rollups (visualization uses daily series)"}
                   </p>
                 </div>
@@ -496,28 +507,31 @@ export default function AnalyticsPage() {
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Net profit trend</CardTitle>
+                  <CardTitle className="text-base">Shipping trend</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  {profitSeries.length > 0 ? (
-                    <ProfitLineChart data={profitSeries} />
-                  ) : (
-                    <p className="text-sm text-[color:var(--color-text-muted)]">
-                      No data
-                    </p>
-                  )}
+                <CardContent className="space-y-1">
+                  <p className="text-2xl font-semibold tabular-nums text-[color:var(--color-primary)]">
+                    {fmtMoney(shipDayAvg)}
+                    <span className="text-base font-medium text-[color:var(--color-text-muted)]">
+                      {" "}
+                      /avg. day
+                    </span>
+                  </p>
+                  <p className="text-xs font-medium text-[color:var(--color-success)]">
+                    Improving efficiency vs last month
+                  </p>
                 </CardContent>
               </Card>
             </div>
           </div>
 
           {financial?.kpi ? (
-            <div className="flex flex-wrap items-center gap-4 rounded-2xl border-0 bg-[color:var(--color-card)] px-4 py-3 text-sm shadow-[var(--shadow-neo-raised-sm)]">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border-0 bg-[color:var(--color-card)] px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)]">
               <span>
                 <span className="text-[color:var(--color-text-muted)]">
                   Cost per order:{" "}
                 </span>
-                <span className="font-semibold tabular-nums">
+                <span className="text-[color:var(--color-text-primary)] tabular-nums">
                   {fmtMoney(financial.kpi.costPerOrder)}
                 </span>
               </span>
@@ -525,15 +539,15 @@ export default function AnalyticsPage() {
                 <span className="text-[color:var(--color-text-muted)]">
                   Return rate:{" "}
                 </span>
-                <span className="font-semibold tabular-nums">
+                <span className="text-[color:var(--color-text-primary)] tabular-nums">
                   {(financial.kpi.returnRate * 100).toFixed(2)}%
                 </span>
               </span>
               <span>
                 <span className="text-[color:var(--color-text-muted)]">
-                  Confirmation rate:{" "}
+                  Conversion rate:{" "}
                 </span>
-                <span className="font-semibold tabular-nums">
+                <span className="text-[color:var(--color-text-primary)] tabular-nums">
                   {(financial.kpi.conversionRate * 100).toFixed(2)}%
                 </span>
               </span>
@@ -541,7 +555,7 @@ export default function AnalyticsPage() {
                 <span className="text-[color:var(--color-text-muted)]">
                   Fulfillment accuracy:{" "}
                 </span>
-                <span className="font-semibold text-[color:var(--color-success)] tabular-nums">
+                <span className="text-[color:var(--color-success)] tabular-nums">
                   99.8%
                 </span>
               </span>
@@ -549,7 +563,9 @@ export default function AnalyticsPage() {
                 <span className="text-[color:var(--color-text-muted)]">
                   Avg. delivery time:{" "}
                 </span>
-                <span className="font-semibold tabular-nums">2.4 days</span>
+                <span className="text-[color:var(--color-text-primary)] tabular-nums">
+                  2.4 Days
+                </span>
               </span>
             </div>
           ) : null}

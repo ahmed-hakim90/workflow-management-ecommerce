@@ -79,6 +79,7 @@ export default function RegisterPage() {
           apiSecret: json.data.staffApiKey,
           tenantId: json.data.tenantId,
           userId: json.data.userId,
+          displayName: adminName.trim(),
           role: "admin",
         });
         router.push("/analytics");

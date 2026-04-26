@@ -3,6 +3,7 @@ import { getServerEnv } from "@/lib/config/env";
 import { getFirebaseAuth } from "@/lib/db/firebase-admin";
 import { getTenant } from "@/lib/services/tenants.service";
 import { getUserByFirebaseUid } from "@/lib/services/users.service";
+import { assertStaffApiRateLimit } from "@/lib/http/api-rate-limit";
 
 export interface RequestContext {
   tenantId: string;
@@ -33,12 +34,28 @@ function looksLikeJwt(token: string): boolean {
  * Webhook routes should NOT use this helper.
  */
 export async function requireStaffContext(req: Request): Promise<RequestContext> {
+  await assertStaffApiRateLimit(req);
+
   const env = getServerEnv();
   const secret = env.OMS_API_SECRET;
   const token = getBearerToken(req);
   if (!token) throw new AuthError("Unauthorized", 401);
 
   const hasFirebaseAdmin = Boolean(env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim());
+  const firebaseOnly =
+    env.STAFF_AUTH_MODE === "firebase" && hasFirebaseAdmin;
+
+  if (firebaseOnly && !looksLikeJwt(token)) {
+    throw new AuthError("Firebase ID token required", 401);
+  }
+
+  if (looksLikeJwt(token) && !hasFirebaseAdmin) {
+    throw new AuthError(
+      "Set FIREBASE_SERVICE_ACCOUNT_JSON in server env (same project as NEXT_PUBLIC_*). Restart dev server.",
+      401,
+    );
+  }
+
   if (hasFirebaseAdmin && looksLikeJwt(token)) {
     try {
       const decoded = await getFirebaseAuth().verifyIdToken(token);
@@ -52,6 +69,9 @@ export async function requireStaffContext(req: Request): Promise<RequestContext>
       };
     } catch (e) {
       if (e instanceof AuthError) throw e;
+      if (firebaseOnly) {
+        throw new AuthError("Invalid or expired token", 401);
+      }
     }
   }
 

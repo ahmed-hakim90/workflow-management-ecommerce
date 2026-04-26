@@ -14,6 +14,8 @@ export async function loadSessionFromIdToken(
       user: {
         tenantId: string;
         id: string;
+        name?: string;
+        email?: string;
         role: string;
       };
     };
@@ -23,11 +25,16 @@ export async function loadSessionFromIdToken(
     throw new Error(json.error ?? "Could not load profile");
   }
   const u = json.data.user;
+  const displayName =
+    u.name?.trim() ||
+    u.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
+    "";
   setSession({
     idToken,
     apiSecret: "",
     tenantId: u.tenantId,
     userId: u.id,
+    displayName,
     role: u.role as UserRole,
   });
 }

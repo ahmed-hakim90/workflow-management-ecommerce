@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Bell,
   Calendar,
@@ -17,9 +18,10 @@ import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
 
 export function Topbar() {
-  const tenantId = useSessionStore((s) => s.tenantId);
+  const pathname = usePathname();
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const displayName = useSessionStore((s) => s.displayName);
   const [mockOn, setMockOn] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -44,12 +46,20 @@ export function Topbar() {
     if (isMdUp) setSearchOpen(false);
   }, [isMdUp]);
 
-  const searchPlaceholder = "Search orders, customers, or items…";
+  const searchPlaceholder = useMemo(() => {
+    if (pathname.startsWith("/tickets")) {
+      return "Search tickets, IDs, or agents…";
+    }
+    if (pathname.startsWith("/settings")) {
+      return "Search orders, tickets…";
+    }
+    return "Search orders, customers, or items…";
+  }, [pathname]);
 
   return (
     <header
       className={cn(
-        "flex h-14 shrink-0 items-center gap-2 border-b border-[color:var(--color-divider)] bg-[color:var(--color-bg)] px-3 md:gap-4 md:px-4",
+        "flex min-h-14 shrink-0 items-center gap-3 border-b border-[color:var(--color-divider)] bg-[color:var(--color-shell)] px-4 pt-safe md:gap-4 md:px-6",
       )}
     >
       <button
@@ -129,7 +139,7 @@ export function Topbar() {
         </div>
       )}
 
-      <div className="hidden items-center gap-1 md:flex">
+      <div className="hidden items-center gap-1.5 md:flex">
         <button
           type="button"
           className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
@@ -146,12 +156,6 @@ export function Topbar() {
         </button>
       </div>
 
-      <div className="hidden items-center gap-2 rounded-xl bg-[color:var(--color-card)] px-3 py-1 text-xs text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] md:flex">
-        <span className="font-medium text-[color:var(--color-text-primary)]">
-          Tenant
-        </span>
-        <span className="truncate font-mono">{tenantId}</span>
-      </div>
       <button
         type="button"
         className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
@@ -161,14 +165,14 @@ export function Topbar() {
         <span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-[color:var(--color-success)]" />
       </button>
       <ThemeToggle />
-      <div className="flex min-h-11 items-center gap-2 rounded-xl bg-[color:var(--color-card)] px-2 py-1 shadow-[var(--shadow-neo-raised-sm)]">
+      <div className="flex min-h-11 items-center gap-2.5 rounded-xl bg-[color:var(--color-card)] px-2.5 py-1.5 pe-3 shadow-[var(--shadow-neo-raised-sm)] sm:pe-3.5">
         <UserCircle2
           className="size-8 shrink-0 text-[color:var(--color-text-secondary)]"
           aria-hidden
         />
         <div className="hidden text-start text-xs sm:block">
           <div className="font-medium text-[color:var(--color-text-primary)]">
-            {userId || "Guest"}
+            {displayName?.trim() || userId || "Guest"}
           </div>
           <div className="text-[color:var(--color-text-secondary)]">{role}</div>
         </div>

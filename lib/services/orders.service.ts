@@ -28,6 +28,7 @@ import {
   recordNewOrderAnalytics,
   recordOrderConfirmedAnalytics,
 } from "@/lib/services/analytics-daily.service";
+import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 
 export async function listOrders(
   tenantId: string,
@@ -195,6 +196,12 @@ async function transition(
     });
   }
 
+  enqueueSyncOrderStatusToWooCommerce({
+    tenantId,
+    order: next,
+    actorUserId,
+  });
+
   return { prevStatus, order: next };
 }
 
@@ -265,6 +272,12 @@ export async function invoiceOrder(input: {
       entityId: input.orderId,
       userId: input.actorUserId,
       metadata: { from: prevStatus },
+    });
+
+    enqueueSyncOrderStatusToWooCommerce({
+      tenantId: input.tenantId,
+      order: current,
+      actorUserId: input.actorUserId,
     });
 
     const automation = await getTenantAutomation(input.tenantId);

@@ -11,12 +11,19 @@ export interface SessionState {
   idToken: string;
   tenantId: string;
   userId: string;
+  /** Display name for shell (from profile / email). */
+  displayName: string;
   role: UserRole;
   setSession: (
     p: Partial<
       Pick<
         SessionState,
-        "apiSecret" | "idToken" | "tenantId" | "userId" | "role"
+        | "apiSecret"
+        | "idToken"
+        | "tenantId"
+        | "userId"
+        | "role"
+        | "displayName"
       >
     >,
   ) => void;
@@ -35,6 +42,7 @@ export const useSessionStore = create<SessionState>()(
       idToken: "",
       tenantId: defaultTenant,
       userId: "user-admin-1",
+      displayName: "",
       role: "admin",
       setSession: (p) => set(p),
       signOut: () =>
@@ -42,6 +50,7 @@ export const useSessionStore = create<SessionState>()(
           apiSecret: "",
           idToken: "",
           userId: "",
+          displayName: "",
           tenantId: defaultTenant,
           role: "admin",
         }),

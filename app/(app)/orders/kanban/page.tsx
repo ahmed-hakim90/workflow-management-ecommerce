@@ -106,7 +106,6 @@ export default function KanbanPage() {
 
       <ResponsiveKanban
         columns={COLUMNS}
-        countNoun="orders"
         countFor={(id) => grouped[id].length}
         renderColumnCards={(columnId) =>
           grouped[columnId].map((o) => (

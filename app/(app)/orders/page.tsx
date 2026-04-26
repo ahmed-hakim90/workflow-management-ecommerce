@@ -273,7 +273,7 @@ export default function OrdersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Order management"
+        title="Order Management"
         description="Review and fulfill your daily incoming orders."
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -300,7 +300,7 @@ export default function OrdersPage() {
               }
             >
               <Plus className="size-4" aria-hidden />
-              Create order
+              Create Order
             </Button>
           </div>
         }
@@ -316,7 +316,7 @@ export default function OrdersPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
                 Date range — from
               </label>
               <Input
@@ -329,7 +329,7 @@ export default function OrdersPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
                 Date range — to
               </label>
               <Input
@@ -342,7 +342,7 @@ export default function OrdersPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
                 Payment status
               </label>
               <Select
@@ -352,7 +352,7 @@ export default function OrdersPage() {
                   setPage(0);
                 }}
               >
-                <option value="">All payments</option>
+                <option value="">All Payments</option>
                 {PAYMENTS.filter(Boolean).map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -361,11 +361,11 @@ export default function OrdersPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
                 Search
               </label>
               <Input
-                placeholder="Order, customer, phone…"
+                placeholder="Order, customer, or phone…"
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
@@ -385,10 +385,10 @@ export default function OrdersPage() {
           </Button>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--color-divider)] pt-4">
+        <div className="mt-4 flex flex-wrap gap-1 border-t border-[color:var(--color-divider)] pt-3">
           {(
             [
-              ["all", `All orders (${counts.all})`],
+              ["all", `All Orders (${counts.all})`],
               ["pending", `Pending (${counts.pending})`],
               ["shipped", `Shipped (${counts.shipped})`],
               ["cancelled", `Cancelled (${counts.cancelled})`],
@@ -402,10 +402,10 @@ export default function OrdersPage() {
                 setPage(0);
               }}
               className={cn(
-                "rounded-xl px-3 py-2 text-sm font-medium transition-all",
+                "border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                 quickTab === id
-                  ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-                  : "text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)]",
+                  ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                  : "border-transparent text-[color:var(--color-text-secondary)] hover:border-[color:var(--color-divider)] hover:text-[color:var(--color-text-primary)]",
               )}
             >
               {label}
@@ -612,7 +612,7 @@ export default function OrdersPage() {
         <Card>
           <CardContent className="space-y-1 p-4">
             <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
-              Revenue (range)
+              Revenue (MTD)
             </p>
             <p className="text-2xl font-bold tabular-nums">
               {revenueMtd.toLocaleString("en-US", {
@@ -634,7 +634,7 @@ export default function OrdersPage() {
               {pendingTickets ?? "—"}
             </p>
             <p className="text-xs font-medium text-[color:var(--color-error)]">
-              Review support queue
+              Urgent actions may be waiting in support
             </p>
           </CardContent>
         </Card>

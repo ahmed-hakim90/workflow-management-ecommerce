@@ -1,15 +1,31 @@
 import Image from "next/image";
 import Link from "next/link";
-import { BarChart3, MapPin, Network, Play } from "lucide-react";
+import { BarChart3, Globe, MapPin, Network, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 const trustLogos = ["VOLTA", "NEXUS", "QUANTUM", "VECTOR", "ORBIT"] as const;
 
+function LinkedInIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+    </svg>
+  );
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   return (
     <div className="text-[color:var(--color-text-primary)]">
-      <header className="sticky top-0 z-20 border-b border-[color:var(--color-divider)] bg-[color:var(--color-bg)]/90 backdrop-blur-sm">
+      <header className="sticky top-0 z-20 border-b border-[color:var(--color-divider)] bg-[color:var(--color-shell)]/95 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-6">
           <Link
             href="/"
@@ -80,60 +96,21 @@ export default function LandingPage() {
           </div>
         </div>
         <div
-          className="relative flex min-h-[360px] items-center justify-center justify-self-stretch rounded-3xl bg-gradient-to-br from-[color:var(--color-primary)] via-[#1d4ed8] to-[#172554] p-6 shadow-[var(--shadow-neo-raised-lg)] md:min-h-[420px]"
+          className="relative aspect-[4/3] w-full max-h-[min(420px,70vw)] justify-self-center overflow-hidden rounded-3xl bg-[color:var(--color-bg-subtle)] shadow-[var(--shadow-neo-raised-lg)] md:max-h-[480px] md:justify-self-stretch"
           aria-hidden
         >
-          <div className="relative w-full max-w-[340px] rounded-2xl bg-[color:var(--color-card)] p-5 text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-raised)] ring-1 ring-black/5">
-            <div className="flex items-center gap-3 border-b border-[color:var(--color-divider)] pb-4">
-              <Image
-                src="/brand-mark.png"
-                alt=""
-                width={52}
-                height={52}
-                className="size-[52px] rounded-2xl shadow-[var(--shadow-neo-raised-sm)]"
-              />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">Hakimo OMS</p>
-                <p className="text-xs text-[color:var(--color-text-muted)]">
-                  Live command center
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                  Orders
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">12.4k</p>
-                <p className="text-[11px] font-medium text-[color:var(--color-success)]">
-                  +8.2%
-                </p>
-              </div>
-              <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                  Revenue
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">$2.1M</p>
-                <p className="text-[11px] font-medium text-[color:var(--color-success)]">
-                  +3.1%
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 h-24 rounded-xl bg-[color:var(--color-bg-subtle)] shadow-[var(--shadow-neo-inset)]">
-              <div className="flex h-full items-end justify-between gap-1 px-3 pb-2 pt-4">
-                {Array.from({ length: 10 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-full max-w-[9%] rounded-t-md bg-[color:var(--color-primary)]"
-                    style={{
-                      height: `${28 + ((i * 13) % 55)}%`,
-                      opacity: 0.45 + (i % 5) * 0.1,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
+          <Image
+            src="https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=1200&q=80"
+            alt=""
+            fill
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, 50vw"
+            priority
+          />
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-[color:var(--color-primary)]/35 via-transparent to-[color:var(--color-primary)]/15"
+            aria-hidden
+          />
         </div>
       </section>
 
@@ -168,12 +145,28 @@ export default function LandingPage() {
         <div className="mt-10 grid gap-6 lg:grid-cols-12">
           <Card className="lg:col-span-7">
             <CardContent className="p-6">
-              <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                Revenue performance
-              </p>
-              <p className="mt-1 text-sm text-[color:var(--color-text-secondary)]">
-                Daily operational volume vs projected growth
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    Revenue performance
+                  </p>
+                  <p className="mt-1 text-sm text-[color:var(--color-text-secondary)]">
+                    Daily operational volume vs projected growth
+                  </p>
+                </div>
+                <div
+                  className="flex rounded-lg bg-[color:var(--color-bg-subtle)] p-0.5 text-[11px] font-semibold shadow-[var(--shadow-neo-inset)]"
+                  role="group"
+                  aria-label="Chart range"
+                >
+                  <span className="rounded-md bg-[color:var(--color-shell)] px-2.5 py-1 text-[color:var(--color-primary)] shadow-sm">
+                    24H
+                  </span>
+                  <span className="px-2.5 py-1 text-[color:var(--color-text-muted)]">
+                    7D
+                  </span>
+                </div>
+              </div>
               <div className="mt-6 flex h-48 items-end justify-between gap-1 rounded-xl bg-[color:var(--color-bg-subtle)] px-4 py-3 shadow-[var(--shadow-neo-inset)]">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <div
@@ -280,7 +273,7 @@ export default function LandingPage() {
           ].map(({ title, body, icon: Icon }) => (
             <Card key={title}>
               <CardContent className="space-y-3 p-6">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-[color:var(--color-text-primary)] text-[color:var(--color-bg)] shadow-[var(--shadow-neo-raised-sm)]">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]">
                   <Icon className="size-5" aria-hidden />
                 </div>
                 <h3 className="text-lg font-semibold">{title}</h3>
@@ -294,15 +287,21 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-4 mb-16 md:mx-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 rounded-2xl bg-[color:var(--color-text-primary)] px-8 py-12 text-[color:var(--color-bg)] shadow-[var(--shadow-neo-raised-lg)] md:flex-row md:items-center md:justify-between md:px-12">
-          <div className="max-w-xl space-y-2">
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-6 overflow-hidden rounded-2xl bg-[color:var(--color-text-primary)] px-8 py-12 text-[color:var(--color-shell)] shadow-[var(--shadow-neo-raised-lg)] md:flex-row md:items-center md:justify-between md:px-12">
+          <span
+            className="pointer-events-none absolute -end-8 top-1/2 -translate-y-1/2 select-none text-[min(12rem,28vw)] font-black leading-none text-white/[0.07]"
+            aria-hidden
+          >
+            CT
+          </span>
+          <div className="relative max-w-xl space-y-2">
             <h2 className="text-2xl font-bold">Ready to optimize your operations?</h2>
             <p className="text-sm opacity-90">
               Join 200+ enterprise teams running Hakimo for precision logistics
               and order orchestration.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="relative flex flex-wrap gap-3">
             <Link href="/login">
               <Button>Schedule Demo</Button>
             </Link>
@@ -318,8 +317,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-[color:var(--color-divider)] bg-[color:var(--color-card)] py-10">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 md:flex-row md:items-center md:justify-between md:px-6">
+      <footer className="border-t border-[color:var(--color-divider)] bg-[color:var(--color-shell)] py-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 md:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="font-semibold">Hakimo OMS</p>
             <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
@@ -334,6 +333,25 @@ export default function LandingPage() {
             <Link href="/login" className="hover:text-[color:var(--color-primary)]">
               Contact Sales
             </Link>
+          </div>
+          <div className="flex items-center gap-1 text-[color:var(--color-text-muted)]">
+            <a
+              href="https://linkedin.com"
+              className="rounded-lg p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
+              aria-label="LinkedIn"
+            >
+              <LinkedInIcon className="size-4" />
+            </a>
+            <a
+              href="https://twitter.com"
+              className="rounded-lg p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
+              aria-label="Twitter"
+            >
+              <XIcon className="size-4" />
+            </a>
+            <span className="rounded-lg p-2" title="Language" aria-hidden>
+              <Globe className="size-4" />
+            </span>
           </div>
         </div>
       </footer>

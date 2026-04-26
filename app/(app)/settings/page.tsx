@@ -24,7 +24,6 @@ type AdvTabId =
   | "kanban"
   | "shipment"
   | "payment"
-  | "integrations"
   | "users"
   | "developer";
 
@@ -33,7 +32,6 @@ const ADV_TAB_DEFS: { id: AdvTabId; label: string }[] = [
   { id: "shipment", label: "Shipment rules" },
   { id: "kanban", label: "Kanban JSON" },
   { id: "payment", label: "Payment" },
-  { id: "integrations", label: "Integrations" },
   { id: "users", label: "Users" },
   { id: "developer", label: "Developer session" },
 ];
@@ -52,7 +50,7 @@ const navItems: { id: SectionId; label: string }[] = [
   { id: "api", label: "API keys" },
   { id: "notifications", label: "Notifications" },
   { id: "billing", label: "Billing" },
-  { id: "advanced", label: "Tenant & integrations" },
+  { id: "advanced", label: "Workspace" },
 ];
 
 export default function SettingsPage() {
@@ -80,7 +78,7 @@ export default function SettingsPage() {
   const [bio, setBio] = useState(
     "Operations lead focused on SLA-backed fulfillment.",
   );
-  const [timezone, setTimezone] = useState("Africa/Cairo");
+  const [timezone, setTimezone] = useState("America/Los_Angeles");
   const [language, setLanguage] = useState("en");
   const [orderAlerts, setOrderAlerts] = useState(true);
   const [inventoryAlerts, setInventoryAlerts] = useState(true);
@@ -115,6 +113,19 @@ export default function SettingsPage() {
   const [bostaMsg, setBostaMsg] = useState<string | null>(null);
   const [bostaErr, setBostaErr] = useState<string | null>(null);
 
+  const [wooRestConfigured, setWooRestConfigured] = useState(false);
+  const [wooStoreDraft, setWooStoreDraft] = useState("");
+  const [wooCkDraft, setWooCkDraft] = useState("");
+  const [wooCsDraft, setWooCsDraft] = useState("");
+  const [wooCkLast4, setWooCkLast4] = useState<string | null>(null);
+  const [wooCsLast4, setWooCsLast4] = useState<string | null>(null);
+
+  const [bostaCityDraft, setBostaCityDraft] = useState("");
+  const [bostaZoneDraft, setBostaZoneDraft] = useState("");
+  const [bostaBuildingDraft, setBostaBuildingDraft] = useState("");
+  const [bostaAddressLineDraft, setBostaAddressLineDraft] = useState("");
+  const [bostaPackageDescDraft, setBostaPackageDescDraft] = useState("");
+
   const wooWebhookUrl = useMemo(() => {
     const base = (appOrigin || "").replace(/\/$/, "");
     if (!base) return "";
@@ -133,7 +144,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (section !== "advanced" || advTab !== "integrations") return;
+    if (section !== "api") return;
     let cancelled = false;
     (async () => {
       setWooErr(null);
@@ -148,10 +159,19 @@ export default function SettingsPage() {
           serverPublicBaseUrl?: string;
           woocommerceWebhookUrl?: string;
           woocommerceWebhookSecretConfigured?: boolean;
+          woocommerceRestConfigured?: boolean;
+          woocommerceStoreUrl?: string | null;
+          woocommerceConsumerKeyLast4?: string | null;
+          woocommerceConsumerSecretLast4?: string | null;
           staffApiKeyConfigured?: boolean;
           staffApiKeyLast4?: string | null;
           bostaApiKeyConfigured?: boolean;
           bostaBaseUrl?: string | null;
+          bostaDefaultCityId?: string | null;
+          bostaDefaultZoneId?: string | null;
+          bostaDefaultBuildingNumber?: string | null;
+          bostaDefaultAddressLine?: string | null;
+          bostaPackageDescription?: string | null;
         };
         if (!cancelled) {
           setWooWebhookCanonical(d.woocommerceWebhookUrl?.trim() || null);
@@ -161,6 +181,17 @@ export default function SettingsPage() {
           setStaffApiKeyLast4(d.staffApiKeyLast4 ?? null);
           setBostaKeyConfigured(!!d.bostaApiKeyConfigured);
           setBostaBaseDraft(d.bostaBaseUrl?.trim() ?? "");
+          setWooRestConfigured(!!d.woocommerceRestConfigured);
+          setWooStoreDraft(d.woocommerceStoreUrl?.trim() ?? "");
+          setWooCkDraft("");
+          setWooCsDraft("");
+          setWooCkLast4(d.woocommerceConsumerKeyLast4 ?? null);
+          setWooCsLast4(d.woocommerceConsumerSecretLast4 ?? null);
+          setBostaCityDraft(d.bostaDefaultCityId?.trim() ?? "");
+          setBostaZoneDraft(d.bostaDefaultZoneId?.trim() ?? "");
+          setBostaBuildingDraft(d.bostaDefaultBuildingNumber?.trim() ?? "");
+          setBostaAddressLineDraft(d.bostaDefaultAddressLine?.trim() ?? "");
+          setBostaPackageDescDraft(d.bostaPackageDescription?.trim() ?? "");
         }
       } catch (e) {
         if (!cancelled)
@@ -170,7 +201,7 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [section, advTab, apiSecret, idToken, tenantId, userId, role]);
+  }, [section, apiSecret, idToken, tenantId, userId, role]);
 
   async function saveWooSecret() {
     setWooMsg(null);
@@ -220,6 +251,141 @@ export default function SettingsPage() {
       setWooMsg("Stored webhook secret removed.");
     } catch (e) {
       setWooErr(e instanceof Error ? e.message : "Remove failed");
+    }
+  }
+
+  async function saveWooRestStoreUrl() {
+    setWooMsg(null);
+    setWooErr(null);
+    const u = wooStoreDraft.trim();
+    if (!u) {
+      setWooErr("Enter your WooCommerce store URL (e.g. https://shop.example.com).");
+      return;
+    }
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ woocommerce_store_url: u }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as { woocommerceStoreUrl?: string | null };
+      setWooStoreDraft(d.woocommerceStoreUrl?.trim() ?? "");
+      setWooMsg("WooCommerce store URL saved.");
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function saveWooRestKeys() {
+    setWooMsg(null);
+    setWooErr(null);
+    const ck = wooCkDraft.trim();
+    const cs = wooCsDraft.trim();
+    if (!ck || !cs) {
+      setWooErr("Paste both Consumer key and Consumer secret from WooCommerce.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          woocommerce_consumer_key: ck,
+          woocommerce_consumer_secret: cs,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        woocommerceRestConfigured?: boolean;
+        woocommerceConsumerKeyLast4?: string | null;
+        woocommerceConsumerSecretLast4?: string | null;
+      };
+      setWooRestConfigured(!!d.woocommerceRestConfigured);
+      setWooCkDraft("");
+      setWooCsDraft("");
+      setWooCkLast4(d.woocommerceConsumerKeyLast4 ?? null);
+      setWooCsLast4(d.woocommerceConsumerSecretLast4 ?? null);
+      setWooMsg("WooCommerce REST keys saved. OMS will push order status to Woo.");
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function clearWooRestKeys() {
+    setWooMsg(null);
+    setWooErr(null);
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          woocommerce_consumer_key: null,
+          woocommerce_consumer_secret: null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        woocommerceRestConfigured?: boolean;
+        woocommerceConsumerKeyLast4?: string | null;
+        woocommerceConsumerSecretLast4?: string | null;
+      };
+      setWooRestConfigured(!!d.woocommerceRestConfigured);
+      setWooCkLast4(d.woocommerceConsumerKeyLast4 ?? null);
+      setWooCsLast4(d.woocommerceConsumerSecretLast4 ?? null);
+      setWooMsg("WooCommerce REST keys removed.");
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Remove failed");
+    }
+  }
+
+  async function saveBostaAddressFields() {
+    setBostaMsg(null);
+    setBostaErr(null);
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bosta_default_city_id: bostaCityDraft.trim() || null,
+          bosta_default_zone_id: bostaZoneDraft.trim() || null,
+          bosta_default_building_number: bostaBuildingDraft.trim() || null,
+          bosta_default_address_line: bostaAddressLineDraft.trim() || null,
+          bosta_package_description: bostaPackageDescDraft.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        bostaDefaultCityId?: string | null;
+        bostaDefaultZoneId?: string | null;
+        bostaDefaultBuildingNumber?: string | null;
+        bostaDefaultAddressLine?: string | null;
+        bostaPackageDescription?: string | null;
+      };
+      setBostaCityDraft(d.bostaDefaultCityId?.trim() ?? "");
+      setBostaZoneDraft(d.bostaDefaultZoneId?.trim() ?? "");
+      setBostaBuildingDraft(d.bostaDefaultBuildingNumber?.trim() ?? "");
+      setBostaAddressLineDraft(d.bostaDefaultAddressLine?.trim() ?? "");
+      setBostaPackageDescDraft(d.bostaPackageDescription?.trim() ?? "");
+      setBostaMsg("Bosta address defaults saved.");
+    } catch (e) {
+      setBostaErr(e instanceof Error ? e.message : "Save failed");
     }
   }
 
@@ -441,7 +607,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Profile, notifications, billing, and tenant-level automation."
+        description="Manage your workspace configuration and personal preferences."
       />
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -454,8 +620,8 @@ export default function SettingsPage() {
               className={cn(
                 "rounded-xl px-3 py-2.5 text-start text-sm font-medium transition-all",
                 section === item.id
-                  ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-                  : "text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)]",
+                  ? "border-s-[3px] border-[color:var(--color-primary)] bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)]"
+                  : "border-s-[3px] border-transparent text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
               )}
             >
               {item.label}
@@ -474,7 +640,7 @@ export default function SettingsPage() {
                     size="sm"
                     onClick={() => setSettingsMsg("Profile saved (local demo).")}
                   >
-                    Save changes
+                    Save Changes
                   </Button>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -515,6 +681,7 @@ export default function SettingsPage() {
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
                   >
+                    <option value="America/Los_Angeles">PST (UTC-8)</option>
                     <option value="Africa/Cairo">Africa/Cairo</option>
                     <option value="UTC">UTC</option>
                     <option value="America/New_York">America/New_York</option>
@@ -524,32 +691,43 @@ export default function SettingsPage() {
                     value={language}
                     onChange={(e) => setLanguage(e.target.value)}
                   >
-                    <option value="en">English</option>
+                    <option value="en">English (US)</option>
                     <option value="ar">Arabic</option>
                   </Select>
                 </CardContent>
               </Card>
 
-              <Card className="border-0 bg-[color:var(--color-error)]/10 shadow-[var(--shadow-neo-inset)]">
+              <Card className="border border-[color:var(--color-error)]/35 bg-[color:var(--color-error)]/5 shadow-[var(--shadow-neo-inset)]">
                 <CardHeader>
                   <CardTitle className="text-[color:var(--color-error)]">
                     Danger zone
                   </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-[color:var(--color-text-secondary)]">
-                    Deactivate your operator account for this tenant. This cannot
-                    be undone from the UI.
+                  <p className="text-sm font-normal text-[color:var(--color-error)]">
+                    Irreversible actions that affect your entire account access.
                   </p>
-                  <Button
-                    type="button"
-                    variant="danger"
-                    onClick={() =>
-                      alert("Deactivate is not wired — contact support.")
-                    }
-                  >
-                    Deactivate
-                  </Button>
+                </CardHeader>
+                <CardContent className="rounded-xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium text-[color:var(--color-text-primary)]">
+                        Deactivate account
+                      </p>
+                      <p className="text-sm text-[color:var(--color-text-secondary)]">
+                        Deactivate your operator access for this tenant. This
+                        cannot be undone from the UI.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="shrink-0 border-[color:var(--color-error)] text-[color:var(--color-error)] hover:bg-[color:var(--color-error)]/10"
+                      onClick={() =>
+                        alert("Deactivate is not wired — contact support.")
+                      }
+                    >
+                      Deactivate
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </>
@@ -572,34 +750,493 @@ export default function SettingsPage() {
           )}
 
           {section === "api" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>API keys</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <p className="text-[color:var(--color-text-secondary)]">
-                  Rotate keys regularly. Values are stored in your browser for
-                  this demo session.
-                </p>
-                <Input
-                  label="OMS API secret"
-                  type="password"
-                  value={apiSecret}
-                  onChange={(e) => setSession({ apiSecret: e.target.value })}
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    setSession({
-                      apiSecret: `sk_${crypto.randomUUID().slice(0, 24)}`,
-                    })
-                  }
-                >
-                  Generate new key (local)
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Session API secret</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    Rotate keys regularly. Values are stored in your browser
+                    for this demo session.
+                  </p>
+                  <Input
+                    label="OMS API secret"
+                    type="password"
+                    value={apiSecret}
+                    onChange={(e) => setSession({ apiSecret: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      setSession({
+                        apiSecret: `sk_${crypto.randomUUID().slice(0, 24)}`,
+                      })
+                    }
+                  >
+                    Generate new key (local)
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>WooCommerce (WordPress)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    WooCommerce must call <strong>your</strong> URL with{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
+                      tenant=
+                    </code>{" "}
+                    set to this company id:{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
+                      {tenantId}
+                    </code>
+                    . Use the same secret here as in the WooCommerce webhook
+                    definition so we can verify{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                      X-WC-Webhook-Signature
+                    </code>
+                    .
+                  </p>
+                  <div className="space-y-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      Webhook delivery URL (paste in WooCommerce)
+                    </span>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <code className="block flex-1 break-all rounded-xl bg-[color:var(--color-code-bg)] px-3 py-2 text-xs shadow-[var(--shadow-neo-inset)]">
+                        {wooDisplayUrl ||
+                          "…load this page in the browser to generate the link"}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={!wooDisplayUrl}
+                        onClick={() => void copyWooUrl()}
+                      >
+                        {wooCopied ? (
+                          <>
+                            <Check className="size-4" aria-hidden />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-4" aria-hidden />
+                            Copy
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {wooServerBase ? (
+                      <p className="text-xs text-[color:var(--color-text-muted)]">
+                        Server canonical base:{" "}
+                        <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                          {wooServerBase}
+                        </code>{" "}
+                        — set{" "}
+                        <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                          NEXT_PUBLIC_APP_URL
+                        </code>{" "}
+                        if WordPress must use a fixed production domain.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      Webhook secret (per company)
+                    </span>
+                    <p className="text-[color:var(--color-text-secondary)]">
+                      In WooCommerce go to{" "}
+                      <strong>Settings → Advanced → Webhooks</strong>, create a
+                      webhook, and copy the <strong>Secret</strong> field —
+                      then paste it here. We verify the{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                        X-WC-Webhook-Signature
+                      </code>{" "}
+                      header with this value.
+                    </p>
+                    <p className="flex flex-wrap items-center gap-2 text-xs">
+                      <span
+                        className={
+                          wooSecretConfigured
+                            ? "font-medium text-[color:var(--color-success)]"
+                            : "text-[color:var(--color-text-muted)]"
+                        }
+                      >
+                        {wooSecretConfigured
+                          ? "Secret is stored for this tenant."
+                          : "No secret stored yet (or using server env fallback)."}
+                      </span>
+                    </p>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Paste WooCommerce webhook secret"
+                      value={wooSecretDraft}
+                      onChange={(e) => setWooSecretDraft(e.target.value)}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void saveWooSecret()}
+                      >
+                        Save secret
+                      </Button>
+                      {wooSecretConfigured ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void clearWooSecret()}
+                        >
+                          Remove secret
+                        </Button>
+                      ) : null}
+                    </div>
+                    {wooMsg ? (
+                      <p className="text-xs font-medium text-[color:var(--color-success)]">
+                        {wooMsg}
+                      </p>
+                    ) : null}
+                    {wooErr ? (
+                      <p className="text-xs text-[color:var(--color-error)]">
+                        {wooErr}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-[color:var(--color-text-muted)]">
+                      Optional dev fallback: a single{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                        WOOCOMMERCE_WEBHOOK_SECRET
+                      </code>{" "}
+                      in server env (one secret for all tenants). Prefer per-tenant
+                      secrets above for production.
+                    </p>
+                  </div>
+                  <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      REST API — push order status to WooCommerce
+                    </span>
+                    <p className="text-[color:var(--color-text-secondary)]">
+                      Create a REST API key in{" "}
+                      <strong>WooCommerce → Settings → Advanced → REST API</strong>{" "}
+                      with read/write access. When staff change an order&apos;s
+                      status in Hakimo, we update the matching WooCommerce order
+                      (same ID as synced from the webhook).
+                    </p>
+                    <p className="text-xs">
+                      <span
+                        className={
+                          wooRestConfigured
+                            ? "font-medium text-[color:var(--color-success)]"
+                            : "text-[color:var(--color-text-muted)]"
+                        }
+                      >
+                        {wooRestConfigured
+                          ? "Store URL and REST keys are configured."
+                          : "Configure store URL and both keys to enable push."}
+                      </span>
+                      {(wooCkLast4 || wooCsLast4) && !wooRestConfigured ? (
+                        <span className="text-[color:var(--color-text-muted)]">
+                          {" "}
+                          (Partial: ck …{wooCkLast4 ?? "—"}, cs …
+                          {wooCsLast4 ?? "—"})
+                        </span>
+                      ) : null}
+                    </p>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                        Store URL
+                      </label>
+                      <Input
+                        placeholder="https://your-store.com"
+                        value={wooStoreDraft}
+                        onChange={(e) => setWooStoreDraft(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => void saveWooRestStoreUrl()}
+                      >
+                        Save store URL
+                      </Button>
+                    </div>
+                    <div className="space-y-1 pt-2">
+                      <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                        Consumer key / secret
+                      </label>
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Consumer key (ck_...)"
+                        value={wooCkDraft}
+                        onChange={(e) => setWooCkDraft(e.target.value)}
+                      />
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Consumer secret (cs_...)"
+                        value={wooCsDraft}
+                        onChange={(e) => setWooCsDraft(e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void saveWooRestKeys()}
+                        >
+                          Save REST keys
+                        </Button>
+                        {(wooCkLast4 || wooCsLast4) ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void clearWooRestKeys()}
+                          >
+                            Remove REST keys
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tenant staff API key</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-[color:var(--color-text-primary)]">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    Scripts and integrations can call this API with{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                      Authorization: Bearer (your key)
+                    </code>
+                    , plus headers{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                      X-Tenant-Id
+                    </code>
+                    ,{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                      X-User-Id
+                    </code>
+                    ,{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
+                      X-User-Role
+                    </code>
+                    . The full key is shown once when you register the company;
+                    store it in a secret manager.
+                  </p>
+                  <p className="text-xs">
+                    <span
+                      className={
+                        staffApiKeyConfigured
+                          ? "font-medium text-[color:var(--color-success)]"
+                          : "text-[color:var(--color-text-muted)]"
+                      }
+                    >
+                      {staffApiKeyConfigured
+                        ? `Key active (ends with …${staffApiKeyLast4 ?? "????"})`
+                        : "No tenant key record (use Firebase sign-in or server OMS secret)."}
+                    </span>
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Bosta</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    API key and optional API base are stored per tenant. Creating
+                    a shipment uses this tenant&apos;s key first, then falls
+                    back to server{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
+                      BOSTA_API_KEY
+                    </code>{" "}
+                    /{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
+                      BOSTA_BASE_URL
+                    </code>{" "}
+                    if unset.
+                  </p>
+                  <p className="flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={
+                        bostaKeyConfigured
+                          ? "font-medium text-[color:var(--color-success)]"
+                          : "text-[color:var(--color-text-muted)]"
+                      }
+                    >
+                      {bostaKeyConfigured
+                        ? "API key stored for this tenant."
+                        : "No tenant API key (mock AWBs unless env key is set)."}
+                    </span>
+                  </p>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                      API key
+                    </label>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Bosta API key"
+                      value={bostaKeyDraft}
+                      onChange={(e) => setBostaKeyDraft(e.target.value)}
+                    />
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void saveBostaKey()}
+                      >
+                        Save API key
+                      </Button>
+                      {bostaKeyConfigured ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void clearBostaKey()}
+                        >
+                          Remove key
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="space-y-1 border-t border-[color:var(--color-divider)] pt-4">
+                    <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                      API base URL (optional)
+                    </label>
+                    <Input
+                      placeholder="https://app.bosta.co"
+                      value={bostaBaseDraft}
+                      onChange={(e) => setBostaBaseDraft(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => void saveBostaBaseUrl()}
+                    >
+                      Save base URL
+                    </Button>
+                    <p className="text-xs text-[color:var(--color-text-muted)]">
+                      Use the Bosta host only (e.g. production{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                        https://app.bosta.co
+                      </code>{" "}
+                      or staging{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                        https://stg-app.bosta.co
+                      </code>
+                      ). The SDK calls{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                        /api/v0
+                      </code>{" "}
+                      automatically.
+                    </p>
+                  </div>
+                  <div className="space-y-3 border-t border-[color:var(--color-divider)] pt-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      Delivery address defaults (required for real AWBs)
+                    </span>
+                    <p className="text-xs text-[color:var(--color-text-muted)]">
+                      Bosta needs a city code (e.g.{" "}
+                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                        EG-01
+                      </code>
+                      ) and zone. Use the Bosta dashboard or cities API; customer
+                      street text from Woo fills{" "}
+                      <strong>first line</strong> when present.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                          Default city code
+                        </label>
+                        <Input
+                          placeholder="EG-01"
+                          value={bostaCityDraft}
+                          onChange={(e) => setBostaCityDraft(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                          Default zone
+                        </label>
+                        <Input
+                          placeholder="District or zone name"
+                          value={bostaZoneDraft}
+                          onChange={(e) => setBostaZoneDraft(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                          Building number
+                        </label>
+                        <Input
+                          placeholder="1"
+                          value={bostaBuildingDraft}
+                          onChange={(e) => setBostaBuildingDraft(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                          Fallback address line (if order has no address)
+                        </label>
+                        <Input
+                          placeholder="Street / landmark"
+                          value={bostaAddressLineDraft}
+                          onChange={(e) =>
+                            setBostaAddressLineDraft(e.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                          Package description (optional)
+                        </label>
+                        <Input
+                          placeholder="e.g. Hakimo order shipment"
+                          value={bostaPackageDescDraft}
+                          onChange={(e) =>
+                            setBostaPackageDescDraft(e.target.value)
+                          }
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void saveBostaAddressFields()}
+                    >
+                      Save Bosta address defaults
+                    </Button>
+                  </div>
+                  {bostaMsg ? (
+                    <p className="text-xs font-medium text-[color:var(--color-success)]">
+                      {bostaMsg}
+                    </p>
+                  ) : null}
+                  {bostaErr ? (
+                    <p className="text-xs text-[color:var(--color-error)]">
+                      {bostaErr}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {section === "notifications" && (
@@ -801,289 +1438,6 @@ export default function SettingsPage() {
                     imported from orders.
                   </CardContent>
                 </Card>
-              )}
-
-              {advTab === "integrations" && (
-                <div className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>WooCommerce (WordPress)</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
-                      <p className="text-[color:var(--color-text-secondary)]">
-                        WooCommerce must call{" "}
-                        <strong>your</strong> URL with{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
-                          tenant=
-                        </code>{" "}
-                        set to this company id:{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
-                          {tenantId}
-                        </code>
-                        . Use the same secret here as in the WooCommerce webhook
-                        definition so we can verify{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                          X-WC-Webhook-Signature
-                        </code>
-                        .
-                      </p>
-                      <div className="space-y-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                          Webhook delivery URL (paste in WooCommerce)
-                        </span>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <code className="block flex-1 break-all rounded-xl bg-[color:var(--color-code-bg)] px-3 py-2 text-xs shadow-[var(--shadow-neo-inset)]">
-                            {wooDisplayUrl ||
-                              "…load this page in the browser to generate the link"}
-                          </code>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="shrink-0"
-                            disabled={!wooDisplayUrl}
-                            onClick={() => void copyWooUrl()}
-                          >
-                            {wooCopied ? (
-                              <>
-                                <Check className="size-4" aria-hidden />
-                                Copied
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="size-4" aria-hidden />
-                                Copy
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                        {wooServerBase ? (
-                          <p className="text-xs text-[color:var(--color-text-muted)]">
-                            Server canonical base:{" "}
-                            <code className="rounded bg-[color:var(--color-code-bg)] px-1">
-                              {wooServerBase}
-                            </code>{" "}
-                            — set{" "}
-                            <code className="rounded bg-[color:var(--color-code-bg)] px-1">
-                              NEXT_PUBLIC_APP_URL
-                            </code>{" "}
-                            if WordPress must use a fixed production domain.
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
-                        <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                          Webhook secret (per company)
-                        </span>
-                        <p className="text-[color:var(--color-text-secondary)]">
-                          In WooCommerce go to{" "}
-                          <strong>Settings → Advanced → Webhooks</strong>, create
-                          a webhook, and copy the{" "}
-                          <strong>Secret</strong> field — then paste it here.
-                          We verify the{" "}
-                          <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                            X-WC-Webhook-Signature
-                          </code>{" "}
-                          header with this value.
-                        </p>
-                        <p className="flex flex-wrap items-center gap-2 text-xs">
-                          <span
-                            className={
-                              wooSecretConfigured
-                                ? "font-medium text-[color:var(--color-success)]"
-                                : "text-[color:var(--color-text-muted)]"
-                            }
-                          >
-                            {wooSecretConfigured
-                              ? "Secret is stored for this tenant."
-                              : "No secret stored yet (or using server env fallback)."}
-                          </span>
-                        </p>
-                        <Input
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder="Paste WooCommerce webhook secret"
-                          value={wooSecretDraft}
-                          onChange={(e) => setWooSecretDraft(e.target.value)}
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => void saveWooSecret()}
-                          >
-                            Save secret
-                          </Button>
-                          {wooSecretConfigured ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => void clearWooSecret()}
-                            >
-                              Remove secret
-                            </Button>
-                          ) : null}
-                        </div>
-                        {wooMsg ? (
-                          <p className="text-xs font-medium text-[color:var(--color-success)]">
-                            {wooMsg}
-                          </p>
-                        ) : null}
-                        {wooErr ? (
-                          <p className="text-xs text-[color:var(--color-error)]">
-                            {wooErr}
-                          </p>
-                        ) : null}
-                        <p className="text-xs text-[color:var(--color-text-muted)]">
-                          Optional dev fallback: a single{" "}
-                          <code className="rounded bg-[color:var(--color-code-bg)] px-1">
-                            WOOCOMMERCE_WEBHOOK_SECRET
-                          </code>{" "}
-                          in server env (one secret for all tenants). Prefer
-                          per-tenant secrets above for production.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Tenant staff API key</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm text-[color:var(--color-text-primary)]">
-                      <p className="text-[color:var(--color-text-secondary)]">
-                        Scripts and integrations can call this API with{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                          Authorization: Bearer (your key)
-                        </code>
-                        , plus headers{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                          X-Tenant-Id
-                        </code>
-                        ,{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                          X-User-Id
-                        </code>
-                        ,{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-[11px]">
-                          X-User-Role
-                        </code>
-                        . The full key is shown once when you register the
-                        company; store it in a secret manager.
-                      </p>
-                      <p className="text-xs">
-                        <span
-                          className={
-                            staffApiKeyConfigured
-                              ? "font-medium text-[color:var(--color-success)]"
-                              : "text-[color:var(--color-text-muted)]"
-                          }
-                        >
-                          {staffApiKeyConfigured
-                            ? `Key active (ends with …${staffApiKeyLast4 ?? "????"})`
-                            : "No tenant key record (use Firebase sign-in or server OMS secret)."}
-                        </span>
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Bosta</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
-                      <p className="text-[color:var(--color-text-secondary)]">
-                        API key and optional API base are stored per tenant.
-                        Creating a shipment uses this tenant&apos;s key first,
-                        then falls back to server{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
-                          BOSTA_API_KEY
-                        </code>{" "}
-                        /{" "}
-                        <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">
-                          BOSTA_BASE_URL
-                        </code>{" "}
-                        if unset.
-                      </p>
-                      <p className="flex flex-wrap items-center gap-2 text-xs">
-                        <span
-                          className={
-                            bostaKeyConfigured
-                              ? "font-medium text-[color:var(--color-success)]"
-                              : "text-[color:var(--color-text-muted)]"
-                          }
-                        >
-                          {bostaKeyConfigured
-                            ? "API key stored for this tenant."
-                            : "No tenant API key (mock AWBs unless env key is set)."}
-                        </span>
-                      </p>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
-                          API key
-                        </label>
-                        <Input
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder="Bosta API key"
-                          value={bostaKeyDraft}
-                          onChange={(e) => setBostaKeyDraft(e.target.value)}
-                        />
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => void saveBostaKey()}
-                          >
-                            Save API key
-                          </Button>
-                          {bostaKeyConfigured ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => void clearBostaKey()}
-                            >
-                              Remove key
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="space-y-1 border-t border-[color:var(--color-divider)] pt-4">
-                        <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
-                          API base URL (optional)
-                        </label>
-                        <Input
-                          placeholder="https://app.bosta.co/api/v2"
-                          value={bostaBaseDraft}
-                          onChange={(e) => setBostaBaseDraft(e.target.value)}
-                        />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="mt-2"
-                          onClick={() => void saveBostaBaseUrl()}
-                        >
-                          Save base URL
-                        </Button>
-                        <p className="text-xs text-[color:var(--color-text-muted)]">
-                          Leave empty and save to use the default Bosta URL (or
-                          server env).
-                        </p>
-                      </div>
-                      {bostaMsg ? (
-                        <p className="text-xs font-medium text-[color:var(--color-success)]">
-                          {bostaMsg}
-                        </p>
-                      ) : null}
-                      {bostaErr ? (
-                        <p className="text-xs text-[color:var(--color-error)]">
-                          {bostaErr}
-                        </p>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                </div>
               )}
 
               {advTab === "users" && can(role, "user:read") ? (

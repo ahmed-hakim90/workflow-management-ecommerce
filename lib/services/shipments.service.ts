@@ -15,6 +15,7 @@ import { applyOrderStageRollupDelta } from "@/lib/services/order-stage-rollup.se
 import { incrementUserStat } from "@/lib/services/user-stats.service";
 import { recordDeliveryShipmentAnalytics } from "@/lib/services/analytics-daily.service";
 import { getUser } from "@/lib/services/users.service";
+import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 
 async function getOrder(tenantId: string, orderId: string): Promise<Order | null> {
   const db = getDb();
@@ -216,6 +217,12 @@ export async function scanAwb(input: {
       field: "packed",
     });
   }
+
+  enqueueSyncOrderStatusToWooCommerce({
+    tenantId: input.tenantId,
+    order: result.order,
+    actorUserId: input.actorUserId,
+  });
 
   return result;
 }

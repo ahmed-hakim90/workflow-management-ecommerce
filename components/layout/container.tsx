@@ -10,7 +10,7 @@ export function Container({
   return (
     <div
       className={cn(
-        "min-h-0 max-w-full flex-1 overflow-auto p-4 pb-safe md:p-5 lg:p-6",
+        "mx-auto min-h-0 w-full max-w-[var(--app-content-max-w)] flex-1 overflow-auto px-4 py-5 pb-safe sm:px-5 sm:py-6 md:px-6 lg:px-8",
         className,
       )}
     >

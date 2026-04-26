@@ -12,7 +12,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
 
   return (
-    <div className="flex min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-text-primary)]">
+    <div className="flex min-h-[100dvh] min-h-screen bg-[color:var(--color-shell)] text-[color:var(--color-text-primary)]">
       <FirebaseSessionSync />
       {mobileNavOpen ? (
         <button
@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       ) : null}
       <Sidebar />
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col bg-[color:var(--color-app-main)]">
         <Topbar />
         <Container>{children}</Container>
       </div>

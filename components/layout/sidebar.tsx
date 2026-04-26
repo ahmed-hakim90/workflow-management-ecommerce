@@ -7,7 +7,6 @@ import { useEffect } from "react";
 import {
   BarChart3,
   Package,
-  LayoutGrid,
   Truck,
   Ticket,
   Settings,
@@ -25,25 +24,31 @@ import { useSessionStore } from "@/store/zustand/session-store";
 const navItems = [
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/orders", label: "Orders", icon: Package },
-  { href: "/orders/kanban", label: "Order board", icon: LayoutGrid },
   { href: "/shipments", label: "Shipments", icon: Truck },
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 function navActive(href: string, pathname: string) {
-  if (href === "/orders") {
-    if (pathname === "/orders/kanban") return false;
-    return pathname === "/orders" || pathname.startsWith("/orders/");
-  }
-  if (href === "/orders/kanban") return pathname === "/orders/kanban";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+const ROLE_TITLE: Record<string, string> = {
+  admin: "System Admin",
+  moderator: "Ops Manager",
+  confirmation: "Confirmation",
+  invoicing: "Invoicing",
+  warehouse: "Warehouse",
+  support: "Support",
+};
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const signOut = useSessionStore((s) => s.signOut);
+  const displayName = useSessionStore((s) => s.displayName);
+  const userId = useSessionStore((s) => s.userId);
+  const role = useSessionStore((s) => s.role);
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
   const sidebarTabletExpanded = useUiStore((s) => s.sidebarTabletExpanded);
@@ -71,32 +76,32 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-e border-[color:var(--color-divider)] bg-[color:var(--color-bg)]",
+        "flex h-screen shrink-0 flex-col border-e border-[color:var(--color-divider)] bg-[color:var(--color-shell)]",
         "transition-[width] duration-200 ease-out",
         isMdUp ? "sticky top-0" : "fixed inset-y-0 start-0 z-40 max-w-[88vw]",
         !isMdUp && !mobileNavOpen && "hidden",
         !isMdUp && mobileNavOpen && "flex",
         isMdUp && "flex",
-        isLgUp && "w-[240px]",
+        isLgUp && "w-[var(--app-sidebar-w)]",
         !isLgUp &&
           isMdUp &&
-          (sidebarTabletExpanded ? "w-[240px]" : "w-[72px]"),
-        !isMdUp && mobileNavOpen && "w-[min(272px,88vw)]",
+          (sidebarTabletExpanded ? "w-[var(--app-sidebar-w)]" : "w-[72px]"),
+        !isMdUp && mobileNavOpen && "w-[min(288px,88vw)]",
       )}
       aria-label="Main navigation"
       id="app-sidebar-nav"
     >
       <div
         className={cn(
-          "flex shrink-0 flex-col gap-0.5 border-b border-[color:var(--color-divider)] py-3",
-          isIconRail ? "items-center px-2" : "px-4",
+          "flex shrink-0 flex-col gap-1 border-b border-[color:var(--color-divider)] py-4",
+          isIconRail ? "items-center px-2" : "px-[var(--app-sidebar-pad)]",
         )}
       >
         <Link
           href="/analytics"
           className={cn(
             "flex min-h-11 items-center rounded-xl text-[color:var(--color-text-primary)] transition-shadow",
-            isIconRail ? "justify-center" : "gap-2",
+            isIconRail ? "justify-center" : "gap-3",
           )}
           onClick={() => setMobileNavOpen(false)}
         >
@@ -124,7 +129,9 @@ export function Sidebar() {
                 />
               </span>
               <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate text-sm font-semibold">Hakimo OMS</span>
+                <span className="truncate text-sm font-semibold text-[color:var(--color-primary)]">
+                  Hakimo OMS
+                </span>
                 <span className="truncate text-[11px] text-[color:var(--color-text-muted)]">
                   Order Management
                 </span>
@@ -135,7 +142,7 @@ export function Sidebar() {
       </div>
       <nav
         className={cn(
-          "flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain p-3",
+          "flex flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain p-[var(--app-sidebar-pad)]",
           isIconRail && "items-center px-2",
         )}
         aria-label="Primary"
@@ -149,11 +156,11 @@ export function Sidebar() {
               href={item.href}
               title={item.label}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200",
+                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 isIconRail && "w-11 justify-center px-0",
                 active
-                  ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-                  : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+                  ? "border-s-[3px] border-[color:var(--color-primary)] bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)] shadow-none"
+                  : "border-s-[3px] border-transparent text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
               )}
               onClick={() => setMobileNavOpen(false)}
             >
@@ -167,8 +174,8 @@ export function Sidebar() {
       </nav>
       <div
         className={cn(
-          "mt-auto border-t border-[color:var(--color-divider)] p-3",
-          isIconRail && "flex flex-col items-center px-2",
+          "mt-auto flex flex-col gap-2 border-t border-[color:var(--color-divider)] p-[var(--app-sidebar-pad)]",
+          isIconRail && "items-center px-2",
         )}
       >
         {isMdUp && !isLgUp ? (
@@ -176,7 +183,7 @@ export function Sidebar() {
             type="button"
             onClick={toggleSidebarTabletExpanded}
             className={cn(
-              "mb-2 flex min-h-11 items-center rounded-xl text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+              "flex min-h-11 items-center rounded-xl text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
               isIconRail
                 ? "w-11 justify-center"
                 : "w-full justify-start gap-2 px-3",
@@ -197,6 +204,26 @@ export function Sidebar() {
               </span>
             ) : null}
           </button>
+        ) : null}
+        {showNavLabels ? (
+          <div className="flex w-full items-center gap-3 py-2">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-primary)]">
+              {(displayName || userId || "?")
+                .split(/\s+/)
+                .map((w) => w[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase() || "?"}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-medium text-[color:var(--color-text-primary)]">
+                {displayName?.trim() || userId || "User"}
+              </p>
+              <p className="truncate text-[11px] text-[color:var(--color-text-muted)]">
+                {ROLE_TITLE[role] ?? role}
+              </p>
+            </div>
+          </div>
         ) : null}
         <a
           href="mailto:support@hakimo.example"

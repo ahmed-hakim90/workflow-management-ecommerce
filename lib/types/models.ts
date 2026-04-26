@@ -210,12 +210,27 @@ export const defaultTenantAutomation: TenantAutomationSettings = {
 export interface TenantWooCommerceIntegration {
   /** Same string as WooCommerce → Webhooks → Secret (HMAC). */
   webhookSecret?: string;
+  /** Store origin only, e.g. https://shop.example.com (no trailing slash). */
+  storeUrl?: string;
+  /** WooCommerce REST API consumer key (ck_...). */
+  consumerKey?: string;
+  /** WooCommerce REST API consumer secret (cs_...). */
+  consumerSecret?: string;
 }
 
 export interface TenantBostaIntegration {
   apiKey?: string;
   /** Override API base; default Bosta production URL if unset. */
   baseUrl?: string;
+  /** Bosta city _id from city list API (required for real deliveries). */
+  defaultCityId?: string;
+  /** Bosta zone id within city (optional). */
+  defaultZoneId?: string;
+  defaultBuildingNumber?: string;
+  /** First address line when order has no structured address. */
+  defaultAddressLine?: string;
+  /** Package description / notes for Bosta specs. */
+  packageDescription?: string;
 }
 
 export interface TenantIntegrationsDoc {
