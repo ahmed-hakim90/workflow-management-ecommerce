@@ -4,13 +4,16 @@ import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockCreateShipmentForOrder,
   mockListShipmentsForOrder,
+  mockListShipmentsForTenant,
   mockScanAwb,
 } from "@/lib/dev/mock-backend";
 import type { Order, Shipment, ShipmentStatus, ShipmentType } from "@/lib/types/models";
 import { assertTransition } from "@/lib/logic/order-state-machine";
 import { createBostaShipment } from "@/lib/integrations/bosta";
 import { logActivity } from "@/lib/services/activity.service";
+import { applyOrderStageRollupDelta } from "@/lib/services/order-stage-rollup.service";
 import { incrementUserStat } from "@/lib/services/user-stats.service";
+import { recordDeliveryShipmentAnalytics } from "@/lib/services/analytics-daily.service";
 import { getUser } from "@/lib/services/users.service";
 
 async function getOrder(tenantId: string, orderId: string): Promise<Order | null> {
@@ -35,6 +38,18 @@ export async function listShipmentsForOrder(
   return q.docs.map((d) => d.data() as Shipment);
 }
 
+export async function listShipmentsForTenant(
+  tenantId: string,
+): Promise<Shipment[]> {
+  if (isDevMockDataEnabled()) return mockListShipmentsForTenant(tenantId);
+  const db = getDb();
+  const q = await db
+    .collection(COLLECTIONS.shipments)
+    .where("tenantId", "==", tenantId)
+    .get();
+  return q.docs.map((d) => d.data() as Shipment);
+}
+
 export async function createShipmentForOrder(input: {
   tenantId: string;
   orderId: string;
@@ -51,10 +66,13 @@ export async function createShipmentForOrder(input: {
   const type: ShipmentType = input.type ?? "delivery";
 
   const bosta = await createBostaShipment({
+    tenantId: input.tenantId,
     order,
     type,
     shipmentId: id,
   });
+
+  const shipping_fees = bosta.shippingFee ?? order.shipping?.cost ?? 0;
 
   const actor = await getUser(input.tenantId, input.actorUserId);
   const createdByUserName = actor?.name ?? input.actorUserId;
@@ -68,6 +86,7 @@ export async function createShipmentForOrder(input: {
     status: "created",
     provider: bosta.provider,
     externalId: bosta.externalId,
+    shipping_fees,
     createdByUserId: input.actorUserId,
     createdByUserName,
     createdAt: now,
@@ -90,6 +109,13 @@ export async function createShipmentForOrder(input: {
     entityId: id,
     userId: input.actorUserId,
     metadata: { orderId: input.orderId, awb: shipment.awb },
+  });
+
+  await recordDeliveryShipmentAnalytics({
+    tenantId: input.tenantId,
+    shipmentCreatedAt: now,
+    type,
+    shippingCost: shipping_fees,
   });
 
   return shipment;
@@ -139,6 +165,8 @@ export async function scanAwb(input: {
       newOrderStatus = "shipped";
       newShipmentStatus = "shipped";
       shippedAt = now;
+    } else if (order.status === "shipped" && shipment.status === "shipped") {
+      throw new Error("Duplicate scan: order already shipped for this AWB");
     } else {
       throw new Error(
         `Scan not allowed for order status ${order.status} (expected ready_for_warehouse or packed)`,
@@ -154,6 +182,7 @@ export async function scanAwb(input: {
     });
 
     return {
+      prevOrderStatus: order.status,
       order: { ...order, status: newOrderStatus, updatedAt: now },
       shipment: {
         ...shipment,
@@ -163,6 +192,12 @@ export async function scanAwb(input: {
         updatedAt: now,
       },
     };
+  });
+
+  await applyOrderStageRollupDelta({
+    tenantId: input.tenantId,
+    from: result.prevOrderStatus,
+    to: result.order.status,
   });
 
   await logActivity({

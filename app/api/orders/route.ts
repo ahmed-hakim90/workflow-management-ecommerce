@@ -13,7 +13,7 @@ const querySchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "order:read");
     const url = new URL(req.url);
     const q = querySchema.parse({

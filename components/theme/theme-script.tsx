@@ -6,7 +6,7 @@ export function ThemeScript() {
 (function(){
   try {
     var raw = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-    var pref = "dark";
+    var pref = "light";
     if (raw) {
       var parsed = JSON.parse(raw);
       if (parsed && parsed.state && parsed.state.themePreference) {
@@ -19,7 +19,7 @@ export function ThemeScript() {
     }
     document.documentElement.setAttribute("data-theme", resolved);
   } catch (e) {
-    document.documentElement.setAttribute("data-theme", "dark");
+    document.documentElement.setAttribute("data-theme", "light");
   }
 })();`;
   return <script dangerouslySetInnerHTML={{ __html: js }} />;

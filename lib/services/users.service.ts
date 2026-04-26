@@ -5,6 +5,7 @@ import {
   mockListUsers,
   mockCreateUser,
   mockGetUser,
+  mockGetUserByFirebaseUid,
   mockUpdateUser,
 } from "@/lib/dev/mock-backend";
 import type { User, UserRole } from "@/lib/types/models";
@@ -24,6 +25,7 @@ export async function createUser(input: {
   tenantId: string;
   name: string;
   email?: string;
+  firebaseUid?: string;
   role: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -38,6 +40,7 @@ export async function createUser(input: {
     tenantId: input.tenantId,
     name: input.name,
     email: input.email,
+    firebaseUid: input.firebaseUid,
     role: input.role,
     permissions: input.permissions ?? [],
     daily_target: input.daily_target ?? 0,
@@ -66,6 +69,20 @@ export async function getUser(
   const u = snap.data() as User | undefined;
   if (!u || u.tenantId !== tenantId) return null;
   return u;
+}
+
+export async function getUserByFirebaseUid(
+  firebaseUid: string,
+): Promise<User | null> {
+  if (isDevMockDataEnabled()) return mockGetUserByFirebaseUid(firebaseUid);
+  const db = getDb();
+  const q = await db
+    .collection(COLLECTIONS.users)
+    .where("firebaseUid", "==", firebaseUid)
+    .limit(1)
+    .get();
+  if (q.empty) return null;
+  return q.docs[0].data() as User;
 }
 
 export async function updateUser(input: {

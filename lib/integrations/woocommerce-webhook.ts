@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { getServerEnv } from "@/lib/config/env";
 
 /**
  * WooCommerce webhook signatures are base64-encoded HMAC-SHA256 of the raw body.
@@ -8,8 +7,8 @@ import { getServerEnv } from "@/lib/config/env";
 export function verifyWooCommerceSignature(
   rawBody: string,
   signatureHeader: string | null,
+  secret: string,
 ): boolean {
-  const secret = getServerEnv().WOOCOMMERCE_WEBHOOK_SECRET;
   if (!secret) return false;
   if (!signatureHeader) return false;
   const digest = createHmac("sha256", secret).update(rawBody).digest("base64");

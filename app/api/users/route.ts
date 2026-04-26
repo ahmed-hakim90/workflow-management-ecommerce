@@ -38,7 +38,7 @@ const patchSchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:read");
     const users = await listUsers(ctx.tenantId);
     return jsonOk(users);
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
     const json = await req.json();
     const body = createSchema.parse(json);
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
     const json = await req.json();
     const body = patchSchema.parse(json);

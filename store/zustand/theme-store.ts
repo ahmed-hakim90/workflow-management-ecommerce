@@ -23,7 +23,7 @@ export function resolveThemePreference(
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      themePreference: "dark",
+      themePreference: "light",
       setThemePreference: (themePreference) => set({ themePreference }),
     }),
     {

@@ -10,6 +10,8 @@ import {
 import type { Ticket, TicketStatus, TicketType } from "@/lib/types/models";
 import { logActivity } from "@/lib/services/activity.service";
 import { createShipmentForOrder } from "@/lib/services/shipments.service";
+import { getOrder } from "@/lib/services/orders.service";
+import { recordTicketOpenedAnalytics } from "@/lib/services/analytics-daily.service";
 
 export async function listTickets(
   tenantId: string,
@@ -60,6 +62,11 @@ export async function createTicket(input: {
     entityId: id,
     userId: input.actorUserId,
     metadata: { type: input.type, orderId: input.order_id },
+  });
+  const order = await getOrder(input.tenantId, input.order_id);
+  await recordTicketOpenedAnalytics({
+    ticket,
+    orderValue: order?.payment.total_amount ?? 0,
   });
   return ticket;
 }

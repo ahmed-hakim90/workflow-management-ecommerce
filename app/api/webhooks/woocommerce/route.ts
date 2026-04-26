@@ -4,6 +4,7 @@ import { mapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
 import { upsertOrderFromWooCommerce } from "@/lib/services/orders.service";
 import { claimIntegrationEvent } from "@/lib/services/integration-events.service";
 import { getServerEnv } from "@/lib/config/env";
+import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
 
 export const runtime = "nodejs";
 
@@ -11,14 +12,17 @@ export async function POST(req: Request) {
   const rawBody = await req.text();
   const sig = req.headers.get("x-wc-webhook-signature");
   const env = getServerEnv();
-  if (env.WOOCOMMERCE_WEBHOOK_SECRET) {
-    if (!verifyWooCommerceSignature(rawBody, sig)) {
+  const url = new URL(req.url);
+  const tenantId = url.searchParams.get("tenant") ?? "default";
+
+  const tenantSecret = await getTenantWooCommerceWebhookSecret(tenantId);
+  const secretForVerify =
+    tenantSecret ?? env.WOOCOMMERCE_WEBHOOK_SECRET ?? "";
+  if (secretForVerify) {
+    if (!verifyWooCommerceSignature(rawBody, sig, secretForVerify)) {
       return jsonError("Invalid webhook signature", 401);
     }
   }
-
-  const url = new URL(req.url);
-  const tenantId = url.searchParams.get("tenant") ?? "default";
   const deliveryId =
     req.headers.get("x-wc-webhook-delivery-id") ?? `${Date.now()}`;
 

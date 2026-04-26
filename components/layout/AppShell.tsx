@@ -1,5 +1,6 @@
 "use client";
 
+import { FirebaseSessionSync } from "@/components/auth/firebase-session-sync";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Container } from "@/components/layout/container";
@@ -12,11 +13,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-text-primary)]">
+      <FirebaseSessionSync />
       {mobileNavOpen ? (
         <button
           type="button"
           className="fixed inset-0 z-30 bg-[color:var(--color-overlay)] backdrop-blur-[1px] md:hidden"
-          aria-label="إغلاق القائمة"
+          aria-label="Close menu"
           onClick={() => setMobileNavOpen(false)}
         />
       ) : null}

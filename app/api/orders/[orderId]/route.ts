@@ -9,7 +9,7 @@ export async function GET(
   context: { params: Promise<{ orderId: string }> },
 ) {
   try {
-    const ctx = requireTenant(_req);
+    const ctx = await requireTenant(_req);
     assertCan(ctx.role, "order:read");
     const { orderId } = await context.params;
     if (!orderId?.trim()) return jsonError("Missing order id", 400);

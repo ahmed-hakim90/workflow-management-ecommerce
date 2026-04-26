@@ -1,43 +1,49 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import {
-  LayoutDashboard,
-  Package,
-  Columns3,
-  Warehouse,
-  Ticket,
-  Users,
   BarChart3,
+  Package,
+  LayoutGrid,
+  Truck,
+  Ticket,
   Settings,
   PanelLeftClose,
   PanelLeft,
+  HelpCircle,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
+import { firebaseClientSignOut } from "@/lib/firebase/client-sign-out";
+import { useSessionStore } from "@/store/zustand/session-store";
 
 const navItems = [
-  { href: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
-  { href: "/orders", label: "الطلبات", icon: Package },
-  { href: "/orders/kanban", label: "Kanban", icon: Columns3 },
-  { href: "/warehouse", label: "المخزن", icon: Warehouse },
-  { href: "/tickets", label: "التذاكر", icon: Ticket },
-  { href: "/users", label: "المستخدمون", icon: Users },
-  { href: "/analytics", label: "التحليلات", icon: BarChart3 },
-  { href: "/settings", label: "الإعدادات", icon: Settings },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/orders", label: "Orders", icon: Package },
+  { href: "/orders/kanban", label: "Order board", icon: LayoutGrid },
+  { href: "/shipments", label: "Shipments", icon: Truck },
+  { href: "/tickets", label: "Tickets", icon: Ticket },
+  { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 function navActive(href: string, pathname: string) {
-  if (href === "/orders") return pathname === "/orders";
-  if (href === "/orders/kanban") return pathname.startsWith("/orders/kanban");
+  if (href === "/orders") {
+    if (pathname === "/orders/kanban") return false;
+    return pathname === "/orders" || pathname.startsWith("/orders/");
+  }
+  if (href === "/orders/kanban") return pathname === "/orders/kanban";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const signOut = useSessionStore((s) => s.signOut);
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
   const sidebarTabletExpanded = useUiStore((s) => s.sidebarTabletExpanded);
@@ -55,12 +61,19 @@ export function Sidebar() {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
 
+  async function onSignOut() {
+    await firebaseClientSignOut();
+    signOut();
+    setMobileNavOpen(false);
+    router.push("/login");
+  }
+
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-s border-[color:var(--color-border)] bg-[color:var(--color-card)]",
+        "flex h-screen shrink-0 flex-col border-e border-[color:var(--color-divider)] bg-[color:var(--color-bg)]",
         "transition-[width] duration-200 ease-out",
-        isMdUp ? "sticky top-0" : "fixed inset-y-0 z-40 max-w-[88vw]",
+        isMdUp ? "sticky top-0" : "fixed inset-y-0 start-0 z-40 max-w-[88vw]",
         !isMdUp && !mobileNavOpen && "hidden",
         !isMdUp && mobileNavOpen && "flex",
         isMdUp && "flex",
@@ -70,29 +83,53 @@ export function Sidebar() {
           (sidebarTabletExpanded ? "w-[240px]" : "w-[72px]"),
         !isMdUp && mobileNavOpen && "w-[min(272px,88vw)]",
       )}
-      aria-label="التنقل الرئيسي"
+      aria-label="Main navigation"
       id="app-sidebar-nav"
     >
       <div
         className={cn(
-          "flex h-14 shrink-0 items-center border-b border-[color:var(--color-border)]",
-          isIconRail ? "justify-center px-2" : "px-4",
+          "flex shrink-0 flex-col gap-0.5 border-b border-[color:var(--color-divider)] py-3",
+          isIconRail ? "items-center px-2" : "px-4",
         )}
       >
         <Link
-          href="/dashboard"
+          href="/analytics"
           className={cn(
-            "flex min-h-11 min-w-11 items-center justify-center rounded-lg text-sm font-semibold text-[color:var(--color-text-primary)]",
-            !isIconRail && "w-full justify-start gap-2",
+            "flex min-h-11 items-center rounded-xl text-[color:var(--color-text-primary)] transition-shadow",
+            isIconRail ? "justify-center" : "gap-2",
           )}
           onClick={() => setMobileNavOpen(false)}
         >
           {isIconRail ? (
-            <span className="flex size-9 items-center justify-center rounded-md bg-[color:var(--color-primary)] text-xs font-bold text-[color:var(--color-primary-contrast)]">
-              H
+            <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)]">
+              <Image
+                src="/brand-mark.png"
+                alt=""
+                width={36}
+                height={36}
+                className="size-9 object-cover"
+                priority
+              />
             </span>
           ) : (
-            <span className="truncate">Hakimo OMS</span>
+            <>
+              <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)]">
+                <Image
+                  src="/brand-mark.png"
+                  alt=""
+                  width={36}
+                  height={36}
+                  className="size-9 object-cover"
+                  priority
+                />
+              </span>
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate text-sm font-semibold">Hakimo OMS</span>
+                <span className="truncate text-[11px] text-[color:var(--color-text-muted)]">
+                  Order Management
+                </span>
+              </span>
+            </>
           )}
         </Link>
       </div>
@@ -101,7 +138,7 @@ export function Sidebar() {
           "flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain p-3",
           isIconRail && "items-center px-2",
         )}
-        aria-label="القائمة الرئيسية"
+        aria-label="Primary"
       >
         {navItems.map((item) => {
           const active = navActive(item.href, pathname);
@@ -112,11 +149,11 @@ export function Sidebar() {
               href={item.href}
               title={item.label}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200",
                 isIconRail && "w-11 justify-center px-0",
                 active
-                  ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)]"
-                  : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
+                  ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
+                  : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
               )}
               onClick={() => setMobileNavOpen(false)}
             >
@@ -130,7 +167,7 @@ export function Sidebar() {
       </nav>
       <div
         className={cn(
-          "mt-auto border-t border-[color:var(--color-border)] p-3",
+          "mt-auto border-t border-[color:var(--color-divider)] p-3",
           isIconRail && "flex flex-col items-center px-2",
         )}
       >
@@ -139,14 +176,14 @@ export function Sidebar() {
             type="button"
             onClick={toggleSidebarTabletExpanded}
             className={cn(
-              "mb-2 flex min-h-11 items-center rounded-lg text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
+              "mb-2 flex min-h-11 items-center rounded-xl text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
               isIconRail
                 ? "w-11 justify-center"
                 : "w-full justify-start gap-2 px-3",
             )}
             aria-expanded={sidebarTabletExpanded}
             aria-label={
-              sidebarTabletExpanded ? "طي الشريط الجانبي" : "توسيع الشريط الجانبي"
+              sidebarTabletExpanded ? "Collapse sidebar" : "Expand sidebar"
             }
           >
             {sidebarTabletExpanded ? (
@@ -156,26 +193,33 @@ export function Sidebar() {
             )}
             {showNavLabels ? (
               <span className="text-sm font-medium">
-                {sidebarTabletExpanded ? "تصغير" : "توسيع"}
+                {sidebarTabletExpanded ? "Collapse" : "Expand"}
               </span>
             ) : null}
           </button>
         ) : null}
-        <Link
-          href="/admin"
-          title="إدارة متقدمة"
+        <a
+          href="mailto:support@hakimo.example"
           className={cn(
-            "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)]",
             isIconRail && "w-11 justify-center px-0",
-            pathname === "/admin"
-              ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)]"
-              : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
           )}
-          onClick={() => setMobileNavOpen(false)}
+          title="Support"
         >
-          <BarChart3 className="size-4 shrink-0" aria-hidden />
-          <span className={cn(!showNavLabels && "sr-only")}>إدارة متقدمة</span>
-        </Link>
+          <HelpCircle className="size-4 shrink-0" aria-hidden />
+          <span className={cn(!showNavLabels && "sr-only")}>Support</span>
+        </a>
+        <button
+          type="button"
+          onClick={() => void onSignOut()}
+          className={cn(
+            "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+            isIconRail && "w-11 justify-center px-0",
+          )}
+        >
+          <LogOut className="size-4 shrink-0" aria-hidden />
+          <span className={cn(!showNavLabels && "sr-only")}>Sign out</span>
+        </button>
       </div>
     </aside>
   );

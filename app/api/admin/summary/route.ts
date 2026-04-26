@@ -8,7 +8,7 @@ import { getUserStatsForToday } from "@/lib/services/analytics.service";
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:read");
     if (ctx.role !== "admin" && ctx.role !== "moderator") {
       const err = new Error("Forbidden");

@@ -43,7 +43,7 @@ const bodySchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "order:read");
     const settings = await getKanbanSettings(ctx.tenantId);
     return jsonOk(settings);
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
     const json = await req.json();
     const parsed = bodySchema.parse(json);

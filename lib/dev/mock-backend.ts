@@ -23,8 +23,12 @@ import {
   type UserRole,
   type UserStats,
   type TenantAutomationSettings,
+  type TenantIntegrationsDoc,
   type TenantKanbanSettings,
+  type AnalyticsDaily,
+  type Tenant,
 } from "@/lib/types/models";
+import { slugify } from "@/lib/string/slugify";
 
 const DEMO_TENANT = "default";
 
@@ -34,10 +38,14 @@ type MockState = {
   tickets: Ticket[];
   users: User[];
   userStats: Record<string, UserStats>;
+  /** Key: `${tenantId}_${YYYY-MM-DD}` — financial aggregates (mock Firestore `analytics_daily`). */
+  analyticsDaily: Record<string, AnalyticsDaily>;
   tenantAutomation: Record<string, TenantAutomationSettings>;
+  tenantIntegrations: Record<string, TenantIntegrationsDoc>;
   tenantKanban: Record<string, TenantKanbanSettings>;
   activityLogs: ActivityLog[];
   integrationKeys: Set<string>;
+  tenants: Record<string, Tenant>;
 };
 
 let state: MockState | null = null;
@@ -304,19 +312,36 @@ function createSeed(): MockState {
     },
   };
 
-  return {
+  const demoTenant: Tenant = {
+    id: DEMO_TENANT,
+    name: "Demo Company",
+    slug: "demo",
+    ownerUserId: "user-admin-1",
+    staffApiKey: "demo-staff-api-key-mock-only",
+    createdAt: t0,
+    updatedAt: t0,
+  };
+
+  const st: MockState = {
     orders,
     shipments,
     tickets,
     users,
     userStats,
+    analyticsDaily: {},
     tenantAutomation: {
       [DEMO_TENANT]: { ...defaultTenantAutomation },
     },
+    tenantIntegrations: {},
     tenantKanban: {},
     activityLogs: [],
     integrationKeys: new Set(),
+    tenants: { [DEMO_TENANT]: demoTenant },
   };
+  state = st;
+  mockRebuildAnalyticsDay(DEMO_TENANT, "2026-04-20");
+  mockRebuildAnalyticsDay(DEMO_TENANT, new Date().toISOString().slice(0, 10));
+  return st;
 }
 
 function ctx(): MockState {
@@ -408,6 +433,10 @@ export function mockListShipmentsForOrder(
   return ctx().shipments.filter(
     (s) => s.tenantId === tenantId && s.order_id === orderId,
   );
+}
+
+export function mockListShipmentsForTenant(tenantId: string): Shipment[] {
+  return ctx().shipments.filter((s) => s.tenantId === tenantId);
 }
 
 export function mockGetKanbanSettings(
@@ -512,10 +541,11 @@ export async function mockUpsertOrderFromWooCommerce(input: {
   );
   if (existingIdx >= 0) {
     const prev = s.orders[existingIdx];
+    const paymentLocked = prev.status !== "pending_confirmation";
     const next: Order = {
       ...prev,
       customer: input.customer,
-      payment: input.payment,
+      payment: paymentLocked ? prev.payment : input.payment,
       lineItems: input.lineItems ?? prev.lineItems,
       shipping: input.shipping ?? prev.shipping,
       notes: input.notes ?? prev.notes,
@@ -554,6 +584,14 @@ export async function mockUpsertOrderFromWooCommerce(input: {
     entityId: id,
     userId: input.actorUserId,
   });
+  mockAnalyticsDailyIncrement({
+    tenantId: order.tenantId,
+    date: order.createdAt.slice(0, 10),
+    deltas: {
+      orders_count: 1,
+      orders_value: order.payment.total_amount,
+    },
+  });
   return order;
 }
 
@@ -572,6 +610,12 @@ export async function mockConfirmOrder(input: {
     tenantId: input.tenantId,
     userId: input.actorUserId,
     field: "confirmed",
+  });
+  const at = iso();
+  mockAnalyticsDailyIncrement({
+    tenantId: input.tenantId,
+    date: at.slice(0, 10),
+    deltas: { confirmed_orders_count: 1 },
   });
   return order;
 }
@@ -695,6 +739,7 @@ export async function mockCreateShipmentForOrder(input: {
   const type: ShipmentType = input.type ?? "delivery";
   const awb = `MOCK-${id.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
   const byName = actorName(input.tenantId, input.actorUserId);
+  const shipFee = order.shipping?.cost ?? 0;
   const shipment: Shipment = {
     id,
     tenantId: input.tenantId,
@@ -703,6 +748,7 @@ export async function mockCreateShipmentForOrder(input: {
     type,
     status: "created",
     provider: "mock",
+    shipping_fees: shipFee,
     createdByUserId: input.actorUserId,
     createdByUserName: byName,
     createdAt: now,
@@ -725,6 +771,13 @@ export async function mockCreateShipmentForOrder(input: {
     userId: input.actorUserId,
     metadata: { orderId: input.orderId, awb: shipment.awb },
   });
+  if (type === "delivery") {
+    mockAnalyticsDailyIncrement({
+      tenantId: input.tenantId,
+      date: now.slice(0, 10),
+      deltas: { shipments_count: 1, shipping_cost: shipFee },
+    });
+  }
   return shipment;
 }
 
@@ -760,6 +813,8 @@ export async function mockScanAwb(input: {
     newOrderStatus = "shipped";
     newShipmentStatus = "shipped";
     shippedAt = now;
+  } else if (order.status === "shipped" && shipment.status === "shipped") {
+    throw new Error("Duplicate scan: order already shipped for this AWB");
   } else {
     throw new Error(
       `Scan not allowed for order status ${order.status} (expected ready_for_warehouse or packed)`,
@@ -804,10 +859,45 @@ export function mockListUsers(tenantId: string): User[] {
   return ctx().users.filter((u) => u.tenantId === tenantId);
 }
 
+export function mockGetTenant(tenantId: string): Tenant | null {
+  return ctx().tenants[tenantId] ?? null;
+}
+
+export function mockCreateTenant(name: string): Tenant {
+  const s = ctx();
+  const id = crypto.randomUUID();
+  const now = iso();
+  const staffApiKey = `mock-${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`;
+  const tenant: Tenant = {
+    id,
+    name: name.trim(),
+    slug: `${slugify(name)}-${id.slice(0, 8)}`,
+    ownerUserId: "",
+    staffApiKey,
+    createdAt: now,
+    updatedAt: now,
+  };
+  s.tenants[id] = tenant;
+  return tenant;
+}
+
+export function mockSetTenantOwner(tenantId: string, ownerUserId: string) {
+  const s = ctx();
+  const t = s.tenants[tenantId];
+  if (!t) throw new Error("Tenant not found");
+  t.ownerUserId = ownerUserId;
+  t.updatedAt = iso();
+}
+
+export function mockGetUserByFirebaseUid(firebaseUid: string): User | null {
+  return ctx().users.find((u) => u.firebaseUid === firebaseUid) ?? null;
+}
+
 export function mockCreateUser(input: {
   tenantId: string;
   name: string;
   email?: string;
+  firebaseUid?: string;
   role: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -821,6 +911,7 @@ export function mockCreateUser(input: {
     tenantId: input.tenantId,
     name: input.name,
     email: input.email,
+    firebaseUid: input.firebaseUid,
     role: input.role,
     permissions: input.permissions ?? [],
     daily_target: input.daily_target ?? 0,
@@ -921,6 +1012,22 @@ export function mockCreateTicket(input: {
     userId: input.actorUserId,
     metadata: { orderId: input.order_id, type: input.type },
   });
+  const ord = mockGetOrder(input.tenantId, input.order_id);
+  const orderVal = ord?.payment.total_amount ?? 0;
+  const dkey = now.slice(0, 10);
+  if (input.type === "return") {
+    mockAnalyticsDailyIncrement({
+      tenantId: input.tenantId,
+      date: dkey,
+      deltas: { returns_count: 1, returns_value: orderVal },
+    });
+  } else if (input.type === "exchange") {
+    mockAnalyticsDailyIncrement({
+      tenantId: input.tenantId,
+      date: dkey,
+      deltas: { exchanges_count: 1, exchanges_value: 0 },
+    });
+  }
   return ticket;
 }
 
@@ -1011,6 +1118,74 @@ export function mockSetTenantAutomation(
   s.tenantAutomation[tenantId] = automation;
 }
 
+export function mockGetTenantIntegrations(
+  tenantId: string,
+): TenantIntegrationsDoc {
+  const s = ctx();
+  return { ...(s.tenantIntegrations[tenantId] ?? {}) };
+}
+
+export function mockSetTenantWooCommerceWebhookSecret(
+  tenantId: string,
+  secret: string | null,
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const woo = { ...(integrations.woocommerce ?? {}) };
+  if (secret === null || secret.trim() === "") {
+    delete woo.webhookSecret;
+  } else {
+    woo.webhookSecret = secret.trim();
+  }
+  if (Object.keys(woo).length === 0) {
+    delete integrations.woocommerce;
+  } else {
+    integrations.woocommerce = woo;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
+export function mockSetTenantBostaFields(
+  tenantId: string,
+  fields: { apiKey?: string | null; baseUrl?: string | null },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const bosta = { ...(integrations.bosta ?? {}) };
+  if (fields.apiKey !== undefined) {
+    if (fields.apiKey === null || fields.apiKey.trim() === "") {
+      delete bosta.apiKey;
+    } else {
+      bosta.apiKey = fields.apiKey.trim();
+    }
+  }
+  if (fields.baseUrl !== undefined) {
+    if (fields.baseUrl === null || fields.baseUrl.trim() === "") {
+      delete bosta.baseUrl;
+    } else {
+      bosta.baseUrl = fields.baseUrl.trim();
+    }
+  }
+  if (Object.keys(bosta).length === 0) {
+    delete integrations.bosta;
+  } else {
+    integrations.bosta = bosta;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
 export function mockGetUserStatsForToday(
   tenantId: string,
   userId: string,
@@ -1057,6 +1232,139 @@ export function mockIncrementUserStat(input: {
     [input.field]: (prev[input.field] ?? 0) + 1,
     updatedAt: iso(),
   };
+}
+
+function emptyAnalyticsDailyRow(tenantId: string, date: string): AnalyticsDaily {
+  const id = `${tenantId}_${date}`;
+  return {
+    id,
+    tenantId,
+    date,
+    orders_count: 0,
+    orders_value: 0,
+    confirmed_orders_count: 0,
+    shipments_count: 0,
+    shipping_cost: 0,
+    returns_count: 0,
+    returns_value: 0,
+    exchanges_count: 0,
+    exchanges_value: 0,
+    updatedAt: iso(),
+  };
+}
+
+export function mockAnalyticsDailyIncrement(input: {
+  tenantId: string;
+  date: string;
+  deltas: Partial<{
+    orders_count: number;
+    orders_value: number;
+    confirmed_orders_count: number;
+    shipments_count: number;
+    shipping_cost: number;
+    returns_count: number;
+    returns_value: number;
+    exchanges_count: number;
+    exchanges_value: number;
+  }>;
+}) {
+  const s = ctx();
+  const id = `${input.tenantId}_${input.date}`;
+  const base =
+    s.analyticsDaily[id] ?? emptyAnalyticsDailyRow(input.tenantId, input.date);
+  const next: AnalyticsDaily = { ...base };
+  const d = input.deltas;
+  if (d.orders_count) next.orders_count += d.orders_count;
+  if (d.orders_value) next.orders_value += d.orders_value;
+  if (d.confirmed_orders_count) {
+    next.confirmed_orders_count += d.confirmed_orders_count;
+  }
+  if (d.shipments_count) next.shipments_count += d.shipments_count;
+  if (d.shipping_cost) next.shipping_cost += d.shipping_cost;
+  if (d.returns_count) next.returns_count += d.returns_count;
+  if (d.returns_value) next.returns_value += d.returns_value;
+  if (d.exchanges_count) next.exchanges_count += d.exchanges_count;
+  if (d.exchanges_value) next.exchanges_value += d.exchanges_value;
+  next.updatedAt = iso();
+  s.analyticsDaily[id] = next;
+}
+
+export function mockGetAnalyticsDailyDoc(
+  tenantId: string,
+  date: string,
+): AnalyticsDaily {
+  const s = ctx();
+  const id = `${tenantId}_${date}`;
+  return s.analyticsDaily[id] ?? emptyAnalyticsDailyRow(tenantId, date);
+}
+
+/** Recompute one UTC day from in-memory orders/shipments/tickets (reconciliation in mock mode). */
+export function mockRebuildAnalyticsDay(
+  tenantId: string,
+  date: string,
+): AnalyticsDaily {
+  const s = ctx();
+  const orders = s.orders.filter((o) => o.tenantId === tenantId);
+  const orderById = new Map(orders.map((o) => [o.id, o]));
+
+  let orders_count = 0;
+  let orders_value = 0;
+  for (const o of orders) {
+    if (o.createdAt.slice(0, 10) !== date) continue;
+    orders_count += 1;
+    orders_value += o.payment.total_amount;
+  }
+
+  let confirmed_orders_count = 0;
+  for (const a of s.activityLogs) {
+    if (a.tenantId !== tenantId) continue;
+    if (a.action !== "order.status.confirmed") continue;
+    if (a.timestamp.slice(0, 10) !== date) continue;
+    confirmed_orders_count += 1;
+  }
+
+  let shipments_count = 0;
+  let shipping_cost = 0;
+  for (const sh of s.shipments) {
+    if (sh.tenantId !== tenantId) continue;
+    if (sh.type !== "delivery" || sh.createdAt.slice(0, 10) !== date) continue;
+    shipments_count += 1;
+    const o = orderById.get(sh.order_id);
+    shipping_cost += sh.shipping_fees ?? o?.shipping?.cost ?? 0;
+  }
+
+  let returns_count = 0;
+  let returns_value = 0;
+  let exchanges_count = 0;
+  for (const t of s.tickets) {
+    if (t.tenantId !== tenantId) continue;
+    if (t.createdAt.slice(0, 10) !== date) continue;
+    if (t.type === "return") {
+      returns_count += 1;
+      returns_value += orderById.get(t.order_id)?.payment.total_amount ?? 0;
+    } else if (t.type === "exchange") {
+      exchanges_count += 1;
+    }
+  }
+
+  const id = `${tenantId}_${date}`;
+  const row: AnalyticsDaily = {
+    id,
+    tenantId,
+    date,
+    orders_count,
+    orders_value,
+    confirmed_orders_count,
+    shipments_count,
+    shipping_cost,
+    returns_count,
+    returns_value,
+    exchanges_count,
+    exchanges_value: 0,
+    updatedAt: iso(),
+  };
+  s.analyticsDaily[id] = row;
+  return row;
 }
 
 export function mockClaimIntegrationEvent(input: {

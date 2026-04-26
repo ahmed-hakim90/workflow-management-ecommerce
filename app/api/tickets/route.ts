@@ -14,7 +14,7 @@ const createSchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "ticket:read");
     const url = new URL(req.url);
     const status = url.searchParams.get("status") as TicketStatus | null;
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "ticket:create");
     const json = await req.json();
     const body = createSchema.parse(json);

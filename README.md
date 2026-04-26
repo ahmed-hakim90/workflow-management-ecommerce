@@ -16,7 +16,9 @@ Open the app and enter the same `OMS_API_SECRET` in the header bar (dev UX). All
 - `Authorization: Bearer <OMS_API_SECRET>`
 - `X-Tenant-Id`, `X-User-Id`, `X-User-Role`
 
-WooCommerce webhook: `POST /api/webhooks/woocommerce?tenant=<tenantId>` with `WOOCOMMERCE_WEBHOOK_SECRET` for HMAC verification.
+WooCommerce webhook: `POST /api/webhooks/woocommerce?tenant=<tenantId>`. Store the **per-tenant** webhook secret in **Settings → Tenant & integrations → Integrations** (Firestore `tenant_settings.integrations.woocommerce.webhookSecret`). Optional single-tenant/dev fallback: env `WOOCOMMERCE_WEBHOOK_SECRET`.
+
+Bosta: per-tenant **API key** and optional **base URL** in the same Integrations screen (`tenant_settings.integrations.bosta`). Env `BOSTA_API_KEY` / `BOSTA_BASE_URL` are optional fallbacks when the tenant has no key.
 
 ## Structure
 

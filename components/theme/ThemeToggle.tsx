@@ -9,9 +9,9 @@ import {
 } from "@/store/zustand/theme-store";
 
 const labels: Record<ThemePreference, string> = {
-  dark: "المظهر: داكن (اضغط للتبديل)",
-  light: "المظهر: فاتح (اضغط للتبديل)",
-  system: "المظهر: حسب النظام (اضغط للتبديل)",
+  dark: "Theme: dark (click to cycle)",
+  light: "Theme: light (click to cycle)",
+  system: "Theme: system (click to cycle)",
 };
 
 function Icon({ pref }: { pref: ThemePreference }) {
@@ -28,9 +28,9 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       className={cn(
-        "flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-[color:var(--color-text-secondary)] transition-colors md:min-h-0 md:min-w-0",
-        "hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/30",
+        "flex min-h-11 min-w-11 items-center justify-center rounded-xl p-2 text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] transition-all duration-200 md:min-h-0 md:min-w-0",
+        "hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg)]",
         className,
       )}
       aria-label={labels[themePreference]}

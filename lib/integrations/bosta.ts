@@ -1,7 +1,8 @@
 import type { Order, ShipmentType } from "@/lib/types/models";
-import { getServerEnv } from "@/lib/config/env";
+import { resolveBostaCredentials } from "@/lib/services/tenant-settings.service";
 
 export async function createBostaShipment(input: {
+  tenantId: string;
   order: Order;
   type: ShipmentType;
   shipmentId: string;
@@ -9,21 +10,25 @@ export async function createBostaShipment(input: {
   awb: string;
   provider: "bosta" | "mock";
   externalId?: string;
+  /** Quoted / actual fee when available; analytics falls back to `order.shipping.cost`. */
+  shippingFee?: number;
 }> {
-  const env = getServerEnv();
-  if (!env.BOSTA_API_KEY) {
+  const fallbackFee = input.order.shipping?.cost ?? 0;
+  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey) {
     return {
       awb: `MOCK-${input.shipmentId.slice(0, 8).toUpperCase()}`,
       provider: "mock",
+      shippingFee: fallbackFee,
     };
   }
 
   // Placeholder for real Bosta HTTP integration
-  const base = env.BOSTA_BASE_URL ?? "https://app.bosta.co/api/v2";
-  void base;
+  void baseUrl;
   return {
     awb: `BOSTA-${input.shipmentId.slice(0, 8).toUpperCase()}`,
     provider: "bosta",
     externalId: input.shipmentId,
+    shippingFee: fallbackFee,
   };
 }

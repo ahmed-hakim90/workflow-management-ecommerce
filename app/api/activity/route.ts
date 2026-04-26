@@ -21,7 +21,7 @@ function assertEntityAccess(role: Parameters<typeof assertCan>[0], t: ActivityEn
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     const url = new URL(req.url);
     const q = querySchema.parse({
       entityType: url.searchParams.get("entityType") ?? undefined,

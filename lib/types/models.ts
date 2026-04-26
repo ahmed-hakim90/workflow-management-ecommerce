@@ -85,6 +85,8 @@ export interface Shipment {
   status: ShipmentStatus;
   provider: "bosta" | "mock";
   externalId?: string;
+  /** Carrier / quoted fee for this shipment (falls back to order shipping cost in analytics). */
+  shipping_fees?: number;
   /** Staff who created the shipment (Bosta / policy). */
   createdByUserId?: string;
   createdByUserName?: string;
@@ -124,10 +126,46 @@ export interface User {
   tenantId: string;
   name: string;
   email?: string;
+  /** Set when the account signs in with Firebase Auth (onboarding / login). */
+  firebaseUid?: string;
   role: UserRole;
   permissions: string[];
   daily_target: number;
   createdAt: string;
+  updatedAt: string;
+}
+
+/** One company / merchant (Firestore `tenants` document id = `id`). */
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  ownerUserId: string;
+  /** Per-tenant staff API key (send as Bearer + X-User-Id + X-User-Role). */
+  staffApiKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Daily financial aggregates per tenant (UTC date key).
+ * Document id: `${tenantId}_${date}` (date = YYYY-MM-DD).
+ */
+export interface AnalyticsDaily {
+  id: string;
+  tenantId: string;
+  date: string;
+  orders_count: number;
+  orders_value: number;
+  /** Orders moved to confirmed on this day (event-driven); rebuild uses activity logs when available. */
+  confirmed_orders_count: number;
+  shipments_count: number;
+  shipping_cost: number;
+  returns_count: number;
+  returns_value: number;
+  exchanges_count: number;
+  /** Replacement-order delta not modeled yet; kept for spec alignment. */
+  exchanges_value: number;
   updatedAt: string;
 }
 
@@ -167,6 +205,23 @@ export const defaultTenantAutomation: TenantAutomationSettings = {
   auto_create_shipment: false,
   create_shipment_stage: "confirmed",
 };
+
+/** Stored under Firestore `tenant_settings` doc field `integrations` (per tenant). */
+export interface TenantWooCommerceIntegration {
+  /** Same string as WooCommerce → Webhooks → Secret (HMAC). */
+  webhookSecret?: string;
+}
+
+export interface TenantBostaIntegration {
+  apiKey?: string;
+  /** Override API base; default Bosta production URL if unset. */
+  baseUrl?: string;
+}
+
+export interface TenantIntegrationsDoc {
+  woocommerce?: TenantWooCommerceIntegration;
+  bosta?: TenantBostaIntegration;
+}
 
 /** Fields shown on each Kanban card (tenant-configurable). */
 export type KanbanCardField =

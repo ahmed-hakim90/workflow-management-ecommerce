@@ -15,7 +15,7 @@ const patchSchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
     const automation = await getTenantAutomation(ctx.tenantId);
     return jsonOk(automation);
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
     const json = await req.json();
     const body = patchSchema.parse(json);

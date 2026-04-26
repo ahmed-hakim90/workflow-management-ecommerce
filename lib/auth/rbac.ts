@@ -48,6 +48,7 @@ const ROLE_MATRIX: Record<UserRole, string[]> = {
     "ticket:assign",
     "ticket:resolve",
     "shipment:create",
+    "shipment:read",
   ],
 };
 

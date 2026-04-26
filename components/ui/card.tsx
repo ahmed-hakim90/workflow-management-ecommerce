@@ -10,7 +10,7 @@ export function Card({
   return (
     <section
       className={cn(
-        "rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-card)]",
+        "rounded-2xl border-0 bg-[color:var(--color-card)] shadow-[var(--shadow-neo-raised)]",
         className,
       )}
     >
@@ -27,7 +27,7 @@ export function CardHeader({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("border-b border-[color:var(--color-border)] px-4 py-3", className)}>
+    <div className={cn("border-b border-[color:var(--color-divider)] px-4 py-3", className)}>
       {children}
     </div>
   );

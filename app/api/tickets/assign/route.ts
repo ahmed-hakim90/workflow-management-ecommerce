@@ -12,7 +12,7 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const ctx = requireTenant(req);
+    const ctx = await requireTenant(req);
     assertCan(ctx.role, "ticket:assign");
     const json = await req.json();
     const { ticketId, assigneeUserId } = bodySchema.parse(json);

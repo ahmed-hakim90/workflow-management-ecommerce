@@ -35,11 +35,12 @@ export function Input({
       <FieldMeta label={label} />
       <input
         className={cn(
-          "h-9 w-full rounded-lg border bg-[color:var(--color-card)] px-3 text-sm",
+          "h-9 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 text-sm shadow-[var(--shadow-neo-inset)]",
           "text-[color:var(--color-text-primary)] outline-none",
-          "border-[color:var(--color-border)] placeholder:text-[color:var(--color-text-secondary)]/70",
-          "focus:border-[color:var(--color-primary)] focus:ring-2 focus:ring-[color:var(--color-primary)]/20",
-          error && "border-[color:var(--color-error)] focus:ring-[color:var(--color-error)]/20",
+          "placeholder:text-[color:var(--color-text-secondary)]/70",
+          "focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]",
+          error &&
+            "ring-2 ring-[color:var(--color-error)] ring-offset-1 ring-offset-[color:var(--color-bg)]",
           className,
         )}
         {...props}
@@ -62,11 +63,11 @@ export function Select({
       <FieldMeta label={label} />
       <select
         className={cn(
-          "h-9 w-full rounded-lg border bg-[color:var(--color-card)] px-3 text-sm",
+          "h-9 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 text-sm shadow-[var(--shadow-neo-inset)]",
           "text-[color:var(--color-text-primary)] outline-none",
-          "border-[color:var(--color-border)]",
-          "focus:border-[color:var(--color-primary)] focus:ring-2 focus:ring-[color:var(--color-primary)]/20",
-          error && "border-[color:var(--color-error)] focus:ring-[color:var(--color-error)]/20",
+          "focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]",
+          error &&
+            "ring-2 ring-[color:var(--color-error)] ring-offset-1 ring-offset-[color:var(--color-bg)]",
           className,
         )}
         {...props}

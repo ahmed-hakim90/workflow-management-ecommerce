@@ -22,7 +22,12 @@ import {
   listShipmentsForOrder,
 } from "@/lib/services/shipments.service";
 import { logActivity } from "@/lib/services/activity.service";
+import { applyOrderStageRollupDelta } from "@/lib/services/order-stage-rollup.service";
 import { incrementUserStat } from "@/lib/services/user-stats.service";
+import {
+  recordNewOrderAnalytics,
+  recordOrderConfirmedAnalytics,
+} from "@/lib/services/analytics-daily.service";
 
 export async function listOrders(
   tenantId: string,
@@ -91,10 +96,11 @@ export async function upsertOrderFromWooCommerce(input: {
   if (!existing.empty) {
     const ref = existing.docs[0].ref;
     const prev = existing.docs[0].data() as Order;
+    const paymentLocked = prev.status !== "pending_confirmation";
     const next: Order = {
       ...prev,
       customer: input.customer,
-      payment: input.payment,
+      payment: paymentLocked ? prev.payment : input.payment,
       lineItems: input.lineItems ?? prev.lineItems,
       shipping: input.shipping ?? prev.shipping,
       notes: input.notes ?? prev.notes,
@@ -127,6 +133,11 @@ export async function upsertOrderFromWooCommerce(input: {
     updatedAt: now,
   };
   await db.collection(COLLECTIONS.orders).doc(id).set(order);
+  await applyOrderStageRollupDelta({
+    tenantId: input.tenantId,
+    from: null,
+    to: "pending_confirmation",
+  });
   await logActivity({
     tenantId: input.tenantId,
     action: "order.created_webhook",
@@ -134,6 +145,7 @@ export async function upsertOrderFromWooCommerce(input: {
     entityId: id,
     userId: input.actorUserId,
   });
+  await recordNewOrderAnalytics(order);
   return order;
 }
 
@@ -154,6 +166,12 @@ async function transition(
   const prevStatus = order.status;
   const next: Order = { ...order, ...extra, status: to, updatedAt: now };
   await ref.set(next);
+
+  await applyOrderStageRollupDelta({
+    tenantId,
+    from: prevStatus,
+    to,
+  });
 
   await logActivity({
     tenantId,
@@ -197,6 +215,10 @@ export async function confirmOrder(input: {
     userId: input.actorUserId,
     field: "confirmed",
   });
+  await recordOrderConfirmedAnalytics({
+    tenantId: input.tenantId,
+    atIso: order.updatedAt,
+  });
   return order;
 }
 
@@ -231,6 +253,11 @@ export async function invoiceOrder(input: {
       updatedAt: now,
     };
     await ref.set(current);
+    await applyOrderStageRollupDelta({
+      tenantId: input.tenantId,
+      from: "confirmed",
+      to: "invoicing",
+    });
     await logActivity({
       tenantId: input.tenantId,
       action: "order.status.invoicing",

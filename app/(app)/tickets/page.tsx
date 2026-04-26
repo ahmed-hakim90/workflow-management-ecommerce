@@ -1,0 +1,274 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, Plus, Search } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  ResponsiveKanban,
+  type KanbanColumn,
+} from "@/components/responsive/ResponsiveKanban";
+import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
+import { useUiStore } from "@/store/zustand/ui-store";
+import type { Ticket, TicketType } from "@/lib/types/models";
+import { TicketTypeBadge } from "@/lib/ui/order-badges";
+import { cn } from "@/lib/ui/cn";
+
+type ColumnId = "new" | "in_progress" | "pending_response";
+
+const COLUMNS: KanbanColumn<ColumnId>[] = [
+  { id: "new", title: "New" },
+  { id: "in_progress", title: "In progress" },
+  { id: "pending_response", title: "Pending response" },
+];
+
+function columnForTicket(t: Ticket): ColumnId {
+  if (t.status === "in_progress") return "in_progress";
+  if (t.status === "resolved") return "pending_response";
+  if (t.status === "closed") return "pending_response";
+  return "new";
+}
+
+function priorityForTicket(t: Ticket): "high" | "medium" | "low" {
+  if (t.type === "complaint") return "high";
+  if (t.type === "return") return "medium";
+  return "low";
+}
+
+const TYPE_TAG: Record<TicketType, string> = {
+  return: "RETURN",
+  exchange: "EXCHANGE",
+  complaint: "REFUND",
+};
+
+export default function TicketsPage() {
+  const apiSecret = useSessionStore((s) => s.apiSecret);
+  const idToken = useSessionStore((s) => s.idToken);
+  const tenantId = useSessionStore((s) => s.tenantId);
+  const userId = useSessionStore((s) => s.userId);
+  const role = useSessionStore((s) => s.role);
+  const openDrawer = useUiStore((s) => s.openDrawer);
+
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [orderId, setOrderId] = useState("");
+  const [ticketType, setTicketType] = useState<TicketType>("complaint");
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState<"all" | "mine" | "urgent">("all");
+
+  async function refresh() {
+    setErr(null);
+    const res = await fetch(`/api/tickets`, {
+      headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? res.statusText);
+    setTickets(json.data as Ticket[]);
+  }
+
+  useEffect(() => {
+    refresh().catch((e) => setErr(e instanceof Error ? e.message : "Error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiSecret, idToken, tenantId, userId, role]);
+
+  const visible = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return tickets.filter((t) => {
+      if (t.status === "closed") return false;
+      if (chip === "mine" && t.assigned_to !== userId) return false;
+      if (chip === "urgent" && priorityForTicket(t) !== "high") return false;
+      if (!needle) return true;
+      const hay = `${t.id} ${t.order_id} ${t.notes ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [tickets, q, chip, userId]);
+
+  const byColumn = (id: ColumnId) =>
+    visible.filter((t) => columnForTicket(t) === id);
+
+  async function createTicket() {
+    setErr(null);
+    setOk(null);
+    try {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        body: JSON.stringify({
+          order_id: orderId,
+          type: ticketType,
+          notes: "Created from board",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setOrderId("");
+      setOk("Ticket created.");
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  function openCreateDrawer() {
+    openDrawer("Create ticket", () => (
+      <div className="space-y-3 text-sm">
+        <div className="space-y-1">
+          <label className="text-xs text-[color:var(--color-text-muted)]">
+            Order ID
+          </label>
+          <Input
+            value={orderId}
+            onChange={(e) => setOrderId(e.target.value)}
+            placeholder="order-uuid"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-[color:var(--color-text-muted)]">
+            Type
+          </label>
+          <Select
+            value={ticketType}
+            onChange={(e) => setTicketType(e.target.value as TicketType)}
+          >
+            <option value="complaint">Complaint</option>
+            <option value="return">Return</option>
+            <option value="exchange">Exchange</option>
+          </Select>
+        </div>
+        <Button
+          type="button"
+          className="w-full"
+          disabled={!orderId.trim()}
+          onClick={() => void createTicket()}
+        >
+          Submit
+        </Button>
+      </div>
+    ));
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Ticket management"
+        description="Visual support queue — drag-free kanban for triage and ownership."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[160px]">
+              <Search className="pointer-events-none absolute start-2 top-1/2 size-4 -translate-y-1/2 text-[color:var(--color-text-muted)]" />
+              <Input
+                className="h-10 ps-8"
+                placeholder="Search tickets…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-1"
+              aria-label="Sort (coming soon)"
+            >
+              Recently updated
+              <ChevronDown className="size-4 opacity-70" />
+            </Button>
+            <Button type="button" onClick={openCreateDrawer}>
+              <Plus className="size-4" aria-hidden />
+              Create ticket
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["all", "All tickets"],
+            ["mine", "Assigned to me"],
+            ["urgent", "Urgent only"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setChip(id)}
+            className={cn(
+              "rounded-xl px-3 py-2 text-sm font-medium transition-all",
+              chip === id
+                ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
+                : "shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)]",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {err ? (
+        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+          {err}
+        </p>
+      ) : null}
+      {ok ? (
+        <p className="rounded-xl bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
+          {ok}
+        </p>
+      ) : null}
+
+      <ResponsiveKanban<ColumnId>
+        columns={COLUMNS}
+        countNoun="tickets"
+        countFor={(id) => byColumn(id).length}
+        renderColumnCards={(columnId) =>
+          byColumn(columnId).map((t) => {
+            const pr = priorityForTicket(t);
+            return (
+              <Card key={t.id} className="shadow-[var(--shadow-neo-raised-sm)]">
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-mono text-xs text-[color:var(--color-text-muted)]">
+                      #{t.id.slice(0, 8).toUpperCase()}
+                    </span>
+                    <Badge
+                      tone={
+                        pr === "high"
+                          ? "danger"
+                          : pr === "medium"
+                            ? "warning"
+                            : "default"
+                      }
+                    >
+                      {pr.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <p className="text-sm font-semibold leading-snug">
+                    {t.notes?.slice(0, 80) || `Ticket for order ${t.order_id.slice(0, 8)}…`}
+                  </p>
+                  <p className="text-xs text-[color:var(--color-text-muted)] line-clamp-2">
+                    {t.type.replace("_", " ")} · Order{" "}
+                    <span className="font-mono">{t.order_id.slice(0, 8)}</span>
+                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <span className="rounded-md bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                      {TYPE_TAG[t.type]}
+                    </span>
+                    <div className="flex items-center gap-1 text-xs text-[color:var(--color-text-muted)]">
+                      <span className="flex size-7 items-center justify-center rounded-full bg-[color:var(--color-primary)]/15 text-[10px] font-bold text-[color:var(--color-primary)]">
+                        {(t.assigned_to ?? "NA").slice(0, 2).toUpperCase()}
+                      </span>
+                      <TicketTypeBadge type={t.type} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        }
+      />
+    </div>
+  );
+}

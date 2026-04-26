@@ -1,8 +1,10 @@
 import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
+import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { getServerEnv } from "@/lib/config/env";
 
 let app: App | undefined;
+let auth: Auth | undefined;
 
 export function getFirebaseApp(): App {
   if (app) return app;
@@ -38,7 +40,13 @@ export function getDb() {
   return getFirestore(getFirebaseApp());
 }
 
+export function getFirebaseAuth(): Auth {
+  if (!auth) auth = getAuth(getFirebaseApp());
+  return auth;
+}
+
 /** Test hook: reset cached app (vitest) */
 export function __resetFirebaseAppForTests() {
   app = undefined;
+  auth = undefined;
 }
