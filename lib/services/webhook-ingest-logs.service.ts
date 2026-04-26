@@ -10,6 +10,7 @@ import type {
   WebhookIngestOutcome,
   WebhookIngestSource,
 } from "@/lib/types/models";
+import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
 
 const ERR_MAX = 500;
 
@@ -61,7 +62,10 @@ export async function appendWebhookIngestLog(input: {
 
   try {
     const db = getDb();
-    await db.collection(COLLECTIONS.webhookIngestLogs).doc(id).set(row);
+    await db
+      .collection(COLLECTIONS.webhookIngestLogs)
+      .doc(id)
+      .set(omitUndefinedForFirestore(row));
   } catch {
     /* ignore: do not block webhook; caller already awaited */
   }

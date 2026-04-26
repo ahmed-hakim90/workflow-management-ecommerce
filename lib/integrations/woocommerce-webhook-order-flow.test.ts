@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDevMockBackend } from "../dev/mock-backend";
 import { confirmOrder, upsertOrderFromWooCommerce } from "../services/orders.service";
 import { claimIntegrationEvent } from "../services/integration-events.service";
+import { omitUndefinedForFirestore } from "../util/json-snapshot";
 import { mapWooCommerceOrder } from "./woocommerce-map";
 import { resolveWooCommerceDeliveryId } from "./woocommerce-webhook";
 
@@ -132,6 +133,24 @@ describe("WooCommerce webhook order flow", () => {
     expect(order.status).toBe("pending_confirmation");
     expect(order.shipmentIds).toEqual([]);
     expect(order.customer.name).toBe("Sara Ali");
+  });
+
+  it("drops undefined optional fields before writing Firestore documents", () => {
+    const clean = omitUndefinedForFirestore({
+      id: "order-1",
+      notes: undefined,
+      customer: {
+        name: "Sara",
+        email: undefined,
+      },
+    });
+
+    expect(clean).toEqual({
+      id: "order-1",
+      customer: {
+        name: "Sara",
+      },
+    });
   });
 
   it("updates the same WooCommerce order without moving an internal status backward", async () => {

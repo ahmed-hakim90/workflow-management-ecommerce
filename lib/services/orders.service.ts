@@ -33,13 +33,17 @@ import {
   recordNewOrderAnalytics,
   recordOrderConfirmedAnalytics,
 } from "@/lib/services/analytics-daily.service";
-import { cloneJsonForFirestore } from "@/lib/util/json-snapshot";
+import {
+  cloneJsonForFirestore,
+  omitUndefinedForFirestore,
+} from "@/lib/util/json-snapshot";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 
 /** List views should not load large Woo snapshot payloads. */
 function omitWooSnapshotForList(o: Order): Order {
   if (o.woocommerceOrderSnapshot === undefined) return o;
-  const { woocommerceOrderSnapshot: _snap, ...rest } = o;
+  const rest = { ...o };
+  delete rest.woocommerceOrderSnapshot;
   return rest as Order;
 }
 
@@ -127,7 +131,7 @@ export async function upsertOrderFromWooCommerce(input: {
       woocommerceOrderSnapshot: snap,
       updatedAt: now,
     };
-    await ref.set(next);
+    await ref.set(omitUndefinedForFirestore(next));
     await logActivity({
       tenantId: input.tenantId,
       action: "order.upsert_webhook",
@@ -157,7 +161,7 @@ export async function upsertOrderFromWooCommerce(input: {
     createdAt: now,
     updatedAt: now,
   };
-  await db.collection(COLLECTIONS.orders).doc(id).set(order);
+  await db.collection(COLLECTIONS.orders).doc(id).set(omitUndefinedForFirestore(order));
   await applyOrderStageRollupDelta({
     tenantId: input.tenantId,
     from: null,
