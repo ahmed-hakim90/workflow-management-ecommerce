@@ -246,7 +246,7 @@ export default function SettingsPage() {
         if (!cancelled) {
           setWooDiagnostic(d.webhookDiagnostics ?? null);
           try {
-            const ir = await fetch("/api/settings/webhook-ingest-logs?limit=30", {
+            const ir = await fetch("/api/settings/webhook-ingest-logs?limit=50", {
               headers: buildAuthHeaders({
                 apiSecret,
                 idToken,
@@ -1238,12 +1238,13 @@ export default function SettingsPage() {
                         {wooIngestLoadErr}
                       </p>
                     ) : null}
-                    {wooIngestLogs.length > 0 ? (
+                    {wooDiagnostic && !wooIngestLoadErr && !wooErr ? (
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[640px] text-left text-xs [direction:ltr]">
+                        <table className="w-full min-w-[720px] text-left text-xs [direction:ltr]">
                           <thead>
                             <tr className="border-b border-[color:var(--color-divider)] text-[color:var(--color-text-muted)]">
                               <th className="py-1.5 pe-2 font-medium">Time (UTC)</th>
+                              <th className="py-1.5 pe-2 font-medium">saved in OMS</th>
                               <th className="py-1.5 pe-2 font-medium">outcome</th>
                               <th className="py-1.5 pe-2 font-medium">http</th>
                               <th className="py-1.5 pe-2 font-medium">delivery</th>
@@ -1253,65 +1254,111 @@ export default function SettingsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {wooIngestLogs.map((r) => (
-                              <tr
-                                key={r.id}
-                                className="border-b border-[color:var(--color-border)]/60"
-                              >
-                                <td className="whitespace-nowrap py-1.5 pe-2 font-mono text-[10px] text-[color:var(--color-text-secondary)]">
-                                  {r.createdAt}
-                                </td>
-                                <td className="py-1.5 pe-2 font-mono text-[10px]">
-                                  {r.outcome}
-                                </td>
-                                <td className="py-1.5 pe-2 tabular-nums">
-                                  {r.httpStatus}
-                                </td>
+                            {wooIngestLogs.length === 0 ? (
+                              <tr>
                                 <td
-                                  className="max-w-[8rem] truncate py-1.5 pe-2 font-mono text-[10px]"
-                                  title={r.deliveryId}
+                                  colSpan={8}
+                                  className="py-4 text-center text-[color:var(--color-text-muted)]"
                                 >
-                                  {r.deliveryId}
-                                </td>
-                                <td className="py-1.5 pe-2 font-mono text-[10px]">
-                                  {r.wooOrderId ?? "—"}
-                                </td>
-                                <td className="py-1.5 pe-2">
-                                  {r.orderId ? (
-                                    <Link
-                                      className="text-[color:var(--color-primary)] hover:underline"
-                                      href={`/orders/${r.orderId}`}
-                                    >
-                                      {r.orderId.slice(0, 8)}…
-                                    </Link>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </td>
-                                <td
-                                  className="max-w-[10rem] truncate text-[color:var(--color-error)]"
-                                  title={r.errorMessage}
-                                >
-                                  {r.errorMessage ?? "—"}
+                                  No webhook delivery rows yet. Create a test order in WooCommerce
+                                  or use &quot;Delivery&quot; on the webhook. Failed deliveries
+                                  (no order saved) appear here as{" "}
+                                  <code className="rounded bg-[color:var(--color-code-bg)] px-0.5">
+                                    processing_failed_400
+                                  </code>{" "}
+                                  or other non-success outcomes.
                                 </td>
                               </tr>
-                            ))}
+                            ) : (
+                              wooIngestLogs.map((r) => {
+                                const saved =
+                                  r.outcome === "order_upserted_200"
+                                    ? "yes"
+                                    : r.outcome === "duplicate_200"
+                                      ? "replay"
+                                      : "no";
+                                return (
+                                  <tr
+                                    key={r.id}
+                                    className={cn(
+                                      "border-b border-[color:var(--color-border)]/60",
+                                      saved === "no" &&
+                                        "bg-red-500/[0.07] dark:bg-red-500/[0.12]",
+                                    )}
+                                  >
+                                    <td className="whitespace-nowrap py-1.5 pe-2 font-mono text-[10px] text-[color:var(--color-text-secondary)]">
+                                      {r.createdAt}
+                                    </td>
+                                    <td
+                                      className={cn(
+                                        "py-1.5 pe-2 font-medium",
+                                        saved === "yes" &&
+                                          "text-[color:var(--color-success)]",
+                                        saved === "replay" &&
+                                          "text-[color:var(--color-text-muted)]",
+                                        saved === "no" && "text-[color:var(--color-error)]",
+                                      )}
+                                    >
+                                      {saved === "yes"
+                                        ? "Yes"
+                                        : saved === "replay"
+                                          ? "Replay"
+                                          : "No"}
+                                    </td>
+                                    <td className="py-1.5 pe-2 font-mono text-[10px]">
+                                      {r.outcome}
+                                    </td>
+                                    <td className="py-1.5 pe-2 tabular-nums">
+                                      {r.httpStatus}
+                                    </td>
+                                    <td
+                                      className="max-w-[8rem] truncate py-1.5 pe-2 font-mono text-[10px]"
+                                      title={r.deliveryId}
+                                    >
+                                      {r.deliveryId}
+                                    </td>
+                                    <td className="py-1.5 pe-2 font-mono text-[10px]">
+                                      {r.wooOrderId ?? "—"}
+                                    </td>
+                                    <td className="py-1.5 pe-2">
+                                      {r.orderId ? (
+                                        <Link
+                                          className="text-[color:var(--color-primary)] hover:underline"
+                                          href={`/orders/${r.orderId}`}
+                                        >
+                                          {r.orderId.slice(0, 8)}…
+                                        </Link>
+                                      ) : (
+                                        "—"
+                                      )}
+                                    </td>
+                                    <td
+                                      className="max-w-[10rem] truncate text-[color:var(--color-error)]"
+                                      title={r.errorMessage}
+                                    >
+                                      {r.errorMessage ?? "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
                           </tbody>
                         </table>
-                        <p className="mt-2 text-[10px] text-[color:var(--color-text-muted)]">
-                          Rows are written when WordPress calls your server (401/503/400/200
-                          as applicable). A row does not always mean a new OMS order (see{" "}
-                          <code className="rounded bg-[color:var(--color-code-bg)] px-0.5">
-                            outcome
-                          </code>
-                          ).
-                        </p>
+                        {wooIngestLogs.length > 0 ? (
+                          <p className="mt-2 text-[10px] text-[color:var(--color-text-muted)]">
+                            Each WordPress call writes one row. If the order is not saved, look for
+                            a red <span className="font-medium">No</span> under &quot;saved in
+                            OMS&quot; and the error column — typically{" "}
+                            <code className="rounded bg-[color:var(--color-code-bg)] px-0.5">
+                              processing_failed_400
+                            </code>{" "}
+                            or <code className="rounded bg-[color:var(--color-code-bg)] px-0.5">
+                              claim_failed_500
+                            </code>
+                            .
+                          </p>
+                        ) : null}
                       </div>
-                    ) : wooDiagnostic && !wooIngestLoadErr && !wooErr ? (
-                      <p className="text-xs text-[color:var(--color-text-muted)]">
-                        No webhook delivery rows yet. Create a test order in WooCommerce or use
-                        &quot;Delivery&quot; on the webhook.
-                      </p>
                     ) : null}
                   </CardContent>
                 </Card>

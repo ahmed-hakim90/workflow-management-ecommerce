@@ -222,7 +222,8 @@ export type WebhookIngestOutcome =
   | "invalid_json_400"
   | "duplicate_200"
   | "order_upserted_200"
-  | "processing_failed_400";
+  | "processing_failed_400"
+  | "claim_failed_500";
 
 export interface WebhookIngestLog {
   id: string;

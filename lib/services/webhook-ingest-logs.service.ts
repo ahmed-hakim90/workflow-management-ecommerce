@@ -19,9 +19,11 @@ function trimErr(msg: string | undefined): string | undefined {
 }
 
 /**
- * Best-effort audit row for each WooCommerce (etc.) delivery attempt. Does not throw to callers.
+ * Audit row for each WooCommerce (etc.) delivery attempt.
+ * Await in webhook handlers so failures are usually persisted before the HTTP response finishes.
+ * Still wrapped to avoid breaking the response if the log write fails.
  */
-export function appendWebhookIngestLog(input: {
+export async function appendWebhookIngestLog(input: {
   tenantId: string;
   source: WebhookIngestSource;
   deliveryId: string;
@@ -31,7 +33,7 @@ export function appendWebhookIngestLog(input: {
   wooOrderId?: string;
   errorMessage?: string;
   requestBodyBytes: number;
-}): void {
+}): Promise<void> {
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const row: WebhookIngestLog = {
@@ -57,14 +59,12 @@ export function appendWebhookIngestLog(input: {
     return;
   }
 
-  void (async () => {
-    try {
-      const db = getDb();
-      await db.collection(COLLECTIONS.webhookIngestLogs).doc(id).set(row);
-    } catch {
-      /* ignore: webhook response must not depend on log write */
-    }
-  })();
+  try {
+    const db = getDb();
+    await db.collection(COLLECTIONS.webhookIngestLogs).doc(id).set(row);
+  } catch {
+    /* ignore: do not block webhook; caller already awaited */
+  }
 }
 
 export async function listRecentWebhookIngestLogs(

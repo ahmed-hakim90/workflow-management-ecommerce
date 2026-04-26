@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   ).trim();
 
   if (!secretForVerify) {
-    appendWebhookIngestLog({
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   }
 
   if (!verifyWooCommerceSignature(rawBody, sig, secretForVerify)) {
-    appendWebhookIngestLog({
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   try {
     body = JSON.parse(rawBody) as unknown;
   } catch {
-    appendWebhookIngestLog({
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
@@ -76,14 +76,31 @@ export async function POST(req: Request) {
     return jsonError("Invalid JSON", 400);
   }
 
-  const claim = await claimIntegrationEvent({
-    tenantId,
-    source: "woocommerce",
-    deliveryId,
-    payloadSummary: { bytes: rawBody.length },
-  });
+  let claim: "new" | "duplicate";
+  try {
+    claim = await claimIntegrationEvent({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      payloadSummary: { bytes: rawBody.length },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Idempotency claim failed";
+    await appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "claim_failed_500",
+      httpStatus: 500,
+      errorMessage: msg,
+      wooOrderId: wooOrderIdFromBody(body),
+      requestBodyBytes,
+    });
+    return jsonError("Could not process webhook (idempotency); retry from WooCommerce.", 500);
+  }
+
   if (claim === "duplicate") {
-    appendWebhookIngestLog({
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
@@ -117,7 +134,7 @@ export async function POST(req: Request) {
       notes: mapped.notes,
       woocommerceOrderSnapshot: body,
     });
-    appendWebhookIngestLog({
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
@@ -131,18 +148,24 @@ export async function POST(req: Request) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Webhook processing failed";
     const wooId = wooOrderIdFromBody(body);
-    await releaseIntegrationEventClaim({
-      tenantId,
-      source: "woocommerce",
-      deliveryId,
-    });
-    appendWebhookIngestLog({
+    let errDetail = msg;
+    try {
+      await releaseIntegrationEventClaim({
+        tenantId,
+        source: "woocommerce",
+        deliveryId,
+      });
+    } catch (re) {
+      const rmsg = re instanceof Error ? re.message : String(re);
+      errDetail = `${msg} (release: ${rmsg})`;
+    }
+    await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
       deliveryId,
       outcome: "processing_failed_400",
       httpStatus: 400,
-      errorMessage: msg,
+      errorMessage: errDetail,
       wooOrderId: wooId,
       requestBodyBytes,
     });
@@ -153,7 +176,7 @@ export async function POST(req: Request) {
           "HMAC OK and integration idempotency slot was taken, but order mapping/upsert failed. Slot released so WooCommerce can retry. Check payload shape (Order topic) and Firestore below.",
         tenantId,
         deliveryId,
-        error: msg,
+        error: errDetail,
       }),
     );
     return jsonError(msg, 400);
