@@ -8,10 +8,19 @@ import {
   setTenantAutomation,
 } from "@/lib/services/tenant-settings.service";
 
-const patchSchema = z.object({
-  auto_create_shipment: z.boolean(),
-  create_shipment_stage: z.enum(["confirmed", "invoiced"]),
-});
+const patchSchema = z
+  .object({
+    auto_create_shipment: z.boolean().optional(),
+    create_shipment_stage: z.enum(["confirmed", "invoiced"]).optional(),
+    whatsappMessageTemplate: z.string().min(1).max(2000).nullable().optional(),
+  })
+  .refine(
+    (d) =>
+      d.auto_create_shipment !== undefined ||
+      d.create_shipment_stage !== undefined ||
+      d.whatsappMessageTemplate !== undefined,
+    { message: "At least one field is required" },
+  );
 
 export async function GET(req: Request) {
   try {
@@ -31,7 +40,8 @@ export async function PATCH(req: Request) {
     const json = await req.json();
     const body = patchSchema.parse(json);
     await setTenantAutomation(ctx.tenantId, body);
-    return jsonOk(body);
+    const next = await getTenantAutomation(ctx.tenantId);
+    return jsonOk(next);
   } catch (e) {
     return handleRouteError(e);
   }

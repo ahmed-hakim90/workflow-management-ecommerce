@@ -15,7 +15,8 @@ export async function GET(req: Request) {
       (err as Error & { status: number }).status = 403;
       throw err;
     }
-    const stages = await getOrdersPerStage(ctx.tenantId);
+    const perStage = await getOrdersPerStage(ctx.tenantId);
+    const { stageValues, ...stages } = perStage;
     const users = await listUsers(ctx.tenantId);
     const team = await Promise.all(
       users.map(async (u) => {
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
     const bottleneck = Object.entries(stages)
       .filter(([k]) => k !== "warehouse")
       .sort((a, b) => b[1] - a[1])[0]?.[0];
-    return jsonOk({ stages, team, bottleneck });
+    return jsonOk({ stages, stageValues, team, bottleneck });
   } catch (e) {
     return handleRouteError(e);
   }

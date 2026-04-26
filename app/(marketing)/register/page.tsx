@@ -119,7 +119,7 @@ export default function RegisterPage() {
       await loadSessionFromIdToken(idToken, setSession);
       if (json.data?.staffApiKey && typeof window !== "undefined") {
         window.sessionStorage.setItem(
-          "hakimo-staff-api-key-hint",
+          "Store-staff-api-key-hint",
           `Your tenant staff API key (save it): ${json.data.staffApiKey}`,
         );
       }
@@ -137,7 +137,7 @@ export default function RegisterPage() {
     <div className="grid min-h-screen md:grid-cols-2">
       <div className="relative hidden flex-col justify-between bg-gradient-to-br from-[color:var(--color-primary)]/20 via-[color:var(--color-bg)] to-[color:var(--color-bg-subtle)] p-10 shadow-[var(--shadow-neo-inset)] md:flex">
         <Link href="/" className="text-lg font-semibold text-[color:var(--color-text-primary)]">
-          Hakimo OMS
+          Store OMS
         </Link>
         <div className="space-y-4">
           <h1 className="text-3xl font-bold leading-tight">
@@ -150,7 +150,7 @@ export default function RegisterPage() {
           </p>
         </div>
         <p className="text-xs text-[color:var(--color-text-muted)]">
-          © {new Date().getFullYear()} Hakimo OMS
+          © {new Date().getFullYear()} Store OMS
         </p>
       </div>
       <div className="flex flex-col items-center justify-center px-4 py-12">

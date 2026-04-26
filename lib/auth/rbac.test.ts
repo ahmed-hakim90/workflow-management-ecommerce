@@ -10,6 +10,10 @@ describe("rbac", () => {
     expect(can("warehouse", "order:cancel")).toBe(false);
   });
 
+  it("warehouse can revert order", () => {
+    expect(can("warehouse", "order:revert")).toBe(true);
+  });
+
   it("assertCan throws", () => {
     expect(() => assertCan("warehouse", "order:cancel")).toThrow("Forbidden");
   });

@@ -10,6 +10,7 @@ import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store
 
 type AdminSummary = {
   stages: Record<string, number>;
+  stageValues: Record<string, number>;
   team: {
     name: string;
     role: string;
@@ -50,13 +51,18 @@ export default function AdminPage() {
     };
   }, [apiSecret, idToken, tenantId, userId, role]);
 
+  const fmtStageMoney = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
   const barData =
     data?.stages &&
+    data?.stageValues &&
     Object.entries(data.stages)
       .filter(([k]) => k !== "warehouse")
       .map(([name, count]) => ({
         name: name.replaceAll("_", " "),
         count: Number(count) || 0,
+        value: Number(data.stageValues[name] ?? 0) || 0,
       }));
 
   const lineData =
@@ -81,11 +87,16 @@ export default function AdminPage() {
       <div className="grid grid-cols-12 gap-4">
         <Card className="col-span-12 lg:col-span-6">
           <CardHeader>
-            <CardTitle>طلبات حسب المرحلة</CardTitle>
+            <CardTitle>الطلبات والقيمة حسب المرحلة</CardTitle>
           </CardHeader>
           <CardContent>
             {barData && barData.length > 0 ? (
-              <StageBarChart data={barData} />
+              <StageBarChart
+                data={barData}
+                formatValue={fmtStageMoney}
+                valueLabel="قيمة الطلبات"
+                countLabel="عدد الطلبات"
+              />
             ) : (
               <p className="text-sm text-[color:var(--color-text-muted)]">لا بيانات</p>
             )}

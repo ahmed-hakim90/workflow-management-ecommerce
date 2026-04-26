@@ -16,7 +16,7 @@ function getStaffApiLimiter(): Ratelimit | null {
   ratelimit = new Ratelimit({
     redis: new Redis({ url, token }),
     limiter: Ratelimit.slidingWindow(120, "60 s"),
-    prefix: "hakimo:staff-api",
+    prefix: "Store:staff-api",
     analytics: false,
   });
   return ratelimit;

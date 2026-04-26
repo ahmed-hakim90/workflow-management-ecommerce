@@ -12,14 +12,22 @@ import {
 } from "@/lib/dev/mock-backend";
 import {
   defaultTenantAutomation,
+  defaultTenantWarehouse,
   type TenantAutomationSettings,
   type TenantIntegrationsDoc,
+  type TenantWarehouseSettings,
 } from "@/lib/types/models";
 
-export async function getTenantAutomation(
+/** Stored `automation` in Firestore / mock — no legacy `integrations.warehouse` merge. */
+export async function getRawTenantAutomationStored(
   tenantId: string,
 ): Promise<TenantAutomationSettings> {
-  if (isDevMockDataEnabled()) return mockGetTenantAutomationStore(tenantId);
+  if (isDevMockDataEnabled()) {
+    return {
+      ...defaultTenantAutomation,
+      ...mockGetTenantAutomationStore(tenantId),
+    };
+  }
   const db = getDb();
   const snap = await db
     .collection(COLLECTIONS.tenantSettings)
@@ -29,19 +37,79 @@ export async function getTenantAutomation(
   return { ...defaultTenantAutomation, ...(data?.automation ?? {}) };
 }
 
+/**
+ * تضمين مؤقت: إن وُجد قالب قديم في `integrations.warehouse` ولم يُنقل لـ`automation`، نعرضه هنا.
+ */
+export async function getTenantAutomation(
+  tenantId: string,
+): Promise<TenantAutomationSettings> {
+  if (isDevMockDataEnabled()) {
+    const base = await getRawTenantAutomationStored(tenantId);
+    if (!base.whatsappMessageTemplate?.trim()) {
+      const legacy = mockGetTenantIntegrations(
+        tenantId,
+      ).warehouse?.whatsappMessageTemplate?.trim();
+      if (legacy) {
+        return { ...base, whatsappMessageTemplate: legacy };
+      }
+    }
+    return base;
+  }
+  const base = await getRawTenantAutomationStored(tenantId);
+  if (base.whatsappMessageTemplate?.trim()) return base;
+  const int = await getTenantIntegrations(tenantId);
+  const legacy = int.warehouse?.whatsappMessageTemplate?.trim();
+  if (legacy) {
+    return { ...base, whatsappMessageTemplate: legacy };
+  }
+  return base;
+}
+
+type TenantAutomationPatch = Partial<
+  Omit<TenantAutomationSettings, "whatsappMessageTemplate">
+> & {
+  whatsappMessageTemplate?: string | null;
+};
+
+function mergeTenantAutomationPatch(
+  current: TenantAutomationSettings,
+  updates: TenantAutomationPatch,
+): TenantAutomationSettings {
+  const next: Record<string, unknown> = { ...current, ...updates };
+  if ("whatsappMessageTemplate" in updates) {
+    if (
+      updates.whatsappMessageTemplate == null ||
+      (typeof updates.whatsappMessageTemplate === "string" &&
+        !updates.whatsappMessageTemplate.trim())
+    ) {
+      delete next.whatsappMessageTemplate;
+    } else {
+      next.whatsappMessageTemplate = updates.whatsappMessageTemplate.trim();
+    }
+  }
+  return next as unknown as TenantAutomationSettings;
+}
+
 export async function setTenantAutomation(
   tenantId: string,
-  automation: TenantAutomationSettings,
+  updates: TenantAutomationPatch,
 ) {
   if (isDevMockDataEnabled()) {
-    mockSetTenantAutomation(tenantId, automation);
+    const current = await getRawTenantAutomationStored(tenantId);
+    const final = mergeTenantAutomationPatch(current, updates);
+    mockSetTenantAutomation(tenantId, final);
     return;
   }
   const db = getDb();
+  const current = await getRawTenantAutomationStored(tenantId);
+  const final = mergeTenantAutomationPatch(current, updates);
   await db
     .collection(COLLECTIONS.tenantSettings)
     .doc(tenantId)
-    .set({ automation, updatedAt: new Date().toISOString() }, { merge: true });
+    .set(
+      { automation: final, updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
 }
 
 export async function getTenantIntegrations(
@@ -229,6 +297,76 @@ export async function setTenantWooCommerceRestFields(
     delete integrations.woocommerce;
   } else {
     integrations.woocommerce = woo;
+  }
+  await ref.set(
+    {
+      integrations,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+}
+
+export type EffectiveWarehouseSettings = {
+  singleScanFulfills: boolean;
+  scanCooldownMs: number;
+};
+
+export async function getWarehouseSettings(
+  tenantId: string,
+): Promise<EffectiveWarehouseSettings> {
+  const int = await getTenantIntegrations(tenantId);
+  return resolveWarehouseFromDoc(int.warehouse);
+}
+
+function resolveWarehouseFromDoc(
+  w: import("@/lib/types/models").TenantWarehouseSettings | undefined,
+): EffectiveWarehouseSettings {
+  return {
+    singleScanFulfills: w?.singleScanFulfills ?? false,
+    scanCooldownMs: Math.max(
+      0,
+      w?.scanCooldownMs ?? defaultTenantWarehouse.scanCooldownMs,
+    ),
+  };
+}
+
+export async function setTenantWarehouseSettings(
+  tenantId: string,
+  fields: {
+    singleScanFulfills?: boolean;
+    scanCooldownMs?: number | null;
+  },
+) {
+  if (isDevMockDataEnabled()) {
+    const { mockSetTenantWarehouse } = await import("@/lib/dev/mock-backend");
+    mockSetTenantWarehouse(tenantId, fields);
+    return;
+  }
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
+  const snap = await ref.get();
+  const data = snap.data() as
+    | { integrations?: TenantIntegrationsDoc }
+    | undefined;
+  const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
+  const prev: TenantWarehouseSettings = { ...(integrations.warehouse ?? {}) };
+
+  if (fields.singleScanFulfills !== undefined) {
+    if (fields.singleScanFulfills) prev.singleScanFulfills = true;
+    else delete prev.singleScanFulfills;
+  }
+  if (fields.scanCooldownMs !== undefined) {
+    if (fields.scanCooldownMs === null) {
+      delete prev.scanCooldownMs;
+    } else {
+      prev.scanCooldownMs = fields.scanCooldownMs;
+    }
+  }
+  if (Object.keys(prev).length === 0) {
+    delete integrations.warehouse;
+  } else {
+    integrations.warehouse = prev;
   }
   await ref.set(
     {

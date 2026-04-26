@@ -12,7 +12,7 @@ export function middleware(req: NextRequest) {
 
   // Very light rate hint for API (Vercel WAF / Redis recommended for production)
   if (req.nextUrl.pathname.startsWith("/api/")) {
-    res.headers.set("X-Hakimo-API", "1");
+    res.headers.set("X-Store-API", "1");
   }
 
   return res;

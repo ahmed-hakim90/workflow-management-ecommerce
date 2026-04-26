@@ -17,6 +17,7 @@ import {
 import { defaultKanbanSettings } from "@/lib/kanban/column";
 import { cn } from "@/lib/ui/cn";
 import { can } from "@/lib/auth/rbac";
+import { defaultTenantAutomation } from "@/lib/types/models";
 import { UsersManagement } from "@/components/users/users-management";
 
 type AdvTabId =
@@ -88,6 +89,9 @@ export default function SettingsPage() {
   const [shipStage, setShipStage] = useState<"confirmed" | "invoiced">(
     "confirmed",
   );
+  const [whSingleScan, setWhSingleScan] = useState(false);
+  const [whCooldownSec, setWhCooldownSec] = useState(3.5);
+  const [whTemplate, setWhTemplate] = useState("");
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [settingsErr, setSettingsErr] = useState<string | null>(null);
   const [mockDataOn, setMockDataOn] = useState(false);
@@ -503,22 +507,42 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (section !== "advanced" || advTab !== "shipment") return;
+    if (!can(role, "user:manage")) return;
     let cancelled = false;
     (async () => {
       setSettingsErr(null);
       try {
-        const res = await fetch("/api/settings/automation", {
-          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? res.statusText);
+        const h = buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role });
+        const [autoRes, whRes] = await Promise.all([
+          fetch("/api/settings/automation", { headers: h }),
+          fetch("/api/settings/warehouse", { headers: h }),
+        ]);
+        if (!autoRes.ok) {
+          const json = await autoRes.json();
+          throw new Error(json.error ?? autoRes.statusText);
+        }
+        const json = await autoRes.json();
         const d = json.data as {
           auto_create_shipment: boolean;
           create_shipment_stage: "confirmed" | "invoiced";
+          whatsappMessageTemplate?: string;
         };
         if (!cancelled) {
           setAutoShip(d.auto_create_shipment);
           setShipStage(d.create_shipment_stage);
+          setWhTemplate(
+            d.whatsappMessageTemplate?.trim() ||
+              defaultTenantAutomation.whatsappMessageTemplate ||
+              "",
+          );
+        }
+        if (whRes.ok) {
+          const wj = await whRes.json();
+          const w = wj.data as { singleScanFulfills: boolean; scanCooldownMs: number };
+          if (!cancelled) {
+            setWhSingleScan(w.singleScanFulfills);
+            setWhCooldownSec(w.scanCooldownMs / 1000);
+          }
         }
       } catch (e) {
         if (!cancelled)
@@ -593,11 +617,35 @@ export default function SettingsPage() {
         body: JSON.stringify({
           auto_create_shipment: autoShip,
           create_shipment_stage: shipStage,
+          whatsappMessageTemplate: whTemplate.trim() || null,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      setSettingsMsg("Shipment automation saved.");
+      if (json.data?.whatsappMessageTemplate) {
+        setWhTemplate(json.data.whatsappMessageTemplate);
+      }
+      setSettingsMsg("Shipment automation & confirmation WhatsApp saved.");
+    } catch (e) {
+      setSettingsErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function saveWarehouse() {
+    setSettingsMsg(null);
+    setSettingsErr(null);
+    try {
+      const res = await fetch("/api/settings/warehouse", {
+        method: "PATCH",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        body: JSON.stringify({
+          singleScanFulfills: whSingleScan,
+          scanCooldownMs: Math.max(0, Math.round(whCooldownSec * 1000)),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setSettingsMsg("Warehouse scan settings saved.");
     } catch (e) {
       setSettingsErr(e instanceof Error ? e.message : "Save failed");
     }
@@ -761,7 +809,7 @@ export default function SettingsPage() {
                     for this demo session.
                   </p>
                   <Input
-                    label="OMS API secret"
+                    label="Session Bearer key (e.g. tenant staff API key)"
                     type="password"
                     value={apiSecret}
                     onChange={(e) => setSession({ apiSecret: e.target.value })}
@@ -925,7 +973,7 @@ export default function SettingsPage() {
                       Create a REST API key in{" "}
                       <strong>WooCommerce → Settings → Advanced → REST API</strong>{" "}
                       with read/write access. When staff change an order&apos;s
-                      status in Hakimo, we update the matching WooCommerce order
+                      status in Store, we update the matching WooCommerce order
                       (same ID as synced from the webhook).
                     </p>
                     <p className="text-xs">
@@ -1044,7 +1092,7 @@ export default function SettingsPage() {
                     >
                       {staffApiKeyConfigured
                         ? `Key active (ends with …${staffApiKeyLast4 ?? "????"})`
-                        : "No tenant key record (use Firebase sign-in or server OMS secret)."}
+                        : "No tenant key record (use Firebase sign-in or staff API key)."}
                     </span>
                   </p>
                 </CardContent>
@@ -1207,7 +1255,7 @@ export default function SettingsPage() {
                           Package description (optional)
                         </label>
                         <Input
-                          placeholder="e.g. Hakimo order shipment"
+                          placeholder="e.g. Store order shipment"
                           value={bostaPackageDescDraft}
                           onChange={(e) =>
                             setBostaPackageDescDraft(e.target.value)
@@ -1393,12 +1441,15 @@ export default function SettingsPage() {
                 </Card>
               )}
 
-              {advTab === "shipment" && (
+              {advTab === "shipment" && can(role, "user:manage") && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Shipment automation</CardTitle>
+                    <CardTitle>Shipment &amp; confirmation (WhatsApp)</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="text-xs font-medium uppercase text-[color:var(--color-text-secondary)]">
+                      Shipment automation
+                    </div>
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -1421,8 +1472,61 @@ export default function SettingsPage() {
                         <option value="invoiced">After invoiced (warehouse ready)</option>
                       </Select>
                     </div>
-                    <Button type="button" onClick={saveAutomation}>
-                      Save
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                        رسالة واتساب الافتراضية (فريق التأكيد) — {`{name}`}،{" "}
+                        {`{orderId}`}، {`{awb}`}
+                      </span>
+                      <textarea
+                        className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
+                        value={whTemplate}
+                        onChange={(e) => setWhTemplate(e.target.value)}
+                        placeholder="مثال: مرحباً {name} — طلب {orderId}"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <Button type="button" onClick={() => void saveAutomation()}>
+                      حفظ الأتمتة وواتساب التأكيد
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {advTab === "shipment" && can(role, "user:manage") && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Warehouse scan (AWB)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-[color:var(--color-text-secondary)]">
+                      One scan from &quot;ready for warehouse&quot; can either go to
+                      packed only, or mark shipped in one step. In per-step mode, a
+                      short cooldown after packing reduces accidental double scans.
+                    </p>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={whSingleScan}
+                        onChange={(e) => setWhSingleScan(e.target.checked)}
+                      />
+                      One AWB scan fulfills shipment (ready → shipped)
+                    </label>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                        Min seconds before packed → shipped (per-step mode)
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={whCooldownSec}
+                        onChange={(e) =>
+                          setWhCooldownSec(Number(e.target.value) || 0)
+                        }
+                      />
+                    </div>
+                    <Button type="button" onClick={() => void saveWarehouse()}>
+                      حفظ إعدادات المسح
                     </Button>
                   </CardContent>
                 </Card>

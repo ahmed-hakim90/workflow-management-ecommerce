@@ -5,11 +5,16 @@
 import { buildPayment } from "@/lib/logic/payment";
 import { assertTransition } from "@/lib/logic/order-state-machine";
 import {
+  assertWarehouseRevert,
+  assertWarehouseScanTransition,
+} from "@/lib/logic/order-state-machine-warehouse";
+import {
   shouldAutoCreateShipment,
   orderNeedsDeliveryShipment,
 } from "@/lib/logic/automation";
 import {
   defaultTenantAutomation,
+  defaultTenantWarehouse,
   type ActivityEntityType,
   type ActivityLog,
   type Order,
@@ -27,6 +32,7 @@ import {
   type TenantKanbanSettings,
   type AnalyticsDaily,
   type Tenant,
+  type TenantWarehouseSettings,
 } from "@/lib/types/models";
 import { slugify } from "@/lib/string/slugify";
 
@@ -61,7 +67,7 @@ function createSeed(): MockState {
       id: "user-admin-1",
       tenantId: DEMO_TENANT,
       name: "مدير النظام",
-      email: "admin@hakimo.local",
+      email: "admin@Store.local",
       role: "admin",
       permissions: [],
       daily_target: 25,
@@ -72,7 +78,7 @@ function createSeed(): MockState {
       id: "user-confirm-1",
       tenantId: DEMO_TENANT,
       name: "فريق التأكيد",
-      email: "confirm@hakimo.local",
+      email: "confirm@Store.local",
       role: "confirmation",
       permissions: [],
       daily_target: 15,
@@ -83,7 +89,7 @@ function createSeed(): MockState {
       id: "user-warehouse-1",
       tenantId: DEMO_TENANT,
       name: "مخزن القاهرة",
-      email: "wh@hakimo.local",
+      email: "wh@Store.local",
       role: "warehouse",
       permissions: [],
       daily_target: 40,
@@ -347,6 +353,23 @@ function createSeed(): MockState {
 function ctx(): MockState {
   if (!state) state = createSeed();
   return state;
+}
+
+function effectiveWarehouseForMock(tenantId: string) {
+  const w = ctx().tenantIntegrations[tenantId]?.warehouse;
+  return {
+    singleScanFulfills: w?.singleScanFulfills ?? false,
+    scanCooldownMs: Math.max(
+      0,
+      w?.scanCooldownMs ?? defaultTenantWarehouse.scanCooldownMs,
+    ),
+  };
+}
+
+function mockErr400(msg: string) {
+  const e = new Error(msg) as Error & { status: number };
+  e.status = 400;
+  return e;
 }
 
 /** For tests or manual reseed if needed later */
@@ -786,6 +809,9 @@ export async function mockScanAwb(input: {
   awb: string;
   actorUserId: string;
 }): Promise<{ order: Order; shipment: Shipment }> {
+  const wh = effectiveWarehouseForMock(input.tenantId);
+  const mode = wh.singleScanFulfills ? "single_fulfill" : "per_step";
+  const cooldownMs = wh.scanCooldownMs;
   const s = ctx();
   const shipIdx = s.shipments.findIndex(
     (sh) => sh.tenantId === input.tenantId && sh.awb === input.awb,
@@ -798,23 +824,40 @@ export async function mockScanAwb(input: {
   if (order.tenantId !== input.tenantId) throw new Error("Tenant mismatch");
 
   const now = iso();
+  const prevOrderStatus = order.status;
   let newOrderStatus = order.status;
   let newShipmentStatus: ShipmentStatus = shipment.status;
   let packedAt = shipment.packedAt;
   let shippedAt = shipment.shippedAt;
 
-  if (order.status === "ready_for_warehouse") {
-    assertTransition(order.status, "packed");
-    newOrderStatus = "packed";
-    newShipmentStatus = "packed";
-    packedAt = now;
+  if (order.status === "shipped" && shipment.status === "shipped") {
+    throw new Error("Duplicate scan: order already shipped for this AWB");
+  } else if (order.status === "ready_for_warehouse") {
+    if (mode === "single_fulfill") {
+      assertWarehouseScanTransition("ready_for_warehouse", "shipped", "single_fulfill");
+      newOrderStatus = "shipped";
+      newShipmentStatus = "shipped";
+      packedAt = now;
+      shippedAt = now;
+    } else {
+      assertWarehouseScanTransition("ready_for_warehouse", "packed", "per_step");
+      newOrderStatus = "packed";
+      newShipmentStatus = "packed";
+      packedAt = now;
+    }
   } else if (order.status === "packed") {
-    assertTransition(order.status, "shipped");
+    if (cooldownMs > 0 && shipment.packedAt) {
+      const elapsed = Date.now() - new Date(shipment.packedAt).getTime();
+      if (elapsed < cooldownMs) {
+        throw mockErr400(
+          `الانتظار ${Math.ceil((cooldownMs - elapsed) / 1000)} ث قبل تأكيد الشحن.`,
+        );
+      }
+    }
+    assertWarehouseScanTransition("packed", "shipped", mode);
     newOrderStatus = "shipped";
     newShipmentStatus = "shipped";
     shippedAt = now;
-  } else if (order.status === "shipped" && shipment.status === "shipped") {
-    throw new Error("Duplicate scan: order already shipped for this AWB");
   } else {
     throw new Error(
       `Scan not allowed for order status ${order.status} (expected ready_for_warehouse or packed)`,
@@ -841,10 +884,19 @@ export async function mockScanAwb(input: {
     entityType: "shipment",
     entityId: nextShip.id,
     userId: input.actorUserId,
-    metadata: { awb: input.awb, orderStatus: nextOrder.status },
+    metadata: {
+      awb: input.awb,
+      orderStatus: nextOrder.status,
+      scanMode: mode,
+    },
   });
 
-  if (nextOrder.status === "packed") {
+  const shouldIncPacked =
+    nextOrder.status === "packed" ||
+    (wh.singleScanFulfills &&
+      prevOrderStatus === "ready_for_warehouse" &&
+      nextOrder.status === "shipped");
+  if (shouldIncPacked) {
     await mockIncrementUserStat({
       tenantId: input.tenantId,
       userId: input.actorUserId,
@@ -1226,6 +1278,86 @@ export function mockSetTenantBostaFields(
     delete integrations.bosta;
   } else {
     integrations.bosta = bosta;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
+export function mockRevertOrder(input: {
+  tenantId: string;
+  orderId: string;
+  to: "invoicing" | "ready_for_warehouse";
+  reason: string;
+  actorUserId: string;
+}): Order {
+  const s = ctx();
+  const oidx = findOrderIndex(input.orderId);
+  if (oidx < 0) throw new Error("Order not found");
+  const order = s.orders[oidx];
+  if (order.tenantId !== input.tenantId) throw new Error("Order not found");
+  assertWarehouseRevert(order.status, input.to);
+  const from = order.status;
+  const now = iso();
+  const next: Order = { ...order, status: input.to, updatedAt: now };
+  s.orders[oidx] = next;
+  if (from === "packed" && input.to === "ready_for_warehouse") {
+    for (let i = 0; i < s.shipments.length; i++) {
+      const sh = s.shipments[i];
+      if (
+        sh.order_id === input.orderId &&
+        sh.tenantId === input.tenantId &&
+        sh.type === "delivery"
+      ) {
+        s.shipments[i] = {
+          ...sh,
+          status: "created",
+          packedAt: undefined,
+          shippedAt: undefined,
+          updatedAt: now,
+        };
+        break;
+      }
+    }
+  }
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "order.revert",
+    entityType: "order",
+    entityId: input.orderId,
+    userId: input.actorUserId,
+    metadata: {
+      from,
+      to: next.status,
+      reason: input.reason.trim().slice(0, 2000),
+    },
+  });
+  return next;
+}
+
+export function mockSetTenantWarehouse(
+  tenantId: string,
+  fields: { singleScanFulfills?: boolean; scanCooldownMs?: number | null },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const prev: TenantWarehouseSettings = { ...(integrations.warehouse ?? {}) };
+  if (fields.singleScanFulfills !== undefined) {
+    if (fields.singleScanFulfills) prev.singleScanFulfills = true;
+    else delete prev.singleScanFulfills;
+  }
+  if (fields.scanCooldownMs !== undefined) {
+    if (fields.scanCooldownMs === null) delete prev.scanCooldownMs;
+    else prev.scanCooldownMs = fields.scanCooldownMs;
+  }
+  if (Object.keys(prev).length === 0) {
+    delete integrations.warehouse;
+  } else {
+    integrations.warehouse = prev;
   }
   if (Object.keys(integrations).length === 0) {
     delete s.tenantIntegrations[tenantId];

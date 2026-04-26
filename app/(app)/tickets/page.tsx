@@ -74,6 +74,10 @@ export default function TicketsPage() {
 
   async function refresh() {
     setErr(null);
+    if (!idToken?.trim() && !apiSecret?.trim()) {
+      setErr("Not signed in — add a staff API key or use Firebase sign-in from /login.");
+      return;
+    }
     const res = await fetch(`/api/tickets`, {
       headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
     });

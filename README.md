@@ -1,4 +1,4 @@
-# Hakimo OMS (workflow-management-ecommerce)
+# Store OMS (workflow-management-ecommerce)
 
 Production-oriented Order Management System: Next.js App Router, Firestore, Zustand, WooCommerce webhooks and REST status sync, Bosta shipment creation (official SDK when API key and address defaults are set), warehouse AWB scanning, ticketing, KPI dashboards.
 
@@ -6,15 +6,12 @@ Production-oriented Order Management System: Next.js App Router, Firestore, Zust
 
 ```bash
 cp .env.example .env.local
-# Set FIREBASE_SERVICE_ACCOUNT_JSON (single-line JSON string) and OMS_API_SECRET
+# Set FIREBASE_SERVICE_ACCOUNT_JSON (single-line JSON string) and NEXT_PUBLIC_FIREBASE_* (web app)
 npm install
 npm run dev
 ```
 
-Open the app and enter the same `OMS_API_SECRET` in the header bar (dev UX). All staff API calls require:
-
-- `Authorization: Bearer <OMS_API_SECRET>`
-- `X-Tenant-Id`, `X-User-Id`, `X-User-Role`
+**Staff (browser) auth:** use Firebase sign-in, or a **per-tenant** `staffApiKey` in `Authorization: Bearer` with `X-Tenant-Id`, `X-User-Id`, `X-User-Role` (see `lib/auth/context.ts`). The Settings → API screen stores the session’s Bearer key locally for demos and integrations that cannot use an ID token.
 
 WooCommerce webhook: `POST /api/webhooks/woocommerce?tenant=<tenantId>`. Store the **per-tenant** webhook secret in **Settings → Integrations** (`tenant_settings.integrations.woocommerce.webhookSecret`). Optional single-tenant/dev fallback: env `WOOCOMMERCE_WEBHOOK_SECRET`.
 
@@ -24,7 +21,7 @@ Bosta: per-tenant **API key**, optional **API host** (`https://app.bosta.co` or 
 
 **Rate limiting:** Optional Upstash Redis (`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) enables per-IP limits on routes that use `requireStaffContext` (`lib/http/api-rate-limit.ts`). Webhooks are unaffected.
 
-**Staff auth:** Default (`STAFF_AUTH_MODE` unset or `legacy`) allows Firebase ID tokens, shared `OMS_API_SECRET`, or tenant `staffApiKey` with `X-User-Id` / `X-User-Role`. Set `STAFF_AUTH_MODE=firebase` with `FIREBASE_SERVICE_ACCOUNT_JSON` to allow **only** Firebase ID tokens for those routes.
+**Staff auth:** Default (`STAFF_AUTH_MODE` unset or `legacy`) allows Firebase ID tokens, or the tenant’s `staffApiKey` in `Authorization` with `X-User-Id` / `X-User-Role`. Set `STAFF_AUTH_MODE=firebase` with `FIREBASE_SERVICE_ACCOUNT_JSON` to allow **only** Firebase ID tokens on `requireStaffContext` routes.
 
 ## Structure
 

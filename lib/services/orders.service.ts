@@ -10,8 +10,10 @@ import {
   mockInvoiceOrder,
   mockCancelOrder,
   mockAssignOrder,
+  mockRevertOrder,
 } from "@/lib/dev/mock-backend";
 import { assertTransition } from "@/lib/logic/order-state-machine";
+import { assertWarehouseRevert } from "@/lib/logic/order-state-machine-warehouse";
 import {
   shouldAutoCreateShipment,
   orderNeedsDeliveryShipment,
@@ -22,7 +24,10 @@ import {
   listShipmentsForOrder,
 } from "@/lib/services/shipments.service";
 import { logActivity } from "@/lib/services/activity.service";
-import { applyOrderStageRollupDelta } from "@/lib/services/order-stage-rollup.service";
+import {
+  applyOrderStageRollupDelta,
+  orderValueForStageRollup,
+} from "@/lib/services/order-stage-rollup.service";
 import { incrementUserStat } from "@/lib/services/user-stats.service";
 import {
   recordNewOrderAnalytics,
@@ -138,6 +143,7 @@ export async function upsertOrderFromWooCommerce(input: {
     tenantId: input.tenantId,
     from: null,
     to: "pending_confirmation",
+    orderValue: orderValueForStageRollup(order),
   });
   await logActivity({
     tenantId: input.tenantId,
@@ -172,6 +178,7 @@ async function transition(
     tenantId,
     from: prevStatus,
     to,
+    orderValue: orderValueForStageRollup(order),
   });
 
   await logActivity({
@@ -264,6 +271,7 @@ export async function invoiceOrder(input: {
       tenantId: input.tenantId,
       from: "confirmed",
       to: "invoicing",
+      orderValue: orderValueForStageRollup(current),
     });
     await logActivity({
       tenantId: input.tenantId,
@@ -358,4 +366,91 @@ export async function assignOrder(input: {
     metadata: { assigneeUserId: input.assigneeUserId },
   });
   return next;
+}
+
+/**
+ * Return order one stage back (warehouse flow). `to` is validated from current status.
+ */
+export async function revertOrderStage(input: {
+  tenantId: string;
+  orderId: string;
+  to: "invoicing" | "ready_for_warehouse";
+  reason: string;
+  actorUserId: string;
+}): Promise<Order> {
+  const reason = input.reason.trim();
+  if (!reason) {
+    const e = new Error("السبب مطلوب") as Error & { status: number };
+    e.status = 400;
+    throw e;
+  }
+  if (isDevMockDataEnabled()) {
+    return mockRevertOrder({
+      ...input,
+      to: input.to,
+    });
+  }
+
+  const db = getDb();
+  const oref = db.collection(COLLECTIONS.orders).doc(input.orderId);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(oref);
+    const order = snap.data() as Order | undefined;
+    if (!order || order.tenantId !== input.tenantId) {
+      throw new Error("Order not found");
+    }
+    assertWarehouseRevert(order.status, input.to);
+    const from = order.status;
+    const now = new Date().toISOString();
+    const next: Order = { ...order, status: input.to, updatedAt: now };
+    tx.update(oref, { status: next.status, updatedAt: now });
+
+    if (from === "packed" && input.to === "ready_for_warehouse") {
+      for (const sid of order.shipmentIds ?? []) {
+        const sref = db.collection(COLLECTIONS.shipments).doc(sid);
+        const sSnap = await tx.get(sref);
+        if (!sSnap.exists) continue;
+        const sh = sSnap.data() as Shipment;
+        if (sh.tenantId !== input.tenantId || sh.type !== "delivery")
+          continue;
+        tx.update(sref, {
+          status: "created",
+          packedAt: null,
+          shippedAt: null,
+          updatedAt: now,
+        } as unknown as { status: string; packedAt: null; shippedAt: null; updatedAt: string });
+        break;
+      }
+    }
+    return { from, next };
+  });
+
+  await applyOrderStageRollupDelta({
+    tenantId: input.tenantId,
+    from: result.from,
+    to: result.next.status,
+    orderValue: orderValueForStageRollup(result.next),
+  });
+
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "order.revert",
+    entityType: "order",
+    entityId: input.orderId,
+    userId: input.actorUserId,
+    metadata: {
+      from: result.from,
+      to: result.next.status,
+      reason: reason.slice(0, 2000),
+    },
+  });
+
+  enqueueSyncOrderStatusToWooCommerce({
+    tenantId: input.tenantId,
+    order: result.next,
+    actorUserId: input.actorUserId,
+  });
+
+  return result.next;
 }

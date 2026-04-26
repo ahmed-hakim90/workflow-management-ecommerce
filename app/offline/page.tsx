@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Offline · Hakimo OMS",
+  title: "Offline · Store OMS",
   description: "You are offline",
 };
 

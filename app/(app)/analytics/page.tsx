@@ -44,6 +44,7 @@ const OrdersVsReturnsBarChart = dynamic(
 
 type AdminSummary = {
   stages: Record<string, number>;
+  stageValues: Record<string, number>;
   team: {
     userId: string;
     name: string;
@@ -198,11 +199,13 @@ export default function AnalyticsPage() {
 
   const barData =
     summary?.stages &&
+    summary?.stageValues &&
     Object.entries(summary.stages)
       .filter(([k]) => k !== "warehouse")
       .map(([name, count]) => ({
         name: name.replaceAll("_", " "),
         count: Number(count) || 0,
+        value: Number(summary.stageValues[name] ?? 0) || 0,
       }));
 
   const lineData =
@@ -252,6 +255,9 @@ export default function AnalyticsPage() {
       ? t.shipping_cost / financial.series.length
       : 0;
 
+  const fmtMoney = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
   async function onRebuildDay() {
     setRebuildBusy(true);
     setFinancialErr(null);
@@ -273,9 +279,6 @@ export default function AnalyticsPage() {
       setRebuildBusy(false);
     }
   }
-
-  const fmtMoney = (n: number) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
   return (
     <div className="space-y-6 pb-20">
@@ -574,11 +577,15 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <Card className="lg:col-span-6">
             <CardHeader>
-              <CardTitle>Stage distribution</CardTitle>
+              <CardTitle>Stage distribution (orders & value)</CardTitle>
             </CardHeader>
             <CardContent>
               {barData && barData.length > 0 ? (
-                <StageBarChart data={barData} />
+                <StageBarChart
+                  data={barData}
+                  formatValue={fmtMoney}
+                  valueLabel="Order value"
+                />
               ) : (
                 <p className="text-sm text-[color:var(--color-text-muted)]">
                   No data

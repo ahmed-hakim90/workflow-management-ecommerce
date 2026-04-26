@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Hakimo OMS",
-    short_name: "Hakimo OMS",
+    name: "Store OMS",
+    short_name: "Store OMS",
     description: "Order management for high-volume eCommerce",
     start_url: "/",
     scope: "/",

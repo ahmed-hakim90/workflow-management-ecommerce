@@ -5,7 +5,8 @@ export type OrderAction =
   | "order:confirm"
   | "order:invoice"
   | "order:cancel"
-  | "order:assign";
+  | "order:assign"
+  | "order:revert";
 
 export type ShipmentAction =
   | "shipment:create"
@@ -28,6 +29,7 @@ const ROLE_MATRIX: Record<UserRole, string[]> = {
     "order:invoice",
     "order:cancel",
     "order:assign",
+    "order:revert",
     "shipment:create",
     "shipment:scan",
     "shipment:read",
@@ -40,7 +42,12 @@ const ROLE_MATRIX: Record<UserRole, string[]> = {
   ],
   confirmation: ["order:read", "order:confirm", "order:assign"],
   invoicing: ["order:read", "order:invoice", "order:assign"],
-  warehouse: ["order:read", "shipment:read", "shipment:scan"],
+  warehouse: [
+    "order:read",
+    "order:revert",
+    "shipment:read",
+    "shipment:scan",
+  ],
   support: [
     "order:read",
     "ticket:create",

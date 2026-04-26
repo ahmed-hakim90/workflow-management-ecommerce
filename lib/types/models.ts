@@ -1,4 +1,4 @@
-/** Order lifecycle per Hakimo OMS spec */
+/** Order lifecycle per Store OMS spec */
 export type OrderStatus =
   | "pending_confirmation"
   | "confirmed"
@@ -199,11 +199,17 @@ export type AutomationShipmentStage = "confirmed" | "invoiced";
 export interface TenantAutomationSettings {
   auto_create_shipment: boolean;
   create_shipment_stage: AutomationShipmentStage;
+  /**
+   * رسالة واتساب الافتراضية لفريق التأكيد عند التواصل مع العميل.
+   * Placeholders: `{name}`, `{orderId}`, `{awb}`.
+   */
+  whatsappMessageTemplate?: string;
 }
 
 export const defaultTenantAutomation: TenantAutomationSettings = {
   auto_create_shipment: false,
   create_shipment_stage: "confirmed",
+  whatsappMessageTemplate: "مرحباً {name} — متابعة طلبك رقم {orderId}",
 };
 
 /** Stored under Firestore `tenant_settings` doc field `integrations` (per tenant). */
@@ -233,9 +239,29 @@ export interface TenantBostaIntegration {
   packageDescription?: string;
 }
 
+export interface TenantWarehouseSettings {
+  /** true = one AWB scan from `ready_for_warehouse` → `shipped` (per tenant). */
+  singleScanFulfills?: boolean;
+  /** Min ms before `packed` → `shipped` scan; default 3500. */
+  scanCooldownMs?: number;
+  /**
+   * @deprecated Prefer `automation.whatsappMessageTemplate` — kept for migration reads.
+   */
+  whatsappMessageTemplate?: string;
+}
+
+export const defaultTenantWarehouse: Required<
+  Pick<TenantWarehouseSettings, "singleScanFulfills" | "scanCooldownMs">
+> = {
+  singleScanFulfills: false,
+  scanCooldownMs: 3500,
+};
+
 export interface TenantIntegrationsDoc {
   woocommerce?: TenantWooCommerceIntegration;
   bosta?: TenantBostaIntegration;
+  /** سلوك المسح في المخزن (بدون واتساب). */
+  warehouse?: TenantWarehouseSettings;
 }
 
 /** Fields shown on each Kanban card (tenant-configurable). */

@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 import type { UserRole } from "@/lib/types/models";
 
 export interface SessionState {
-  /** Legacy: shared OMS secret or per-tenant staff key from onboarding. */
+  /** Per-tenant staff key from onboarding, or a demo Bearer (used when `idToken` is empty). */
   apiSecret: string;
   /** Firebase ID token (preferred when using Firebase Auth). */
   idToken: string;
@@ -55,7 +55,7 @@ export const useSessionStore = create<SessionState>()(
           role: "admin",
         }),
     }),
-    { name: "hakimo-oms-session" },
+    { name: "Store-oms-session" },
   ),
 );
 

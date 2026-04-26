@@ -9,12 +9,9 @@ export interface RequestContext {
   tenantId: string;
   userId: string;
   role: UserRole;
-  /** True when verified via OMS_API_SECRET, Firebase ID token, or tenant staffApiKey */
+  /** True when verified via Firebase ID token or tenant `staffApiKey` */
   authenticated: boolean;
 }
-
-const DEFAULT_TENANT =
-  process.env.NEXT_PUBLIC_DEFAULT_TENANT_ID ?? "default";
 
 function getBearerToken(req: Request): string | null {
   const auth = req.headers.get("authorization");
@@ -28,8 +25,7 @@ function looksLikeJwt(token: string): boolean {
 /**
  * MVP staff auth (async):
  * 1) Firebase ID token → Firestore user by `firebaseUid`
- * 2) Bearer OMS_API_SECRET + X-Tenant-Id + X-User-Id + X-User-Role
- * 3) Bearer tenant `staffApiKey` + matching X-Tenant-Id + user headers
+ * 2) Bearer tenant `staffApiKey` + matching X-Tenant-Id + X-User-Id + X-User-Role
  *
  * Webhook routes should NOT use this helper.
  */
@@ -37,7 +33,6 @@ export async function requireStaffContext(req: Request): Promise<RequestContext>
   await assertStaffApiRateLimit(req);
 
   const env = getServerEnv();
-  const secret = env.OMS_API_SECRET;
   const token = getBearerToken(req);
   if (!token) throw new AuthError("Unauthorized", 401);
 
@@ -73,16 +68,6 @@ export async function requireStaffContext(req: Request): Promise<RequestContext>
         throw new AuthError("Invalid or expired token", 401);
       }
     }
-  }
-
-  if (secret && token === secret) {
-    const tenantId = req.headers.get("x-tenant-id")?.trim() ?? DEFAULT_TENANT;
-    const userId = req.headers.get("x-user-id");
-    const role = req.headers.get("x-user-role") as UserRole | null;
-    if (!userId || !role) {
-      throw new AuthError("Missing X-User-Id or X-User-Role", 400);
-    }
-    return { tenantId, userId, role, authenticated: true };
   }
 
   const tenantHeader = req.headers.get("x-tenant-id")?.trim();

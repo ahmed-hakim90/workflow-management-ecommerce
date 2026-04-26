@@ -23,3 +23,10 @@ export function emptyDashboardStages(): Record<DashboardOrderStageKey, number> {
     DASHBOARD_ORDER_STAGE_KEYS.map((k) => [k, 0]),
   ) as Record<DashboardOrderStageKey, number>;
 }
+
+/** Same shape as `emptyDashboardStages` for monetary pipeline totals. */
+export function emptyDashboardStageValues(): Record<DashboardOrderStageKey, number> {
+  return Object.fromEntries(
+    DASHBOARD_ORDER_STAGE_KEYS.map((k) => [k, 0]),
+  ) as Record<DashboardOrderStageKey, number>;
+}

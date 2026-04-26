@@ -14,20 +14,49 @@ import {
   PanelLeft,
   HelpCircle,
   LogOut,
+  Warehouse,
+  Users,
+  Shield,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
 import { firebaseClientSignOut } from "@/lib/firebase/client-sign-out";
 import { useSessionStore } from "@/store/zustand/session-store";
+import { can } from "@/lib/auth/rbac";
+import type { UserRole } from "@/lib/types/models";
 
-const navItems = [
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/orders", label: "Orders", icon: Package },
-  { href: "/shipments", label: "Shipments", icon: Truck },
-  { href: "/tickets", label: "Tickets", icon: Ticket },
-  { href: "/settings", label: "Settings", icon: Settings },
-] as const;
+const navItems: {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  show: (role: UserRole) => boolean;
+}[] = [
+  { href: "/analytics", label: "Analytics", icon: BarChart3, show: () => true },
+  { href: "/orders", label: "Orders", icon: Package, show: () => true },
+  { href: "/shipments", label: "Shipments", icon: Truck, show: () => true },
+  { href: "/tickets", label: "Tickets", icon: Ticket, show: () => true },
+  {
+    href: "/warehouse",
+    label: "Warehouse",
+    icon: Warehouse,
+    show: (r) => can(r, "shipment:scan"),
+  },
+  {
+    href: "/admin",
+    label: "Admin",
+    icon: Shield,
+    show: (r) => r === "admin" || r === "moderator",
+  },
+  {
+    href: "/users",
+    label: "Users",
+    icon: Users,
+    show: (r) => can(r, "user:read"),
+  },
+  { href: "/settings", label: "Settings", icon: Settings, show: () => true },
+];
 
 function navActive(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -62,6 +91,8 @@ export function Sidebar() {
   const showNavLabels = isLgUp || sidebarTabletExpanded;
   const isIconRail = isMdUp && !isLgUp && !sidebarTabletExpanded;
 
+  const primaryNav = navItems.filter((item) => item.show(role));
+
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
@@ -93,7 +124,7 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "flex shrink-0 flex-col gap-1 border-b border-[color:var(--color-divider)] py-4",
+          "flex shrink-0 flex-col gap-1 border-b border-[color:var(--color-divider)] py-4 pb-5",
           isIconRail ? "items-center px-2" : "px-[var(--app-sidebar-pad)]",
         )}
       >
@@ -130,7 +161,7 @@ export function Sidebar() {
               </span>
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate text-sm font-semibold text-[color:var(--color-primary)]">
-                  Hakimo OMS
+                  Store OMS
                 </span>
                 <span className="truncate text-[11px] text-[color:var(--color-text-muted)]">
                   Order Management
@@ -142,12 +173,12 @@ export function Sidebar() {
       </div>
       <nav
         className={cn(
-          "flex flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain p-[var(--app-sidebar-pad)]",
-          isIconRail && "items-center px-2",
+          "flex flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain px-[var(--app-sidebar-pad)] pb-5 pt-1",
+          isIconRail && "items-center gap-3 px-2",
         )}
         aria-label="Primary"
       >
-        {navItems.map((item) => {
+        {primaryNav.map((item) => {
           const active = navActive(item.href, pathname);
           const Icon = item.icon;
           return (
@@ -156,7 +187,7 @@ export function Sidebar() {
               href={item.href}
               title={item.label}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-200",
                 isIconRail && "w-11 justify-center px-0",
                 active
                   ? "border-s-[3px] border-[color:var(--color-primary)] bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)] shadow-none"
@@ -174,8 +205,8 @@ export function Sidebar() {
       </nav>
       <div
         className={cn(
-          "mt-auto flex flex-col gap-2 border-t border-[color:var(--color-divider)] p-[var(--app-sidebar-pad)]",
-          isIconRail && "items-center px-2",
+          "mt-auto flex flex-col gap-3.5 border-t border-[color:var(--color-divider)] p-[var(--app-sidebar-pad)] pb-5 pt-4",
+          isIconRail && "items-center gap-3.5 px-2",
         )}
       >
         {isMdUp && !isLgUp ? (
@@ -183,10 +214,10 @@ export function Sidebar() {
             type="button"
             onClick={toggleSidebarTabletExpanded}
             className={cn(
-              "flex min-h-11 items-center rounded-xl text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+              "flex min-h-12 items-center rounded-xl text-[color:var(--color-text-secondary)] hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
               isIconRail
                 ? "w-11 justify-center"
-                : "w-full justify-start gap-2 px-3",
+                : "w-full justify-start gap-2.5 px-3.5",
             )}
             aria-expanded={sidebarTabletExpanded}
             aria-label={
@@ -206,7 +237,7 @@ export function Sidebar() {
           </button>
         ) : null}
         {showNavLabels ? (
-          <div className="flex w-full items-center gap-3 py-2">
+          <div className="flex w-full items-center gap-3 rounded-xl bg-[color:var(--color-bg-subtle)]/70 px-2.5 py-2.5">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-primary)]">
               {(displayName || userId || "?")
                 .split(/\s+/)
@@ -226,9 +257,9 @@ export function Sidebar() {
           </div>
         ) : null}
         <a
-          href="mailto:support@hakimo.example"
+          href="mailto:support@Store.example"
           className={cn(
-            "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)]",
+            "flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)]",
             isIconRail && "w-11 justify-center px-0",
           )}
           title="Support"
@@ -240,7 +271,7 @@ export function Sidebar() {
           type="button"
           onClick={() => void onSignOut()}
           className={cn(
-            "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+            "flex min-h-12 w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)] active:shadow-[var(--shadow-neo-pressed-sm)]",
             isIconRail && "w-11 justify-center px-0",
           )}
         >

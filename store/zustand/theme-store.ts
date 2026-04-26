@@ -10,7 +10,7 @@ export type ThemeState = {
   setThemePreference: (t: ThemePreference) => void;
 };
 
-export const THEME_STORAGE_KEY = "hakimo-theme";
+export const THEME_STORAGE_KEY = "Store-theme";
 
 export function resolveThemePreference(
   pref: ThemePreference,

@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hakimo OMS",
+  title: "Store OMS",
   description: "Order management for high-volume eCommerce",
-  applicationName: "Hakimo OMS",
+  applicationName: "Store OMS",
   appleWebApp: {
     capable: true,
-    title: "Hakimo OMS",
+    title: "Store OMS",
     statusBarStyle: "default",
   },
   formatDetection: {

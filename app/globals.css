@@ -3,7 +3,7 @@
 /* Layout rhythm — sidebar width, main padding (shared) */
 :root {
   --app-sidebar-w: 260px;
-  --app-sidebar-pad: 1rem;
+  --app-sidebar-pad: 1.125rem;
   --app-content-max-w: 1600px;
 }
 
@@ -30,6 +30,7 @@ html[data-theme="light"] {
   --color-shell: #ffffff;
   --color-app-main: #f8f9fa;
   --color-card: #ffffff;
+  --color-elevated: #ffffff;
   --color-input-bg: #f1f5f9;
 
   --color-border: rgba(15, 23, 42, 0.08);
@@ -116,7 +117,12 @@ html[data-theme="dark"] {
   --color-bg: #1a1d24;
   --color-bg-subtle: #15181e;
   --color-card: #22262e;
+  --color-elevated: #2a2f3a;
+  --color-shell: #22262e;
+  --color-app-main: #1a1d24;
   --color-input-bg: #15181e;
+
+  --color-nav-active-bg: rgba(96, 165, 250, 0.12);
 
   --color-border: rgba(255, 255, 255, 0.07);
   --color-divider: rgba(255, 255, 255, 0.09);

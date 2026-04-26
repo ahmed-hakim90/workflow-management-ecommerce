@@ -39,7 +39,7 @@ export default function LandingPage() {
               className="size-9 rounded-xl shadow-[var(--shadow-neo-raised-sm)]"
               priority
             />
-            Hakimo OMS
+            Store OMS
           </Link>
           <nav className="hidden items-center gap-6 text-sm font-medium text-[color:var(--color-text-secondary)] md:flex">
             <span className="cursor-default">Solutions</span>
@@ -78,7 +78,7 @@ export default function LandingPage() {
           </h1>
           <p className="max-w-xl text-[color:var(--color-text-secondary)]">
             The silent partner for high-stakes logistics. Optimize every
-            touchpoint of your supply chain with Hakimo&apos;s high-density
+            touchpoint of your supply chain with Store&apos;s high-density
             operational intelligence.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -297,7 +297,7 @@ export default function LandingPage() {
           <div className="relative max-w-xl space-y-2">
             <h2 className="text-2xl font-bold">Ready to optimize your operations?</h2>
             <p className="text-sm opacity-90">
-              Join 200+ enterprise teams running Hakimo for precision logistics
+              Join 200+ enterprise teams running Store for precision logistics
               and order orchestration.
             </p>
           </div>
@@ -305,7 +305,7 @@ export default function LandingPage() {
             <Link href="/login">
               <Button>Schedule Demo</Button>
             </Link>
-            <Link href="mailto:sales@hakimo.example">
+            <Link href="mailto:sales@Store.example">
               <Button
                 variant="secondary"
                 className="bg-transparent text-white shadow-[var(--shadow-neo-raised-sm)] ring-1 ring-white/30"
@@ -320,9 +320,9 @@ export default function LandingPage() {
       <footer className="border-t border-[color:var(--color-divider)] bg-[color:var(--color-shell)] py-10">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 md:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="font-semibold">Hakimo OMS</p>
+            <p className="font-semibold">Store OMS</p>
             <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
-              © {new Date().getFullYear()} Hakimo OMS. All rights reserved.
+              © {new Date().getFullYear()} Store OMS. All rights reserved.
             </p>
           </div>
           <div className="flex flex-wrap gap-4 text-xs text-[color:var(--color-text-secondary)]">

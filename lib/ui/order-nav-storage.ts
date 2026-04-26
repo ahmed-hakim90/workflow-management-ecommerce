@@ -1,4 +1,4 @@
-export const ORDER_NAV_STORAGE_KEY = "hakimo-order-nav";
+export const ORDER_NAV_STORAGE_KEY = "Store-order-nav";
 
 export type OrderNavPayload = {
   ids: string[];

@@ -8,14 +8,18 @@ import {
   mockScanAwb,
 } from "@/lib/dev/mock-backend";
 import type { Order, Shipment, ShipmentStatus, ShipmentType } from "@/lib/types/models";
-import { assertTransition } from "@/lib/logic/order-state-machine";
+import { assertWarehouseScanTransition } from "@/lib/logic/order-state-machine-warehouse";
 import { createBostaShipment } from "@/lib/integrations/bosta";
 import { logActivity } from "@/lib/services/activity.service";
-import { applyOrderStageRollupDelta } from "@/lib/services/order-stage-rollup.service";
+import {
+  applyOrderStageRollupDelta,
+  orderValueForStageRollup,
+} from "@/lib/services/order-stage-rollup.service";
 import { incrementUserStat } from "@/lib/services/user-stats.service";
 import { recordDeliveryShipmentAnalytics } from "@/lib/services/analytics-daily.service";
 import { getUser } from "@/lib/services/users.service";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
+import { getWarehouseSettings } from "@/lib/services/tenant-settings.service";
 
 async function getOrder(tenantId: string, orderId: string): Promise<Order | null> {
   const db = getDb();
@@ -122,8 +126,16 @@ export async function createShipmentForOrder(input: {
   return shipment;
 }
 
+function err400(msg: string) {
+  const e = new Error(msg) as Error & { status: number };
+  e.status = 400;
+  return e;
+}
+
 /**
- * Warehouse scan: first scan packs order; second scan ships.
+ * Warehouse scan: per-tenant can be one step (packed then shipped) or
+ * one scan to shipped from ready_for_warehouse. Cooldown between packed and shipped
+ * in per_step mode to avoid double taps.
  */
 export async function scanAwb(input: {
   tenantId: string;
@@ -131,6 +143,9 @@ export async function scanAwb(input: {
   actorUserId: string;
 }): Promise<{ order: Order; shipment: Shipment }> {
   if (isDevMockDataEnabled()) return mockScanAwb(input);
+  const wh = await getWarehouseSettings(input.tenantId);
+  const mode = wh.singleScanFulfills ? "single_fulfill" : "per_step";
+  const cooldownMs = wh.scanCooldownMs;
   const db = getDb();
   const q = await db
     .collection(COLLECTIONS.shipments)
@@ -156,18 +171,36 @@ export async function scanAwb(input: {
     let packedAt = shipment.packedAt;
     let shippedAt = shipment.shippedAt;
 
+    if (order.status === "shipped" && shipment.status === "shipped") {
+      throw new Error("Duplicate scan: order already shipped for this AWB");
+    }
+
     if (order.status === "ready_for_warehouse") {
-      assertTransition(order.status, "packed");
-      newOrderStatus = "packed";
-      newShipmentStatus = "packed";
-      packedAt = now;
+      if (mode === "single_fulfill") {
+        assertWarehouseScanTransition("ready_for_warehouse", "shipped", "single_fulfill");
+        newOrderStatus = "shipped";
+        newShipmentStatus = "shipped";
+        packedAt = now;
+        shippedAt = now;
+      } else {
+        assertWarehouseScanTransition("ready_for_warehouse", "packed", "per_step");
+        newOrderStatus = "packed";
+        newShipmentStatus = "packed";
+        packedAt = now;
+      }
     } else if (order.status === "packed") {
-      assertTransition(order.status, "shipped");
+      if (cooldownMs > 0 && shipment.packedAt) {
+        const elapsed = Date.now() - new Date(shipment.packedAt).getTime();
+        if (elapsed < cooldownMs) {
+          throw err400(
+            `الانتظار ${Math.ceil((cooldownMs - elapsed) / 1000)} ث قبل تأكيد الشحن.`,
+          );
+        }
+      }
+      assertWarehouseScanTransition("packed", "shipped", mode);
       newOrderStatus = "shipped";
       newShipmentStatus = "shipped";
       shippedAt = now;
-    } else if (order.status === "shipped" && shipment.status === "shipped") {
-      throw new Error("Duplicate scan: order already shipped for this AWB");
     } else {
       throw new Error(
         `Scan not allowed for order status ${order.status} (expected ready_for_warehouse or packed)`,
@@ -199,6 +232,7 @@ export async function scanAwb(input: {
     tenantId: input.tenantId,
     from: result.prevOrderStatus,
     to: result.order.status,
+    orderValue: orderValueForStageRollup(result.order),
   });
 
   await logActivity({
@@ -207,10 +241,15 @@ export async function scanAwb(input: {
     entityType: "shipment",
     entityId: result.shipment.id,
     userId: input.actorUserId,
-    metadata: { awb: input.awb, orderStatus: result.order.status },
+    metadata: { awb: input.awb, orderStatus: result.order.status, scanMode: mode },
   });
 
-  if (result.order.status === "packed") {
+  const shouldIncPacked =
+    result.order.status === "packed" ||
+    (wh.singleScanFulfills &&
+      result.prevOrderStatus === "ready_for_warehouse" &&
+      result.order.status === "shipped");
+  if (shouldIncPacked) {
     await incrementUserStat({
       tenantId: input.tenantId,
       userId: input.actorUserId,

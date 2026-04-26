@@ -23,6 +23,8 @@ import {
   setOrderNav,
 } from "@/lib/ui/order-nav-storage";
 import { buildWhatsAppUrl } from "@/lib/ui/whatsapp";
+import { formatConfirmationWhatsAppMessage } from "@/lib/logic/confirmation-whatsapp";
+import { defaultTenantAutomation } from "@/lib/types/models";
 import { cn } from "@/lib/ui/cn";
 
 type Bundle = { order: Order; shipments: Shipment[] };
@@ -45,6 +47,9 @@ export default function OrderDetailPage() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [nav, setNav] = useState(() => readOrderNav());
+  const [whatsappTemplate, setWhatsappTemplate] = useState(
+    defaultTenantAutomation.whatsappMessageTemplate!,
+  );
 
   const headers = useMemo(
     () => buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -60,13 +65,14 @@ export default function OrderDetailPage() {
     setErr(null);
     setLoading(true);
     try {
-      const [bRes, aRes, uRes] = await Promise.all([
+      const [bRes, aRes, uRes, wRes] = await Promise.all([
         fetch(`/api/orders/${orderId}`, { headers }),
         fetch(
           `/api/activity?entityType=order&entityId=${encodeURIComponent(orderId)}&limit=80`,
           { headers },
         ),
         fetch("/api/users", { headers }),
+        fetch("/api/settings/confirmation-whatsapp", { headers }),
       ]);
       const bJson = await bRes.json();
       const aJson = await aRes.json();
@@ -77,6 +83,22 @@ export default function OrderDetailPage() {
       setBundle(bJson.data as Bundle);
       setActivities(aJson.data as ActivityLog[]);
       setUsers(uJson.data as User[]);
+      if (wRes.ok) {
+        const wJson = (await wRes.json()) as {
+          data: { whatsappMessageTemplate: string };
+        };
+        if (wJson.data?.whatsappMessageTemplate) {
+          setWhatsappTemplate(wJson.data.whatsappMessageTemplate);
+        } else {
+          setWhatsappTemplate(
+            defaultTenantAutomation.whatsappMessageTemplate!,
+          );
+        }
+      } else {
+        setWhatsappTemplate(
+          defaultTenantAutomation.whatsappMessageTemplate!,
+        );
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "خطأ");
       setBundle(null);
@@ -174,11 +196,16 @@ export default function OrderDetailPage() {
 
   async function onWhatsApp() {
     const o = bundle?.order;
+    const shipments = bundle?.shipments;
     if (!o?.customer.phone) return;
-    const url = buildWhatsAppUrl(
-      o.customer.phone,
-      `مرحباً ${o.customer.name} — متابعة طلبكم`,
-    );
+    const deliveryAwb =
+      shipments?.find((s) => s.type === "delivery")?.awb?.trim() ?? "—";
+    const body = formatConfirmationWhatsAppMessage(whatsappTemplate, {
+      name: o.customer.name,
+      orderId: o.id,
+      awb: deliveryAwb,
+    });
+    const url = buildWhatsAppUrl(o.customer.phone, body);
     if (!url) {
       setErr("رقم هاتف غير صالح لـ WhatsApp");
       return;
@@ -418,7 +445,7 @@ export default function OrderDetailPage() {
                 <TableWrap>
                   <thead>
                     <tr>
-                      <Th>AWB</Th>
+                      <Th>تتبع (رقم البوليصة / AWB)</Th>
                       <Th>النوع</Th>
                       <Th>الحالة</Th>
                       <Th>أنشأها</Th>

@@ -1,4 +1,3 @@
-import type { OrderStatus } from "@/lib/types/models";
 import { getDb } from "@/lib/db/firebase-admin";
 import { COLLECTIONS } from "@/lib/db/collections";
 import type { UserStats } from "@/lib/types/models";
@@ -7,31 +6,69 @@ import { mockGetUserStatsForToday } from "@/lib/dev/mock-backend";
 import { listOrders } from "@/lib/services/orders.service";
 import {
   getTenantOrderStageRollup,
+  orderValueForStageRollup,
   rebuildTenantOrderStageRollup,
 } from "@/lib/services/order-stage-rollup.service";
+import { DASHBOARD_ORDER_STAGE_KEYS } from "@/lib/logic/dashboard-order-stages";
 
-const KANBAN_STATUSES: OrderStatus[] = [
-  "pending_confirmation",
-  "confirmed",
-  "invoicing",
-  "ready_for_warehouse",
-  "packed",
-  "shipped",
-];
+const KANBAN_STATUSES = [...DASHBOARD_ORDER_STAGE_KEYS] as const;
 
-export async function getOrdersPerStage(tenantId: string) {
+type KanbanStageKey = (typeof KANBAN_STATUSES)[number];
+
+const KANBAN_STATUS_SET = new Set<string>(KANBAN_STATUSES);
+
+/** Counts (and `warehouse` roll-up) plus matching `stageValues` (pipeline monetary totals). */
+export type OrdersPerStageResult = {
+  [K in KanbanStageKey | "warehouse"]: number;
+} & {
+  stageValues: { [K in KanbanStageKey | "warehouse"]: number };
+};
+
+const ZERO_SIX = (): { [K in KanbanStageKey]: number } => ({
+  pending_confirmation: 0,
+  confirmed: 0,
+  invoicing: 0,
+  ready_for_warehouse: 0,
+  packed: 0,
+  shipped: 0,
+});
+
+function perStageValueTotals(
+  v: { [K in KanbanStageKey]: number },
+): OrdersPerStageResult["stageValues"] {
+  return {
+    ...v,
+    warehouse: v.ready_for_warehouse + v.packed,
+  };
+}
+
+const ZERO_STAGE: OrdersPerStageResult = (() => {
+  const z = ZERO_SIX();
+  return {
+    ...z,
+    warehouse: 0,
+    stageValues: perStageValueTotals(z),
+  };
+})();
+
+export async function getOrdersPerStage(
+  tenantId: string,
+): Promise<OrdersPerStageResult> {
   if (isDevMockDataEnabled()) {
     const orders = await listOrders(tenantId);
-    const counts: Record<string, number> = {};
-    for (const s of KANBAN_STATUSES) counts[s] = 0;
+    const counts = ZERO_SIX();
+    const amounts = ZERO_SIX();
     for (const o of orders) {
-      if (o.status in counts) {
-        counts[o.status] += 1;
+      if (KANBAN_STATUS_SET.has(o.status)) {
+        const b = o.status as KanbanStageKey;
+        counts[b] += 1;
+        amounts[b] += orderValueForStageRollup(o);
       }
     }
     return {
       ...counts,
-      warehouse: (counts["ready_for_warehouse"] ?? 0) + (counts["packed"] ?? 0),
+      warehouse: counts.ready_for_warehouse + counts.packed,
+      stageValues: perStageValueTotals(amounts),
     };
   }
 
@@ -41,17 +78,29 @@ export async function getOrdersPerStage(tenantId: string) {
     rollup = await getTenantOrderStageRollup(tenantId);
   }
 
-  const stages = rollup?.stages;
-  if (!stages) {
-    const z: Record<string, number> = {};
-    for (const s of KANBAN_STATUSES) z[s] = 0;
-    return { ...z, warehouse: 0 };
+  if (!rollup?.stages) {
+    return ZERO_STAGE;
   }
 
+  const { stages, stageValues: sv0 } = rollup;
+  const amt: { [K in KanbanStageKey]: number } = {
+    pending_confirmation: sv0.pending_confirmation ?? 0,
+    confirmed: sv0.confirmed ?? 0,
+    invoicing: sv0.invoicing ?? 0,
+    ready_for_warehouse: sv0.ready_for_warehouse ?? 0,
+    packed: sv0.packed ?? 0,
+    shipped: sv0.shipped ?? 0,
+  };
   return {
-    ...stages,
+    pending_confirmation: stages.pending_confirmation ?? 0,
+    confirmed: stages.confirmed ?? 0,
+    invoicing: stages.invoicing ?? 0,
+    ready_for_warehouse: stages.ready_for_warehouse ?? 0,
+    packed: stages.packed ?? 0,
+    shipped: stages.shipped ?? 0,
     warehouse:
       (stages.ready_for_warehouse ?? 0) + (stages.packed ?? 0),
+    stageValues: perStageValueTotals(amt),
   };
 }
 

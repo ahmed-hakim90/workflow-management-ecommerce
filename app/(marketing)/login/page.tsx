@@ -84,7 +84,7 @@ export default function LoginPage() {
           href="/"
           className="text-lg font-semibold text-[color:var(--color-primary-contrast)]"
         >
-          Hakimo OMS
+          Store OMS
         </Link>
         <div className="space-y-4">
           <h1 className="text-3xl font-bold leading-tight">
@@ -96,7 +96,7 @@ export default function LoginPage() {
           </p>
         </div>
         <p className="text-xs text-white/60">
-          © {new Date().getFullYear()} Hakimo OMS
+          © {new Date().getFullYear()} Store OMS
         </p>
       </div>
       <div className="flex flex-col items-center justify-center bg-[color:var(--color-app-main)] px-4 py-12">
@@ -105,7 +105,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-[color:var(--color-text-secondary)]">
             {firebaseOn
               ? "Use the email and password for your Firebase account."
-              : "Use your staff API key (Bearer) or server OMS secret as the password. Set tenant and user id if you are not on the default demo."}
+              : "Use your per-tenant staff API key (Bearer) as the password, or a demo token for mock tenants. Set tenant and user id if you are not on the default demo."}
           </p>
           <form onSubmit={(e) => void onSubmit(e)} className="mt-6 space-y-4">
             <Input

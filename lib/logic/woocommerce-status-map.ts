@@ -11,7 +11,7 @@ export type WooCommerceOrderStatus =
   | "failed";
 
 /**
- * Default mapping from Hakimo OMS lifecycle to WooCommerce order status.
+ * Default mapping from Store OMS lifecycle to WooCommerce order status.
  * Shipped stays `processing` until `delivered` → `completed` (typical fulfillment flow).
  */
 export function mapOrderStatusToWooCommerce(
