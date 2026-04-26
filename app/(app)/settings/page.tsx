@@ -61,6 +61,7 @@ export default function SettingsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const setSession = useSessionStore((s) => s.setSession);
   const themePreference = useThemeStore((s) => s.themePreference);
   const setThemePreference = useThemeStore((s) => s.setThemePreference);
@@ -186,6 +187,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
     if (section !== "api") return;
     let cancelled = false;
     (async () => {
@@ -243,7 +245,7 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [section, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, section, apiSecret, idToken, tenantId, userId, role]);
 
   async function saveWooSecret() {
     setWooMsg(null);
@@ -544,6 +546,7 @@ export default function SettingsPage() {
   }, [role, advTab]);
 
   useEffect(() => {
+    if (!authReady) return;
     if (section !== "advanced" || advTab !== "shipment") return;
     if (!can(role, "user:manage")) return;
     let cancelled = false;
@@ -592,9 +595,10 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [section, advTab, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role]);
 
   useEffect(() => {
+    if (!authReady) return;
     if (section !== "advanced" || advTab !== "kanban") return;
     let cancelled = false;
     (async () => {
@@ -615,7 +619,7 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [section, advTab, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role]);
 
   async function saveKanban() {
     setSettingsMsg(null);
@@ -746,12 +750,12 @@ export default function SettingsPage() {
                       {firstName[0] || "?"}
                       {lastName[0] || ""}
                     </div>
-                    <button
+                    {/* <button
                       type="button"
                       className="text-sm font-medium text-[color:var(--color-primary)] hover:underline"
                     >
                       Change profile picture
-                    </button>
+                    </button> */}
                   </div>
                   <Input
                     label="First name"

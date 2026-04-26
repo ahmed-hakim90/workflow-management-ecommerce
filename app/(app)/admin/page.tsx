@@ -5,10 +5,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StageBarChart } from "@/components/charts/stage-bar-chart";
 import { TeamLineChart } from "@/components/charts/team-line-chart";
+import { ResponsiveTable } from "@/components/responsive/ResponsiveTable";
+import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { humanizeOrderStageKey } from "@/lib/ui/order-stage-label";
-import { Skeleton } from "@/components/ui/skeleton";
+import { CardSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 type AdminSummary = {
   stages: Record<string, number>;
@@ -29,12 +31,14 @@ export default function AdminPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
 
   const [data, setData] = useState<AdminSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setErr(null);
@@ -55,7 +59,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const fmtStageMoney = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -84,7 +88,7 @@ export default function AdminPage() {
         description="Stage pipeline, team throughput, and bottlenecks. Requires an admin or moderator role."
       />
 
-      {err ? (
+      {!loading && err ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
@@ -139,39 +143,106 @@ export default function AdminPage() {
             <CardTitle>Team</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <TableWrap className="rounded-none border-0 shadow-none">
-              <thead>
-                <tr>
-                  <Th>Name</Th>
-                  <Th>Role</Th>
-                  <Th>Target</Th>
-                  <Th>Done</Th>
-                  <Th>Performance</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.team ?? []).length === 0 ? (
-                  <Tr>
-                    <Td
-                      colSpan={5}
-                      className="text-center text-[color:var(--color-text-muted)]"
-                    >
+            <ResponsiveTable
+              desktop={
+                <TableWrap className="rounded-none border-0 shadow-none">
+                  <thead>
+                    <tr>
+                      <Th>Name</Th>
+                      <Th>Role</Th>
+                      <Th>Target</Th>
+                      <Th>Done</Th>
+                      <Th>Performance</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading && !err ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <Tr key={i}>
+                          {Array.from({ length: 5 }).map((__, j) => (
+                            <Td key={j}>
+                              <Skeleton className="h-4 w-full max-w-[8rem]" />
+                            </Td>
+                          ))}
+                        </Tr>
+                      ))
+                    ) : (data?.team ?? []).length === 0 ? (
+                      <Tr>
+                        <Td
+                          colSpan={5}
+                          className="text-center text-[color:var(--color-text-muted)]"
+                        >
+                          No team members
+                        </Td>
+                      </Tr>
+                    ) : (
+                      (data?.team ?? []).map((t) => (
+                        <Tr key={t.name + t.role}>
+                          <Td>{t.name}</Td>
+                          <Td>{t.role}</Td>
+                          <Td>{t.target}</Td>
+                          <Td>{t.done}</Td>
+                          <Td>{t.performancePct}%</Td>
+                        </Tr>
+                      ))
+                    )}
+                  </tbody>
+                </TableWrap>
+              }
+              mobile={
+                <div className="space-y-3 p-4">
+                  {loading && !err ? (
+                    <>
+                      <CardSkeleton />
+                      <CardSkeleton />
+                      <CardSkeleton />
+                    </>
+                  ) : (data?.team ?? []).length === 0 ? (
+                    <p className="text-center text-sm text-[color:var(--color-text-muted)]">
                       No team members
-                    </Td>
-                  </Tr>
-                ) : (
-                  (data?.team ?? []).map((t) => (
-                    <Tr key={t.name + t.role}>
-                      <Td>{t.name}</Td>
-                      <Td>{t.role}</Td>
-                      <Td>{t.target}</Td>
-                      <Td>{t.done}</Td>
-                      <Td>{t.performancePct}%</Td>
-                    </Tr>
-                  ))
-                )}
-              </tbody>
-            </TableWrap>
+                    </p>
+                  ) : (
+                    (data?.team ?? []).map((t) => (
+                      <ResponsiveCard key={t.name + t.role}>
+                        <div className="space-y-2 text-sm">
+                          <div className="font-semibold text-[color:var(--color-text-primary)]">
+                            {t.name}
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                Role
+                              </div>
+                              <div>{t.role}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                Target
+                              </div>
+                              <div className="tabular-nums">{t.target}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                Done
+                              </div>
+                              <div className="tabular-nums">{t.done}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                Performance
+                              </div>
+                              <div className="tabular-nums font-medium">
+                                {t.performancePct}%
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </ResponsiveCard>
+                    ))
+                  )}
+                </div>
+              }
+            />
           </CardContent>
         </Card>
       </div>

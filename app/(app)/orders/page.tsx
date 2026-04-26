@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
 import { ResponsiveTable } from "@/components/responsive/ResponsiveTable";
 import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
+import { OrderCardListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { Order, PaymentStatus } from "@/lib/types/models";
@@ -56,6 +57,7 @@ export default function OrdersPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -76,6 +78,7 @@ export default function OrdersPage() {
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -96,9 +99,10 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     fetch("/api/tickets?status=open", {
       headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -115,7 +119,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const tabFiltered = useMemo(() => {
     return orders.filter((o) => {
@@ -306,7 +310,7 @@ export default function OrdersPage() {
         }
       />
 
-      {err ? (
+      {!loading && err ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
@@ -430,14 +434,15 @@ export default function OrdersPage() {
             </thead>
             <tbody>
               {loading ? (
-                <Tr>
-                  <Td
-                    colSpan={7}
-                    className="text-center text-[color:var(--color-text-muted)]"
-                  >
-                    Loading…
-                  </Td>
-                </Tr>
+                Array.from({ length: 8 }).map((_, i) => (
+                  <Tr key={i}>
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <Td key={j}>
+                        <Skeleton className="h-4 w-full max-w-[10rem]" />
+                      </Td>
+                    ))}
+                  </Tr>
+                ))
               ) : pageRows.length === 0 ? (
                 <Tr>
                   <Td
@@ -509,9 +514,7 @@ export default function OrdersPage() {
         mobile={
           <div className="space-y-3">
             {loading ? (
-              <p className="text-center text-sm text-[color:var(--color-text-muted)]">
-                Loading…
-              </p>
+              <OrderCardListSkeleton count={5} />
             ) : pageRows.length === 0 ? (
               <p className="text-center text-sm text-[color:var(--color-text-muted)]">
                 No orders

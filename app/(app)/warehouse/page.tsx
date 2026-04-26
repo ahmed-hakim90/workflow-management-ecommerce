@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { ResponsiveTable } from "@/components/responsive/ResponsiveTable";
 import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
 import { AwbBarcodeScanner } from "@/components/warehouse/awb-barcode-scanner";
+import { OrderCardListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { can } from "@/lib/auth/rbac";
@@ -31,6 +32,7 @@ export default function WarehousePage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const isLgUp = useMediaQuery("(min-width: 1024px)");
   const isMdUp = useMediaQuery("(min-width: 768px)");
 
@@ -55,6 +57,7 @@ export default function WarehousePage() {
   }, [isLgUp]);
 
   async function refresh() {
+    if (!authReady) return;
     setLoadingList(true);
     try {
       const res = await fetch("/api/orders", {
@@ -81,7 +84,8 @@ export default function WarehousePage() {
   }
 
   useEffect(() => {
-    refresh();
+    if (!authReady) return;
+    void refresh();
     (async () => {
       try {
         const res = await fetch("/api/settings/warehouse", {
@@ -98,7 +102,7 @@ export default function WarehousePage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   async function onScan(e: React.FormEvent) {
     e.preventDefault();
@@ -199,14 +203,17 @@ export default function WarehousePage() {
                     </thead>
                     <tbody>
                       {loadingList ? (
-                        <Tr>
-                          <Td
-                            colSpan={can(role, "order:revert") ? 4 : 3}
-                            className="text-center text-[color:var(--color-text-muted)]"
-                          >
-                            Loading…
-                          </Td>
-                        </Tr>
+                        Array.from({ length: 6 }).map((_, i) => (
+                          <Tr key={i}>
+                            {Array.from({
+                              length: can(role, "order:revert") ? 4 : 3,
+                            }).map((__, j) => (
+                              <Td key={j}>
+                                <Skeleton className="h-4 w-full max-w-[10rem]" />
+                              </Td>
+                            ))}
+                          </Tr>
+                        ))
                       ) : orders.length === 0 ? (
                         <Tr>
                           <Td
@@ -254,9 +261,7 @@ export default function WarehousePage() {
                 mobile={
                   <div className="space-y-3 p-4">
                     {loadingList ? (
-                      <p className="text-center text-sm text-[color:var(--color-text-muted)]">
-                        Loading…
-                      </p>
+                      <OrderCardListSkeleton count={4} />
                     ) : orders.length === 0 ? (
                       <p className="text-center text-sm text-[color:var(--color-text-muted)]">
                         No warehouse orders
@@ -347,7 +352,8 @@ export default function WarehousePage() {
                     {scanLoading ? "Processing…" : "Register scan"}
                   </Button>
                 </form>
-                {msg ? (
+                {msg &&
+                (msg.type === "ok" || (!loadingList && msg.type === "err")) ? (
                   <div
                     className={
                       msg.type === "ok"

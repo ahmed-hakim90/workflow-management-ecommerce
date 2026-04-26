@@ -11,6 +11,7 @@ import {
   ResponsiveKanban,
   type KanbanColumn,
 } from "@/components/responsive/ResponsiveKanban";
+import { KanbanSkeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { Ticket, TicketType } from "@/lib/types/models";
@@ -62,6 +63,7 @@ export default function TicketsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -69,27 +71,32 @@ export default function TicketsPage() {
   const [ticketType, setTicketType] = useState<TicketType>("complaint");
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(true);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState<"all" | "mine" | "urgent">("all");
 
   async function refresh() {
     setErr(null);
-    if (!idToken?.trim() && !apiSecret?.trim()) {
-      setErr("Not signed in — add a staff API key or use Firebase sign-in from /login.");
-      return;
+    setListLoading(true);
+    try {
+      const res = await fetch(`/api/tickets`, {
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setTickets(json.data as Ticket[]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Error");
+    } finally {
+      setListLoading(false);
     }
-    const res = await fetch(`/api/tickets`, {
-      headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? res.statusText);
-    setTickets(json.data as Ticket[]);
   }
 
   useEffect(() => {
-    refresh().catch((e) => setErr(e instanceof Error ? e.message : "Error"));
+    if (!authReady) return;
+    void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -224,7 +231,7 @@ export default function TicketsPage() {
         </div>
       </div>
 
-      {err ? (
+      {!listLoading && err ? (
         <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
@@ -235,6 +242,9 @@ export default function TicketsPage() {
         </p>
       ) : null}
 
+      {listLoading ? (
+        <KanbanSkeleton columns={3} cardsPerColumn={3} />
+      ) : (
       <ResponsiveKanban<ColumnId>
         columns={COLUMNS}
         countFor={(id) => byColumn(id).length}
@@ -284,6 +294,7 @@ export default function TicketsPage() {
           })
         }
       />
+      )}
     </div>
   );
 }

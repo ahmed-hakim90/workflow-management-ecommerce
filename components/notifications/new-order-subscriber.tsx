@@ -60,10 +60,12 @@ export function NewOrderSubscriber() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const idToken = useSessionStore((s) => s.idToken);
   const apiSecret = useSessionStore((s) => s.apiSecret);
+  const authReady = useSessionStore((s) => s.authReady);
   const notified = useRef(new Set<string>());
 
   useEffect(() => {
     let dead = false;
+    if (!authReady) return;
     if (!tenantId) return;
     if (!idToken?.trim() && !apiSecret?.trim()) return;
     notified.current.clear();
@@ -203,7 +205,7 @@ export function NewOrderSubscriber() {
       unsubAuth?.();
       unsubFs?.();
     };
-  }, [tenantId, idToken, apiSecret]);
+  }, [authReady, tenantId, idToken, apiSecret]);
 
   return null;
 }

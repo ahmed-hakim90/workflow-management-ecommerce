@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import type { Shipment, ShipmentStatus } from "@/lib/types/models";
 import { cn } from "@/lib/ui/cn";
@@ -27,6 +28,7 @@ export default function ShipmentsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
 
   const [list, setList] = useState<Shipment[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export default function ShipmentsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -59,7 +62,7 @@ export default function ShipmentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const selected = useMemo(
     () => list.find((s) => s.id === selectedId) ?? null,
@@ -85,7 +88,7 @@ export default function ShipmentsPage() {
         description="Track carrier movement, milestones, and exceptions."
       />
 
-      {err ? (
+      {!loading && err ? (
         <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
@@ -107,11 +110,19 @@ export default function ShipmentsPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <Tr>
-                    <Td colSpan={3} className="text-center text-[color:var(--color-text-muted)]">
-                      Loading…
-                    </Td>
-                  </Tr>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <Tr key={i}>
+                      <Td>
+                        <Skeleton className="h-4 w-24" />
+                      </Td>
+                      <Td>
+                        <Skeleton className="h-4 w-20" />
+                      </Td>
+                      <Td>
+                        <Skeleton className="h-4 w-16" />
+                      </Td>
+                    </Tr>
+                  ))
                 ) : list.length === 0 ? (
                   <Tr>
                     <Td colSpan={3} className="text-center text-[color:var(--color-text-muted)]">
@@ -153,7 +164,14 @@ export default function ShipmentsPage() {
               <CardTitle className="text-base">Shipment detail</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
-              {!selected ? (
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-[75%]" />
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                </div>
+              ) : !selected ? (
                 <p className="text-[color:var(--color-text-muted)]">
                   Select a shipment from the list.
                 </p>

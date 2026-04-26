@@ -7,7 +7,10 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
+import { ResponsiveTable } from "@/components/responsive/ResponsiveTable";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
+import { OrderDetailSkeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { can } from "@/lib/auth/rbac";
 import type {
@@ -39,6 +42,7 @@ export default function OrderDetailPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
 
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
@@ -108,8 +112,9 @@ export default function OrderDetailPage() {
   }, [orderId, headers]);
 
   useEffect(() => {
+    if (!authReady) return;
     void load();
-  }, [load]);
+  }, [authReady, load]);
 
   useEffect(() => {
     setNav(readOrderNav());
@@ -264,7 +269,7 @@ export default function OrderDetailPage() {
         }
       />
 
-      {err ? (
+      {!loading && err ? (
         <p className="rounded-lg border border-[color:var(--color-error)]/40 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
           {err}
         </p>
@@ -275,9 +280,9 @@ export default function OrderDetailPage() {
         </p>
       ) : null}
 
-      {loading || !o ? (
-        <p className="text-sm text-[color:var(--color-text-muted)]">جاري التحميل…</p>
-      ) : (
+      {loading ? (
+        <OrderDetailSkeleton />
+      ) : o ? (
         <>
           <div className="flex flex-wrap gap-2">
             {can(role, "order:confirm") && o.status === "pending_confirmation" ? (
@@ -404,28 +409,73 @@ export default function OrderDetailPage() {
                 </div>
               ) : null}
               {o.lineItems?.length ? (
-                <TableWrap>
-                  <thead>
-                    <tr>
-                      <Th>الصنف</Th>
-                      <Th>SKU</Th>
-                      <Th>الكمية</Th>
-                      <Th>سعر</Th>
-                      <Th>الإجمالي</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {o.lineItems.map((li, i) => (
-                      <Tr key={`${li.sku ?? li.name}-${i}`}>
-                        <Td>{li.name}</Td>
-                        <Td className="font-mono text-xs">{li.sku ?? "—"}</Td>
-                        <Td>{li.quantity}</Td>
-                        <Td>{li.unit_price}</Td>
-                        <Td>{li.line_total}</Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
+                <ResponsiveTable
+                  desktop={
+                    <TableWrap>
+                      <thead>
+                        <tr>
+                          <Th>الصنف</Th>
+                          <Th>SKU</Th>
+                          <Th>الكمية</Th>
+                          <Th>سعر</Th>
+                          <Th>الإجمالي</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {o.lineItems.map((li, i) => (
+                          <Tr key={`${li.sku ?? li.name}-${i}`}>
+                            <Td>{li.name}</Td>
+                            <Td className="font-mono text-xs">{li.sku ?? "—"}</Td>
+                            <Td>{li.quantity}</Td>
+                            <Td>{li.unit_price}</Td>
+                            <Td>{li.line_total}</Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </TableWrap>
+                  }
+                  mobile={
+                    <div className="space-y-3">
+                      {o.lineItems.map((li, i) => (
+                        <ResponsiveCard key={`${li.sku ?? li.name}-${i}`}>
+                          <div className="space-y-2 text-sm">
+                            <div className="font-medium text-[color:var(--color-text-primary)]">
+                              {li.name}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[color:var(--color-text-secondary)]">
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  SKU
+                                </div>
+                                <div className="font-mono text-xs">{li.sku ?? "—"}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  الكمية
+                                </div>
+                                <div className="tabular-nums">{li.quantity}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  سعر
+                                </div>
+                                <div className="tabular-nums">{li.unit_price}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  الإجمالي
+                                </div>
+                                <div className="tabular-nums font-semibold">
+                                  {li.line_total}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </ResponsiveCard>
+                      ))}
+                    </div>
+                  }
+                />
               ) : (
                 <p className="text-sm text-[color:var(--color-text-muted)]">
                   لا توجد بنود مسجلة (استورد من ووكومرس أو أضف يدوياً لاحقاً).
@@ -442,34 +492,84 @@ export default function OrderDetailPage() {
               {bundle.shipments.length === 0 ? (
                 <p className="text-sm text-[color:var(--color-text-muted)]">لا شحنات بعد.</p>
               ) : (
-                <TableWrap>
-                  <thead>
-                    <tr>
-                      <Th>تتبع (رقم البوليصة / AWB)</Th>
-                      <Th>النوع</Th>
-                      <Th>الحالة</Th>
-                      <Th>أنشأها</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bundle.shipments.map((s) => (
-                      <Tr key={s.id}>
-                        <Td className="font-mono text-xs">{s.awb}</Td>
-                        <Td>{s.type}</Td>
-                        <Td>{s.status}</Td>
-                        <Td>
-                          {s.createdByUserName ?? "—"}
-                          {s.createdByUserId ? (
-                            <span className="text-[color:var(--color-text-muted)]">
-                              {" "}
-                              ({s.createdByUserId})
-                            </span>
-                          ) : null}
-                        </Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
+                <ResponsiveTable
+                  desktop={
+                    <TableWrap>
+                      <thead>
+                        <tr>
+                          <Th>تتبع (رقم البوليصة / AWB)</Th>
+                          <Th>النوع</Th>
+                          <Th>الحالة</Th>
+                          <Th>أنشأها</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bundle.shipments.map((s) => (
+                          <Tr key={s.id}>
+                            <Td className="font-mono text-xs">{s.awb}</Td>
+                            <Td>{s.type}</Td>
+                            <Td>{s.status}</Td>
+                            <Td>
+                              {s.createdByUserName ?? "—"}
+                              {s.createdByUserId ? (
+                                <span className="text-[color:var(--color-text-muted)]">
+                                  {" "}
+                                  ({s.createdByUserId})
+                                </span>
+                              ) : null}
+                            </Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </TableWrap>
+                  }
+                  mobile={
+                    <div className="space-y-3">
+                      {bundle.shipments.map((s) => (
+                        <ResponsiveCard key={s.id}>
+                          <div className="space-y-2 text-sm">
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                تتبع (AWB)
+                              </div>
+                              <div className="font-mono text-xs break-all">
+                                {s.awb}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  النوع
+                                </div>
+                                <div>{s.type}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  الحالة
+                                </div>
+                                <div>{s.status}</div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-[color:var(--color-text-muted)]">
+                                أنشأها
+                              </div>
+                              <div>
+                                {s.createdByUserName ?? "—"}
+                                {s.createdByUserId ? (
+                                  <span className="text-[color:var(--color-text-muted)]">
+                                    {" "}
+                                    ({s.createdByUserId})
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        </ResponsiveCard>
+                      ))}
+                    </div>
+                  }
+                />
               )}
             </CardContent>
           </Card>
@@ -509,7 +609,7 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

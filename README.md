@@ -13,7 +13,7 @@ npm run dev
 
 **Staff (browser) auth:** use Firebase sign-in, or a **per-tenant** `staffApiKey` in `Authorization: Bearer` with `X-Tenant-Id`, `X-User-Id`, `X-User-Role` (see `lib/auth/context.ts`). The Settings → API screen stores the session’s Bearer key locally for demos and integrations that cannot use an ID token.
 
-WooCommerce webhook: `POST /api/webhooks/woocommerce?tenant=<tenantId>`. Store the **per-tenant** webhook secret in **Settings → Integrations** (`tenant_settings.integrations.woocommerce.webhookSecret`). Optional single-tenant/dev fallback: env `WOOCOMMERCE_WEBHOOK_SECRET`.
+WooCommerce webhook: `POST /api/webhooks/woocommerce?tenant=<tenantId>`. A webhook secret is **required** to accept traffic: set the **per-tenant** value in **Settings → Integrations** (`tenant_settings.integrations.woocommerce.webhookSecret`) or, for single-tenant/dev, env `WOOCOMMERCE_WEBHOOK_SECRET`. The handler verifies WooCommerce HMAC on the raw body (`X-WC-Webhook-Signature`); **401** is returned only when the signature is missing or wrong. If neither a tenant secret nor the env fallback is set, the endpoint returns **503** (misconfiguration). Invalid JSON and payload processing errors return **400**.
 
 **WooCommerce REST (push status):** In the same Integrations screen, set store URL plus REST API consumer key/secret. When staff change an order’s lifecycle in the OMS, we `PUT` the matching WooCommerce order status (see `lib/logic/woocommerce-status-map.ts`). Failures are logged under `integration.woocommerce.status_sync_failed` in activity.
 

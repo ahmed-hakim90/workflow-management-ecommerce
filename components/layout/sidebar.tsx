@@ -88,7 +88,7 @@ export function Sidebar() {
   const isMdUp = useMediaQuery("(min-width: 768px)");
   const isLgUp = useMediaQuery("(min-width: 1024px)");
 
-  const showNavLabels = isLgUp || sidebarTabletExpanded;
+  const showNavLabels = isLgUp || sidebarTabletExpanded || !isMdUp;
   const isIconRail = isMdUp && !isLgUp && !sidebarTabletExpanded;
   /** Name + title when there is width; on mobile (`<md`) sidebar is overlay with room for the full user row. */
   const showSidebarUserFull = isLgUp || sidebarTabletExpanded || !isMdUp;

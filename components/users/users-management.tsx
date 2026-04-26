@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
 import { ResponsiveTable } from "@/components/responsive/ResponsiveTable";
 import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
+import { CardSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { User, UserRole } from "@/lib/types/models";
@@ -33,10 +34,12 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [users, setUsers] = useState<User[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [createOpenInternal, setCreateOpenInternal] = useState(false);
   const createOpen = createControl ? createControl.open : createOpenInternal;
   const setCreateOpen = createControl
@@ -49,7 +52,6 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const [newTarget, setNewTarget] = useState(0);
 
   async function load() {
-    setErr(null);
     const res = await fetch("/api/users", {
       headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
     });
@@ -59,20 +61,25 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   }
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
+      setUsersLoading(true);
+      setErr(null);
       try {
         await load();
       } catch (e) {
         if (!cancelled)
           setErr(e instanceof Error ? e.message : "Error");
+      } finally {
+        if (!cancelled) setUsersLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   async function createUser() {
     setErr(null);
@@ -132,7 +139,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
         </div>
       ) : null}
 
-      {err ? (
+      {!usersLoading && err ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
@@ -201,7 +208,17 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
               </tr>
             </thead>
             <tbody>
-              {users.length === 0 ? (
+              {usersLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <Tr key={i}>
+                    {Array.from({ length: 5 }).map((__, j) => (
+                      <Td key={j}>
+                        <Skeleton className="h-4 w-full max-w-[8rem]" />
+                      </Td>
+                    ))}
+                  </Tr>
+                ))
+              ) : users.length === 0 ? (
                 <Tr>
                   <Td colSpan={5} className="text-center text-[color:var(--color-text-muted)]">
                     No users
@@ -234,7 +251,13 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
         }
         mobile={
           <div className="space-y-3">
-            {users.length === 0 ? (
+            {usersLoading ? (
+              <>
+                <CardSkeleton />
+                <CardSkeleton />
+                <CardSkeleton />
+              </>
+            ) : users.length === 0 ? (
               <p className="text-center text-sm text-[color:var(--color-text-muted)]">
                 No users
               </p>

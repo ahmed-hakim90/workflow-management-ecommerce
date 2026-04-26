@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ResponsiveKanban } from "@/components/responsive/ResponsiveKanban";
 import { OrdersViewSwitch } from "@/components/orders/orders-view-switch";
+import { KanbanSkeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { Order, OrderStatus } from "@/lib/types/models";
@@ -51,15 +52,19 @@ export default function KanbanPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setErr(null);
+      setLoading(true);
       try {
         const res = await fetch("/api/orders", {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -69,12 +74,14 @@ export default function KanbanPage() {
         if (!cancelled) setOrders(json.data as Order[]);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Error");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const grouped = useMemo(() => {
     const map: Record<ColumnId, Order[]> = {
@@ -98,12 +105,15 @@ export default function KanbanPage() {
         actions={<OrdersViewSwitch />}
       />
 
-      {err ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+      {!loading && err ? (
+        <p className="rounded-lg border border-[color:var(--color-error)]/40 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
           {err}
         </p>
       ) : null}
 
+      {loading ? (
+        <KanbanSkeleton columns={5} cardsPerColumn={3} />
+      ) : (
       <ResponsiveKanban
         columns={COLUMNS}
         countFor={(id) => grouped[id].length}
@@ -155,6 +165,7 @@ export default function KanbanPage() {
           ))
         }
       />
+      )}
     </div>
   );
 }

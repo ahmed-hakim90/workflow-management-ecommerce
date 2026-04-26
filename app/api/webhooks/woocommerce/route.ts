@@ -16,13 +16,22 @@ export async function POST(req: Request) {
   const tenantId = url.searchParams.get("tenant") ?? "default";
 
   const tenantSecret = await getTenantWooCommerceWebhookSecret(tenantId);
-  const secretForVerify =
-    tenantSecret ?? env.WOOCOMMERCE_WEBHOOK_SECRET ?? "";
-  if (secretForVerify) {
-    if (!verifyWooCommerceSignature(rawBody, sig, secretForVerify)) {
-      return jsonError("Invalid webhook signature", 401);
-    }
+  console.log("TENANT SECRET:", tenantSecret);
+  console.log("SIGNATURE HEADER:", req.headers.get("x-wc-webhook-signature"));
+  const secretForVerify = (
+    tenantSecret ??
+    env.WOOCOMMERCE_WEBHOOK_SECRET ??
+    ""
+  ).trim();
+
+  if (!secretForVerify) {
+    return jsonError("Webhook secret not configured for this tenant", 503);
   }
+
+  if (!verifyWooCommerceSignature(rawBody, sig, secretForVerify)) {
+    return jsonError("Invalid webhook signature", 401);
+  }
+
   const deliveryId =
     req.headers.get("x-wc-webhook-delivery-id") ?? `${Date.now()}`;
 

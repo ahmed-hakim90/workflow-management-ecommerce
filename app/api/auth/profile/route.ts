@@ -35,6 +35,7 @@ export async function PATCH(req: Request) {
   }
 }
 
+/** Intentional: profile display fields load via `GET /api/auth/me` in the client (see `loadSessionFromIdToken`). */
 export async function GET() {
   return jsonError("Method not allowed", 405);
 }

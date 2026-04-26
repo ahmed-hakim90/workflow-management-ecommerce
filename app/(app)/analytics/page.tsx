@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { KpiCardSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -133,10 +133,12 @@ export default function AnalyticsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
 
   const [tab, setTab] = useState<"dashboard" | "ops">("dashboard");
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [summaryErr, setSummaryErr] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [entity, setEntity] = useState("global");
 
   const [fromDate, setFromDate] = useState(() => {
@@ -149,14 +151,16 @@ export default function AnalyticsPage() {
   );
   const [financial, setFinancial] = useState<FinancialPayload | null>(null);
   const [financialErr, setFinancialErr] = useState<string | null>(null);
-  const [financialLoading, setFinancialLoading] = useState(false);
+  const [financialLoading, setFinancialLoading] = useState(true);
   const [rebuildBusy, setRebuildBusy] = useState(false);
   const [granularity, setGranularity] = useState<"daily" | "weekly">("daily");
 
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setSummaryErr(null);
+      setSummaryLoading(true);
       try {
         const res = await fetch("/api/admin/summary", {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -167,14 +171,17 @@ export default function AnalyticsPage() {
       } catch (e) {
         if (!cancelled)
           setSummaryErr(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        if (!cancelled) setSummaryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const loadFinancial = useCallback(async () => {
+    if (!authReady) return;
     setFinancialLoading(true);
     setFinancialErr(null);
     try {
@@ -191,11 +198,12 @@ export default function AnalyticsPage() {
     } finally {
       setFinancialLoading(false);
     }
-  }, [apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
 
   useEffect(() => {
+    if (!authReady) return;
     void loadFinancial();
-  }, [loadFinancial]);
+  }, [authReady, loadFinancial]);
 
   const barData =
     summary?.stages &&
@@ -361,13 +369,13 @@ export default function AnalyticsPage() {
         </div>
       ) : null}
 
-      {tab === "ops" && summaryErr ? (
+      {tab === "ops" && !summaryLoading && summaryErr ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-callout-warning-bg)] p-3 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-neo-raised-sm)]">
           {summaryErr}
         </p>
       ) : null}
 
-      {tab === "dashboard" && financialErr ? (
+      {tab === "dashboard" && !financialLoading && financialErr ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-callout-warning-bg)] p-3 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-neo-raised-sm)]">
           {financialErr}
         </p>
@@ -376,7 +384,11 @@ export default function AnalyticsPage() {
       {tab === "dashboard" ? (
         <>
           {financialLoading && !financial ? (
-            <Skeleton className="h-32 w-full" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <KpiCardSkeleton key={i} />
+              ))}
+            </div>
           ) : null}
           {t ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -580,7 +592,9 @@ export default function AnalyticsPage() {
               <CardTitle>Stage distribution (orders & value)</CardTitle>
             </CardHeader>
             <CardContent>
-              {barData && barData.length > 0 ? (
+              {summaryLoading && !summaryErr ? (
+                <Skeleton className="h-72 w-full" />
+              ) : barData && barData.length > 0 ? (
                 <StageBarChart
                   data={barData}
                   formatValue={fmtMoney}
@@ -598,7 +612,9 @@ export default function AnalyticsPage() {
               <CardTitle>Team performance (%)</CardTitle>
             </CardHeader>
             <CardContent>
-              {lineData.length > 0 ? (
+              {summaryLoading && !summaryErr ? (
+                <Skeleton className="h-72 w-full" />
+              ) : lineData.length > 0 ? (
                 <TeamLineChart data={lineData} />
               ) : (
                 <p className="text-sm text-[color:var(--color-text-muted)]">

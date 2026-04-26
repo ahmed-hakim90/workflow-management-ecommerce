@@ -14,6 +14,13 @@ export interface SessionState {
   /** Display name for shell (from profile / email). */
   displayName: string;
   role: UserRole;
+  /**
+   * True after Firebase Auth has emitted its first `onIdTokenChanged`, or immediately
+   * when Firebase client is not configured. Not persisted — avoids firing API calls
+   * with an empty Bearer before auth resolves.
+   */
+  authReady: boolean;
+  setAuthReady: (ready: boolean) => void;
   setSession: (
     p: Partial<
       Pick<
@@ -44,6 +51,8 @@ export const useSessionStore = create<SessionState>()(
       userId: "user-admin-1",
       displayName: "",
       role: "admin",
+      authReady: false,
+      setAuthReady: (ready) => set({ authReady: ready }),
       setSession: (p) => set(p),
       signOut: () =>
         set({
@@ -55,7 +64,17 @@ export const useSessionStore = create<SessionState>()(
           role: "admin",
         }),
     }),
-    { name: "Store-oms-session" },
+    {
+      name: "Store-oms-session",
+      partialize: (s) => ({
+        apiSecret: s.apiSecret,
+        idToken: s.idToken,
+        tenantId: s.tenantId,
+        userId: s.userId,
+        displayName: s.displayName,
+        role: s.role,
+      }),
+    },
   ),
 );
 

@@ -1,6 +1,11 @@
+"use client";
+
+import { splitDisplayName } from "@/lib/auth/split-display-name";
 import type { UserRole } from "@/lib/types/models";
 import type { SessionState } from "@/store/zustand/session-store";
+import { useProfileStore } from "@/store/zustand/profile-store";
 
+/** Loads `GET /api/auth/me` and syncs the session plus first/last name in `useProfileStore` (no `GET` on `/api/auth/profile` needed). */
 export async function loadSessionFromIdToken(
   idToken: string,
   setSession: SessionState["setSession"],
@@ -37,4 +42,6 @@ export async function loadSessionFromIdToken(
     displayName,
     role: u.role as UserRole,
   });
+  const { firstName, lastName } = splitDisplayName(displayName);
+  useProfileStore.getState().setProfile({ firstName, lastName });
 }
