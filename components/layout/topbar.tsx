@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
   Calendar,
@@ -16,8 +16,10 @@ import { cn } from "@/lib/ui/cn";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
+import { useOrderAlertsStore } from "@/store/zustand/order-alerts-store";
 
 export function Topbar() {
+  const router = useRouter();
   const pathname = usePathname();
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
@@ -28,6 +30,10 @@ export function Topbar() {
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
   const isMdUp = useMediaQuery("(min-width: 768px)");
+  const orderUnread = useOrderAlertsStore((s) => s.unreadCount);
+  const markNotificationsSeen = useOrderAlertsStore(
+    (s) => s.markNotificationsSeen,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -139,42 +145,58 @@ export function Topbar() {
         </div>
       )}
 
-      <div className="hidden items-center gap-1.5 md:flex">
-        <button
-          type="button"
-          className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-          aria-label="Calendar (coming soon)"
-        >
-          <Calendar className="size-4" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-          aria-label="Filters (coming soon)"
-        >
-          <Filter className="size-4" aria-hidden />
-        </button>
-      </div>
+      <div className="ms-auto flex min-w-0 items-center gap-1.5 md:gap-2.5">
+        <div className="hidden items-center gap-1.5 md:flex">
+          <button
+            type="button"
+            className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
+            aria-label="Calendar (coming soon)"
+          >
+            <Calendar className="size-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
+            aria-label="Filters (coming soon)"
+          >
+            <Filter className="size-4" aria-hidden />
+          </button>
+        </div>
 
-      <button
-        type="button"
-        className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-        aria-label="Notifications"
-      >
-        <Bell className="size-5" />
-        <span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-[color:var(--color-success)]" />
-      </button>
-      <ThemeToggle />
-      <div className="flex min-h-11 items-center gap-2.5 rounded-xl bg-[color:var(--color-card)] px-2.5 py-1.5 pe-3 shadow-[var(--shadow-neo-raised-sm)] sm:pe-3.5">
-        <UserCircle2
-          className="size-8 shrink-0 text-[color:var(--color-text-secondary)]"
-          aria-hidden
-        />
-        <div className="hidden text-start text-xs sm:block">
-          <div className="font-medium text-[color:var(--color-text-primary)]">
-            {displayName?.trim() || userId || "Guest"}
+        <button
+          type="button"
+          className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
+          aria-label={
+            orderUnread > 0
+              ? `Order notifications, ${orderUnread} new`
+              : "Order notifications"
+          }
+          onClick={() => {
+            markNotificationsSeen();
+            router.push("/orders");
+          }}
+        >
+          <Bell className="size-5" />
+          {orderUnread > 0 ? (
+            <span className="absolute top-1 end-1 min-h-[1.125rem] min-w-[1.125rem] rounded-full bg-[color:var(--color-primary)] px-0.5 text-center text-[10px] font-semibold leading-tight text-[color:var(--color-primary-foreground)]">
+              {orderUnread > 9 ? "9+" : orderUnread}
+            </span>
+          ) : null}
+        </button>
+        <ThemeToggle />
+        <div className="flex max-w-[40vw] min-w-0 items-center gap-2 rounded-xl bg-[color:var(--color-card)] py-1.5 ps-2.5 pe-2 shadow-[var(--shadow-neo-raised-sm)] min-[400px]:max-w-none min-[400px]:px-2.5 min-[400px]:pe-3 sm:pe-3.5">
+          <UserCircle2
+            className="size-7 shrink-0 text-[color:var(--color-text-secondary)] min-[400px]:size-8"
+            aria-hidden
+          />
+          <div className="min-w-0 text-start text-xs">
+            <div className="truncate font-medium text-[color:var(--color-text-primary)]">
+              {displayName?.trim() || userId || "Guest"}
+            </div>
+            <div className="hidden truncate text-[color:var(--color-text-secondary)] sm:block">
+              {role}
+            </div>
           </div>
-          <div className="text-[color:var(--color-text-secondary)]">{role}</div>
         </div>
       </div>
     </header>

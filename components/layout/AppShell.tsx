@@ -6,6 +6,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { Container } from "@/components/layout/container";
 import { AppDrawer } from "@/components/layout/drawer";
+import { NewOrderSubscriber } from "@/components/notifications/new-order-subscriber";
+import { NewOrderToasts } from "@/components/notifications/new-order-toasts";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 
@@ -36,7 +38,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Topbar />
         <Container>
           {sessionReady ? (
-            children
+            <>
+              <NewOrderSubscriber />
+              {children}
+            </>
           ) : (
             <div
               className="rounded-xl border border-[color:var(--color-divider)] bg-[color:var(--color-elevated)] px-4 py-12 text-center text-sm text-[color:var(--color-text-muted)]"
@@ -49,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Container>
       </div>
       <AppDrawer />
+      <NewOrderToasts />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
 let app: FirebaseApp | undefined;
+let clientDb: Firestore | undefined;
 
 export function isFirebaseClientConfigured(): boolean {
   return Boolean(
@@ -35,4 +37,10 @@ export function getFirebaseClientApp(): FirebaseApp {
 
 export function getFirebaseClientAuth(): Auth {
   return getAuth(getFirebaseClientApp());
+}
+
+export function getFirebaseClientDb(): Firestore {
+  if (clientDb) return clientDb;
+  clientDb = getFirestore(getFirebaseClientApp());
+  return clientDb;
 }

@@ -48,7 +48,7 @@ export function AwbBarcodeScanner({
       );
       setRunning(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "تعذر فتح الكاميرا");
+      setErr(e instanceof Error ? e.message : "Could not open the camera");
       inst.current = null;
     }
   };
@@ -65,10 +65,12 @@ export function AwbBarcodeScanner({
         id={ELEM_ID}
         className="w-full min-h-0 max-w-sm overflow-hidden rounded-lg bg-[color:var(--color-code-bg)]"
       />
-      {err ? <p className="text-sm text-red-800">{err}</p> : null}
+      {err ? (
+        <p className="text-sm text-[color:var(--color-error)]">{err}</p>
+      ) : null}
       {running ? (
         <Button type="button" variant="secondary" onClick={() => void stop()}>
-          إيقاف الكاميرا
+          Stop camera
         </Button>
       ) : (
         <Button
@@ -77,7 +79,7 @@ export function AwbBarcodeScanner({
           onClick={() => void start()}
           disabled={disabled}
         >
-          فتح كاميرا (مسح الباركود)
+          Open camera (scan barcode)
         </Button>
       )}
     </div>

@@ -13,6 +13,11 @@ import { useUiStore } from "@/store/zustand/ui-store";
 import type { User, UserRole } from "@/lib/types/models";
 import { Badge } from "@/components/ui/badge";
 
+export type UsersManagementProps = {
+  /** When set, the create dialog is controlled by the parent (e.g. header action). */
+  createControl?: { open: boolean; setOpen: (open: boolean) => void };
+};
+
 const ROLES: UserRole[] = [
   "admin",
   "moderator",
@@ -22,7 +27,7 @@ const ROLES: UserRole[] = [
   "support",
 ];
 
-export function UsersManagement() {
+export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
   const tenantId = useSessionStore((s) => s.tenantId);
@@ -32,7 +37,12 @@ export function UsersManagement() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpenInternal, setCreateOpenInternal] = useState(false);
+  const createOpen = createControl ? createControl.open : createOpenInternal;
+  const setCreateOpen = createControl
+    ? createControl.setOpen
+    : setCreateOpenInternal;
+  const showCreateToolbar = !createControl;
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("support");
@@ -90,7 +100,7 @@ export function UsersManagement() {
   }
 
   function openEditDrawer(u: User) {
-    openDrawer(`تعديل: ${u.name}`, () => (
+    openDrawer(`Edit: ${u.name}`, () => (
       <EditUserForm
         user={u}
         onSave={async (patch) => {
@@ -113,31 +123,33 @@ export function UsersManagement() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          <UserPlus className="size-4" aria-hidden />
-          مستخدم جديد
-        </Button>
-      </div>
+      {showCreateToolbar ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <UserPlus className="size-4" aria-hidden />
+            New user
+          </Button>
+        </div>
+      ) : null}
 
       {err ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
       ) : null}
 
       <Modal
         open={createOpen}
-        title="مستخدم جديد"
+        title="New user"
         onClose={() => setCreateOpen(false)}
       >
         <div className="grid gap-3">
           <div className="space-y-1">
-            <label className="text-xs text-[color:var(--color-text-secondary)]">الاسم</label>
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Name</label>
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-[color:var(--color-text-secondary)]">البريد (اختياري)</label>
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Email (optional)</label>
             <Input
               type="email"
               value={newEmail}
@@ -145,7 +157,7 @@ export function UsersManagement() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-[color:var(--color-text-secondary)]">الدور</label>
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Role</label>
             <Select
               value={newRole}
               onChange={(e) => setNewRole(e.target.value as UserRole)}
@@ -158,7 +170,7 @@ export function UsersManagement() {
             </Select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-[color:var(--color-text-secondary)]">الهدف اليومي</label>
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Daily goal</label>
             <Input
               type="number"
               min={0}
@@ -171,28 +183,28 @@ export function UsersManagement() {
             onClick={createUser}
             disabled={!newName.trim()}
           >
-            إنشاء
+            Create
           </Button>
         </div>
       </Modal>
 
       <ResponsiveTable
         desktop={
-          <TableWrap>
+          <TableWrap className="border-0 shadow-[var(--shadow-neo-raised)] md:rounded-2xl">
             <thead>
               <tr>
-                <Th>الاسم</Th>
-                <Th>الدور</Th>
-                <Th>الهدف</Th>
-                <Th>البريد</Th>
-                <Th>إجراءات</Th>
+                <Th>Name</Th>
+                <Th>Role</Th>
+                <Th>Goal</Th>
+                <Th>Email</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <Tr>
                   <Td colSpan={5} className="text-center text-[color:var(--color-text-muted)]">
-                    لا مستخدمين
+                    No users
                   </Td>
                 </Tr>
               ) : (
@@ -211,7 +223,7 @@ export function UsersManagement() {
                         size="sm"
                         onClick={() => openEditDrawer(u)}
                       >
-                        تعديل
+                        Edit
                       </Button>
                     </Td>
                   </Tr>
@@ -224,11 +236,14 @@ export function UsersManagement() {
           <div className="space-y-3">
             {users.length === 0 ? (
               <p className="text-center text-sm text-[color:var(--color-text-muted)]">
-                لا مستخدمين
+                No users
               </p>
             ) : (
               users.map((u) => (
-                <ResponsiveCard key={u.id}>
+                <ResponsiveCard
+                  key={u.id}
+                  className="rounded-2xl border-0 shadow-[var(--shadow-neo-raised)]"
+                >
                   <div className="space-y-3 text-sm">
                     <div className="text-base font-semibold text-[color:var(--color-text-primary)]">
                       {u.name}
@@ -236,7 +251,7 @@ export function UsersManagement() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge>{u.role}</Badge>
                       <span className="text-[color:var(--color-text-muted)]">
-                        هدف: {u.daily_target}
+                        Goal: {u.daily_target}
                       </span>
                     </div>
                     <div className="text-[color:var(--color-text-secondary)]">
@@ -249,7 +264,7 @@ export function UsersManagement() {
                       className="w-full"
                       onClick={() => openEditDrawer(u)}
                     >
-                      تعديل
+                      Edit
                     </Button>
                   </div>
                 </ResponsiveCard>
@@ -294,7 +309,7 @@ function EditUserForm({
               target !== user.daily_target ? target : undefined,
           });
         } catch (er) {
-          setLocalErr(er instanceof Error ? er.message : "فشل الحفظ");
+          setLocalErr(er instanceof Error ? er.message : "Save failed");
         } finally {
           setLoading(false);
         }
@@ -304,11 +319,11 @@ function EditUserForm({
         <p className="text-sm text-[color:var(--color-error)]">{localErr}</p>
       ) : null}
       <div className="space-y-1">
-        <label className="text-xs text-[color:var(--color-text-secondary)]">الاسم</label>
+        <label className="text-xs text-[color:var(--color-text-secondary)]">Name</label>
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-[color:var(--color-text-secondary)]">الدور</label>
+        <label className="text-xs text-[color:var(--color-text-secondary)]">Role</label>
         <Select value={r} onChange={(e) => setR(e.target.value as UserRole)}>
           {ROLES.map((x) => (
             <option key={x} value={x}>
@@ -318,7 +333,7 @@ function EditUserForm({
         </Select>
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-[color:var(--color-text-secondary)]">الهدف اليومي</label>
+        <label className="text-xs text-[color:var(--color-text-secondary)]">Daily goal</label>
         <Input
           type="number"
           min={0}
@@ -327,7 +342,7 @@ function EditUserForm({
         />
       </div>
       <Button type="submit" disabled={loading}>
-        {loading ? "…" : "حفظ"}
+        {loading ? "…" : "Save"}
       </Button>
     </form>
   );

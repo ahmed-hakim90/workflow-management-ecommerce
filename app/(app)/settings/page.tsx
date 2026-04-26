@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
+import { useProfileStore } from "@/store/zustand/profile-store";
 import {
   useThemeStore,
   type ThemePreference,
@@ -74,13 +75,15 @@ export default function SettingsPage() {
 
   const [section, setSection] = useState<SectionId>("profile");
   const [advTab, setAdvTab] = useState<AdvTabId>("general");
-  const [firstName, setFirstName] = useState("Alex");
-  const [lastName, setLastName] = useState("Rivers");
-  const [bio, setBio] = useState(
-    "Operations lead focused on SLA-backed fulfillment.",
-  );
-  const [timezone, setTimezone] = useState("America/Los_Angeles");
-  const [language, setLanguage] = useState("en");
+  const firstName = useProfileStore((s) => s.firstName);
+  const lastName = useProfileStore((s) => s.lastName);
+  const bio = useProfileStore((s) => s.bio);
+  const timezone = useProfileStore((s) => s.timezone);
+  const language = useProfileStore((s) => s.language);
+  const setProfile = useProfileStore((s) => s.setProfile);
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [profileErr, setProfileErr] = useState<string | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [orderAlerts, setOrderAlerts] = useState(true);
   const [inventoryAlerts, setInventoryAlerts] = useState(true);
   const [ticketEscalation, setTicketEscalation] = useState(false);
@@ -140,6 +143,41 @@ export default function SettingsPage() {
     () => wooWebhookCanonical?.trim() || wooWebhookUrl,
     [wooWebhookCanonical, wooWebhookUrl],
   );
+
+  const saveProfile = useCallback(async () => {
+    setProfileMsg(null);
+    setProfileErr(null);
+    setProfileSaving(true);
+    const p = useProfileStore.getState();
+    const nameLine = [p.firstName.trim(), p.lastName.trim()]
+      .filter(Boolean)
+      .join(" ");
+    if (nameLine) {
+      setSession({ displayName: nameLine });
+    }
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        body: JSON.stringify({
+          firstName: p.firstName,
+          lastName: p.lastName,
+        }),
+      });
+      const json = (await res.json()) as { error?: string; data?: { name?: string } };
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      if (json.data?.name) {
+        setSession({ displayName: json.data.name });
+      }
+      setProfileMsg("Profile saved.");
+    } catch (e) {
+      setProfileErr(
+        e instanceof Error ? e.message : "Could not save profile. Try again.",
+      );
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [apiSecret, idToken, tenantId, userId, role, setSession]);
 
   useEffect(() => {
     setAppOrigin(
@@ -686,16 +724,27 @@ export default function SettingsPage() {
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => setSettingsMsg("Profile saved (local demo).")}
+                    onClick={saveProfile}
+                    disabled={profileSaving}
                   >
-                    Save Changes
+                    {profileSaving ? "Saving…" : "Save Changes"}
                   </Button>
                 </CardHeader>
+                {profileMsg ? (
+                  <p className="px-5 pb-0 text-sm text-[color:var(--color-success)] sm:px-6">
+                    {profileMsg}
+                  </p>
+                ) : null}
+                {profileErr ? (
+                  <p className="px-5 pb-0 text-sm text-[color:var(--color-error)] sm:px-6">
+                    {profileErr}
+                  </p>
+                ) : null}
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2 flex items-center gap-4">
                     <div className="flex size-16 items-center justify-center rounded-2xl bg-[color:var(--color-muted-bg)] text-lg font-bold text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)]">
-                      {firstName[0]}
-                      {lastName[0]}
+                      {firstName[0] || "?"}
+                      {lastName[0] || ""}
                     </div>
                     <button
                       type="button"
@@ -707,12 +756,14 @@ export default function SettingsPage() {
                   <Input
                     label="First name"
                     value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    onChange={(e) =>
+                      setProfile({ firstName: e.target.value })
+                    }
                   />
                   <Input
                     label="Last name"
                     value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    onChange={(e) => setProfile({ lastName: e.target.value })}
                   />
                   <div className="sm:col-span-2 space-y-1">
                     <label className="text-xs font-medium text-[color:var(--color-text-secondary)]">
@@ -721,13 +772,13 @@ export default function SettingsPage() {
                     <textarea
                       className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]"
                       value={bio}
-                      onChange={(e) => setBio(e.target.value)}
+                      onChange={(e) => setProfile({ bio: e.target.value })}
                     />
                   </div>
                   <Select
                     label="Timezone"
                     value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
+                    onChange={(e) => setProfile({ timezone: e.target.value })}
                   >
                     <option value="America/Los_Angeles">PST (UTC-8)</option>
                     <option value="Africa/Cairo">Africa/Cairo</option>
@@ -737,7 +788,7 @@ export default function SettingsPage() {
                   <Select
                     label="Preferred language"
                     value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
+                    onChange={(e) => setProfile({ language: e.target.value })}
                   >
                     <option value="en">English (US)</option>
                     <option value="ar">Arabic</option>

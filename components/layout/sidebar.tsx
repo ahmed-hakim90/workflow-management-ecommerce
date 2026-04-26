@@ -90,12 +90,23 @@ export function Sidebar() {
 
   const showNavLabels = isLgUp || sidebarTabletExpanded;
   const isIconRail = isMdUp && !isLgUp && !sidebarTabletExpanded;
+  /** Name + title when there is width; on mobile (`<md`) sidebar is overlay with room for the full user row. */
+  const showSidebarUserFull = isLgUp || sidebarTabletExpanded || !isMdUp;
 
   const primaryNav = navItems.filter((item) => item.show(role));
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
+
+  const userNameLine = displayName?.trim() || userId || "User";
+  const userInitials =
+    (userNameLine || "?")
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?";
 
   async function onSignOut() {
     await firebaseClientSignOut();
@@ -236,24 +247,34 @@ export function Sidebar() {
             ) : null}
           </button>
         ) : null}
-        {showNavLabels ? (
-          <div className="flex w-full items-center gap-3 rounded-xl bg-[color:var(--color-bg-subtle)]/70 px-2.5 py-2.5">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-primary)]">
-              {(displayName || userId || "?")
-                .split(/\s+/)
-                .map((w) => w[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase() || "?"}
+        {showSidebarUserFull ? (
+          <div className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-[color:var(--color-bg-subtle)]/70 px-2.5 py-2.5">
+            <span
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-primary)]"
+              aria-hidden
+            >
+              {userInitials}
             </span>
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-medium text-[color:var(--color-text-primary)]">
-                {displayName?.trim() || userId || "User"}
+                {userNameLine}
               </p>
               <p className="truncate text-[11px] text-[color:var(--color-text-muted)]">
                 {ROLE_TITLE[role] ?? role}
               </p>
             </div>
+          </div>
+        ) : isIconRail ? (
+          <div
+            className="flex w-11 justify-center"
+            title={`${userNameLine} — ${ROLE_TITLE[role] ?? role}`}
+          >
+            <span
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-[11px] font-semibold text-[color:var(--color-primary)]"
+              aria-label={userNameLine}
+            >
+              {userInitials}
+            </span>
           </div>
         ) : null}
         <a

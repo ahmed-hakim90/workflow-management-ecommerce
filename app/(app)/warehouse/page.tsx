@@ -73,7 +73,7 @@ export default function WarehousePage() {
     } catch (e) {
       setMsg({
         type: "err",
-        text: e instanceof Error ? e.message : "تعذر تحميل الطلبات",
+        text: e instanceof Error ? e.message : "Could not load orders",
       });
     } finally {
       setLoadingList(false);
@@ -114,14 +114,14 @@ export default function WarehousePage() {
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setMsg({
         type: "ok",
-        text: `تم التحديث: حالة الطلب ${json.data.order.status}`,
+        text: `Updated. Order status: ${json.data.order.status}`,
       });
       setAwb("");
       await refresh();
     } catch (e) {
       setMsg({
         type: "err",
-        text: e instanceof Error ? e.message : "فشل المسح",
+        text: e instanceof Error ? e.message : "Scan failed",
       });
     } finally {
       setScanLoading(false);
@@ -149,14 +149,14 @@ export default function WarehousePage() {
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      setMsg({ type: "ok", text: "تمت إعادة مرحلة الطلب." });
+      setMsg({ type: "ok", text: "Order stage reverted." });
       setRevertFor(null);
       setRevertReason("");
       await refresh();
     } catch (e) {
       setMsg({
         type: "err",
-        text: e instanceof Error ? e.message : "فشل الإرجاع",
+        text: e instanceof Error ? e.message : "Revert failed",
       });
     } finally {
       setRevertLoading(false);
@@ -169,13 +169,13 @@ export default function WarehousePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="المخزن"
+        title="Warehouse"
         description={
           wh
             ? wh.singleScanFulfills
-              ? "وضع المسح: مسح واحد يُنفّذ الشحن (جاهز → تم الشحن). اربط واتساب الافتراضي في الإعدادات."
-              : `وضع المسح: خطوة بخطوة. انتظر ~${(wh.scanCooldownMs / 1000).toFixed(1)} ث بعد التعبئة قبل المسح الثاني.`
-            : "قائمة الطلبات الجاهزة للتعبئة والشحن ومسح رقم التتبع."
+              ? "Scan mode: a single scan completes shipment (ready → shipped). Set default WhatsApp in settings if needed."
+              : `Scan mode: step-by-step. Wait ~${(wh.scanCooldownMs / 1000).toFixed(1)}s after pack before the next scan.`
+            : "Orders ready to pack and ship, plus tracking (AWB) scan."
         }
       />
 
@@ -183,7 +183,7 @@ export default function WarehousePage() {
         <div className="order-2 lg:order-1 lg:col-span-5">
           <Card>
             <CardHeader>
-              <CardTitle>طلبات المخزن</CardTitle>
+              <CardTitle>Warehouse queue</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <ResponsiveTable
@@ -191,10 +191,10 @@ export default function WarehousePage() {
                   <TableWrap className="rounded-none border-0 shadow-none">
                     <thead>
                       <tr>
-                        <Th>الطلب</Th>
-                        <Th>العميل</Th>
-                        <Th>الحالة</Th>
-                        {can(role, "order:revert") ? <Th>إرجاع</Th> : null}
+                        <Th>Order</Th>
+                        <Th>Customer</Th>
+                        <Th>Status</Th>
+                        {can(role, "order:revert") ? <Th>Revert</Th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -204,7 +204,7 @@ export default function WarehousePage() {
                             colSpan={can(role, "order:revert") ? 4 : 3}
                             className="text-center text-[color:var(--color-text-muted)]"
                           >
-                            جاري التحميل…
+                            Loading…
                           </Td>
                         </Tr>
                       ) : orders.length === 0 ? (
@@ -213,7 +213,7 @@ export default function WarehousePage() {
                             colSpan={can(role, "order:revert") ? 4 : 3}
                             className="text-center text-[color:var(--color-text-muted)]"
                           >
-                            لا توجد طلبات في المخزن
+                            No warehouse orders
                           </Td>
                         </Tr>
                       ) : (
@@ -238,7 +238,7 @@ export default function WarehousePage() {
                                       setRevertReason("");
                                     }}
                                   >
-                                    إرجاع
+                                    Revert
                                   </Button>
                                 ) : (
                                   "—"
@@ -255,11 +255,11 @@ export default function WarehousePage() {
                   <div className="space-y-3 p-4">
                     {loadingList ? (
                       <p className="text-center text-sm text-[color:var(--color-text-muted)]">
-                        جاري التحميل…
+                        Loading…
                       </p>
                     ) : orders.length === 0 ? (
                       <p className="text-center text-sm text-[color:var(--color-text-muted)]">
-                        لا توجد طلبات في المخزن
+                        No warehouse orders
                       </p>
                     ) : (
                       orders.map((o) => (
@@ -281,7 +281,7 @@ export default function WarehousePage() {
                                   setRevertReason("");
                                 }}
                               >
-                                إرجاع مرحلة
+                                Revert stage
                               </Button>
                             ) : null}
                           </div>
@@ -298,7 +298,7 @@ export default function WarehousePage() {
         <div className="order-1 lg:order-2 lg:col-span-7">
           <Card className="min-h-[280px] lg:min-h-[320px]">
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle>مسح تتبع (AWB / بوليصة)</CardTitle>
+              <CardTitle>Track scan (AWB)</CardTitle>
               {tabletCollapseToggle ? (
                 <Button
                   type="button"
@@ -314,7 +314,7 @@ export default function WarehousePage() {
                     <ChevronDown className="size-4" aria-hidden />
                   )}
                   <span className="sr-only">
-                    {scanPanelOpen ? "طي لوحة المسح" : "إظهار لوحة المسح"}
+                    {scanPanelOpen ? "Collapse scan panel" : "Expand scan panel"}
                   </span>
                 </Button>
               ) : null}
@@ -328,28 +328,31 @@ export default function WarehousePage() {
                   <AwbBarcodeScanner
                     onDecoded={(v) => {
                       setAwb(v);
-                      setMsg({ type: "ok", text: "تمت قراءة الباركود. اضغط تسجيل المسح أو انتظر." });
+                      setMsg({
+                        type: "ok",
+                        text: "Barcode read. Press Register scan or continue.",
+                      });
                     }}
                     disabled={scanLoading}
                   />
                   <Input
                     className="h-12 text-center text-base tracking-wide md:h-14 md:text-lg"
-                    placeholder="رقم التتبع (AWB)"
+                    placeholder="Tracking number (AWB)"
                     value={awb}
                     onChange={(e) => setAwb(e.target.value)}
                     autoComplete="off"
                     inputMode="text"
                   />
                   <Button type="submit" disabled={scanLoading || !awb.trim()}>
-                    {scanLoading ? "جاري المعالجة…" : "تسجيل المسح"}
+                    {scanLoading ? "Processing…" : "Register scan"}
                   </Button>
                 </form>
                 {msg ? (
                   <div
                     className={
                       msg.type === "ok"
-                        ? "mt-4 rounded-lg border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)]"
-                        : "mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+                        ? "mt-4 rounded-xl border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]"
+                        : "mt-4 rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]"
                     }
                     role="status"
                   >
@@ -364,7 +367,7 @@ export default function WarehousePage() {
 
       <Modal
         open={revertFor !== null}
-        title="إرجاع مرحلة"
+        title="Revert stage"
         onClose={() => {
           if (revertLoading) return;
           setRevertFor(null);
@@ -383,14 +386,14 @@ export default function WarehousePage() {
                 }
               }}
             >
-              إلغاء
+              Cancel
             </Button>
             <Button
               type="button"
               onClick={() => void onRevert()}
               disabled={revertLoading || !revertReason.trim() || !canRevert}
             >
-              {revertLoading ? "جاري…" : "تأكيد"}
+              {revertLoading ? "…" : "Confirm"}
             </Button>
           </div>
         }
@@ -398,16 +401,16 @@ export default function WarehousePage() {
         {revertFor && revertTo ? (
           <div className="space-y-3 text-sm">
             <p className="text-[color:var(--color-text-secondary)]">
-              سيتم إرجاع الطلب{" "}
-              <span className="font-mono">{revertFor.id.slice(0, 8)}…</span> من{" "}
+              This will move order{" "}
+              <span className="font-mono">{revertFor.id.slice(0, 8)}…</span> from{" "}
               <span className="font-medium">
-                {revertFor.status === "packed" ? "معبّأ" : "جاهز للمخزن"}
+                {revertFor.status === "packed" ? "Packed" : "Ready for warehouse"}
               </span>{" "}
-              إلى{" "}
+              to{" "}
               <span className="font-medium">
                 {revertTo === "ready_for_warehouse"
-                  ? "جاهز للمخزن (مع إلغاء تعبئة البوليصة)"
-                  : "الفوترة / التأكيد"}
+                  ? "Ready for warehouse (and void label/pack if applicable)"
+                  : "Invoicing / confirmation"}
               </span>
               .
             </p>
@@ -416,14 +419,14 @@ export default function WarehousePage() {
                 className="text-xs font-medium text-[color:var(--color-text-secondary)]"
                 htmlFor="revert-reason"
               >
-                السبب (مطلوب)
+                Reason (required)
               </label>
               <textarea
                 id="revert-reason"
                 className="min-h-[88px] w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-2 text-sm"
                 value={revertReason}
                 onChange={(e) => setRevertReason(e.target.value)}
-                placeholder="سبب واضح للمشرف/المخزن"
+                placeholder="Short reason for supervisor / audit log"
                 disabled={revertLoading}
               />
             </div>

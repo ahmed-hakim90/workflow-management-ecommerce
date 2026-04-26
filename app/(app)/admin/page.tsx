@@ -7,6 +7,8 @@ import { StageBarChart } from "@/components/charts/stage-bar-chart";
 import { TeamLineChart } from "@/components/charts/team-line-chart";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
+import { humanizeOrderStageKey } from "@/lib/ui/order-stage-label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type AdminSummary = {
   stages: Record<string, number>;
@@ -30,11 +32,13 @@ export default function AdminPage() {
 
   const [data, setData] = useState<AdminSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setErr(null);
+      setLoading(true);
       try {
         const res = await fetch("/api/admin/summary", {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -44,6 +48,8 @@ export default function AdminPage() {
         if (!cancelled) setData(json.data as AdminSummary);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Error");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -60,7 +66,7 @@ export default function AdminPage() {
     Object.entries(data.stages)
       .filter(([k]) => k !== "warehouse")
       .map(([name, count]) => ({
-        name: name.replaceAll("_", " "),
+        name: humanizeOrderStageKey(name),
         count: Number(count) || 0,
         value: Number(data.stageValues[name] ?? 0) || 0,
       }));
@@ -74,12 +80,12 @@ export default function AdminPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="إدارة متقدمة"
-        description="ملخص المراحل، الفريق، ونقاط الاختناق. يتطلب دور مدير أو مشرف."
+        title="Admin"
+        description="Stage pipeline, team throughput, and bottlenecks. Requires an admin or moderator role."
       />
 
       {err ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
       ) : null}
@@ -87,66 +93,83 @@ export default function AdminPage() {
       <div className="grid grid-cols-12 gap-4">
         <Card className="col-span-12 lg:col-span-6">
           <CardHeader>
-            <CardTitle>الطلبات والقيمة حسب المرحلة</CardTitle>
+            <CardTitle>Orders and value by stage</CardTitle>
           </CardHeader>
           <CardContent>
-            {barData && barData.length > 0 ? (
+            {loading && !err ? (
+              <Skeleton className="h-72 w-full" />
+            ) : barData && barData.length > 0 ? (
               <StageBarChart
                 data={barData}
                 formatValue={fmtStageMoney}
-                valueLabel="قيمة الطلبات"
-                countLabel="عدد الطلبات"
+                valueLabel="Pipeline value"
+                countLabel="Order count"
               />
             ) : (
-              <p className="text-sm text-[color:var(--color-text-muted)]">لا بيانات</p>
+              <p className="text-sm text-[color:var(--color-text-muted)]">No data</p>
             )}
           </CardContent>
         </Card>
         <Card className="col-span-12 lg:col-span-6">
           <CardHeader>
-            <CardTitle>أداء الفريق</CardTitle>
+            <CardTitle>Team performance</CardTitle>
           </CardHeader>
           <CardContent>
-            {lineData.length > 0 ? (
+            {loading && !err ? (
+              <Skeleton className="h-72 w-full" />
+            ) : lineData.length > 0 ? (
               <TeamLineChart data={lineData} />
             ) : (
-              <p className="text-sm text-[color:var(--color-text-muted)]">لا بيانات</p>
+              <p className="text-sm text-[color:var(--color-text-muted)]">No data</p>
             )}
           </CardContent>
         </Card>
         {data?.bottleneck ? (
-          <Card className="col-span-12">
-            <CardContent className="py-4 text-sm">
-              <span className="text-[color:var(--color-text-muted)]">اختناق محتمل:</span>{" "}
-              <span className="font-mono font-medium">{data.bottleneck}</span>
-            </CardContent>
-          </Card>
+          <div className="col-span-12 rounded-2xl border border-[color:var(--color-callout-warning-border)] bg-[color:var(--color-callout-warning-bg)] p-4 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-neo-raised)]">
+            <span className="text-[color:var(--color-text-primary)]/80">
+              Potential bottleneck:
+            </span>{" "}
+            <span className="font-medium text-[color:var(--color-callout-warning-text)]">
+              {humanizeOrderStageKey(data.bottleneck)}
+            </span>
+          </div>
         ) : null}
         <Card className="col-span-12">
           <CardHeader>
-            <CardTitle>الفريق</CardTitle>
+            <CardTitle>Team</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <TableWrap className="rounded-none border-0 shadow-none">
               <thead>
                 <tr>
-                  <Th>الاسم</Th>
-                  <Th>الدور</Th>
-                  <Th>الهدف</Th>
-                  <Th>المنجز</Th>
-                  <Th>الأداء</Th>
+                  <Th>Name</Th>
+                  <Th>Role</Th>
+                  <Th>Target</Th>
+                  <Th>Done</Th>
+                  <Th>Performance</Th>
                 </tr>
               </thead>
               <tbody>
-                {(data?.team ?? []).map((t) => (
-                  <Tr key={t.name + t.role}>
-                    <Td>{t.name}</Td>
-                    <Td>{t.role}</Td>
-                    <Td>{t.target}</Td>
-                    <Td>{t.done}</Td>
-                    <Td>{t.performancePct}%</Td>
+                {(data?.team ?? []).length === 0 ? (
+                  <Tr>
+                    <Td
+                      colSpan={5}
+                      className="text-center text-[color:var(--color-text-muted)]"
+                    >
+                      No team members
+                    </Td>
                   </Tr>
-                ))}
+                ) : (
+                  (data?.team ?? []).map((t) => (
+                    <Tr key={t.name + t.role}>
+                      <Td>{t.name}</Td>
+                      <Td>{t.role}</Td>
+                      <Td>{t.target}</Td>
+                      <Td>{t.done}</Td>
+                      <Td>{t.performancePct}%</Td>
+                    </Tr>
+                  ))
+                )}
               </tbody>
             </TableWrap>
           </CardContent>
