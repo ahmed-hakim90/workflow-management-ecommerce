@@ -11,6 +11,7 @@ import {
   setTenantWooCommerceRestFields,
   setTenantWooCommerceWebhookSecret,
 } from "@/lib/services/tenant-settings.service";
+import { getServerEnv } from "@/lib/config/env";
 import { getTenant } from "@/lib/services/tenants.service";
 
 const patchSchema = z
@@ -62,11 +63,51 @@ export async function GET(req: Request) {
     const su = woo.storeUrl?.trim();
     const wooRestConfigured = Boolean(su && ck && cs);
     const b = int.bosta ?? {};
+    const serverEnv = getServerEnv();
+    const hasServerEnvWooSecret = Boolean(
+      serverEnv.WOOCOMMERCE_WEBHOOK_SECRET?.trim(),
+    );
+    const hasFirebaseAdmin = Boolean(
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim(),
+    );
+    const hasCustomAppUrl = Boolean(process.env.NEXT_PUBLIC_APP_URL?.trim());
+    const hasVercelUrl = Boolean(process.env.VERCEL_URL?.trim());
+    const effectiveSecretReady = wooSecretOk || hasServerEnvWooSecret;
+    const warnings: string[] = [];
+    if (!hasFirebaseAdmin) {
+      warnings.push(
+        "FIREBASE_SERVICE_ACCOUNT_JSON is not set: server cannot write to Firestore (order creation from webhooks will fail).",
+      );
+    }
+    if (!effectiveSecretReady) {
+      warnings.push(
+        "No HMAC secret: set Integrations → webhook secret or WOOCOMMERCE_WEBHOOK_SECRET in server env, or the webhook returns 503.",
+      );
+    }
+    if (!hasCustomAppUrl && hasVercelUrl) {
+      warnings.push(
+        "NEXT_PUBLIC_APP_URL is unset: the shown webhook URL may use a deployment host; set a stable production domain in Vercel env.",
+      );
+    }
+    if (!base) {
+      warnings.push(
+        "No public base URL: set NEXT_PUBLIC_APP_URL, or use a Vercel deployment so VERCEL_URL is set.",
+      );
+    }
     return jsonOk({
       tenantId: ctx.tenantId,
       serverPublicBaseUrl: base,
       woocommerceWebhookUrl: `${base}/api/webhooks/woocommerce?tenant=${encodeURIComponent(ctx.tenantId)}`,
       woocommerceWebhookSecretConfigured: wooSecretOk,
+      webhookDiagnostics: {
+        hasPerTenantWooSecret: wooSecretOk,
+        hasServerEnvWooSecret,
+        effectiveSecretReady,
+        hasFirebaseAdmin,
+        hasCustomAppUrl,
+        hasVercelUrl,
+        warnings,
+      },
       woocommerceRestConfigured: wooRestConfigured,
       woocommerceStoreUrl: su || null,
       woocommerceConsumerKeyLast4: last4(ck ?? undefined),

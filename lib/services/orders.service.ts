@@ -33,7 +33,15 @@ import {
   recordNewOrderAnalytics,
   recordOrderConfirmedAnalytics,
 } from "@/lib/services/analytics-daily.service";
+import { cloneJsonForFirestore } from "@/lib/util/json-snapshot";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
+
+/** List views should not load large Woo snapshot payloads. */
+function omitWooSnapshotForList(o: Order): Order {
+  if (o.woocommerceOrderSnapshot === undefined) return o;
+  const { woocommerceOrderSnapshot: _snap, ...rest } = o;
+  return rest as Order;
+}
 
 export async function listOrders(
   tenantId: string,
@@ -54,7 +62,7 @@ export async function listOrders(
   if (opts?.assignedTo) {
     rows = rows.filter((o) => o.assigned_to === opts.assignedTo);
   }
-  return rows.slice(0, 200);
+  return rows.slice(0, 200).map(omitWooSnapshotForList);
 }
 
 export async function getOrder(
@@ -88,6 +96,8 @@ export async function upsertOrderFromWooCommerce(input: {
   lineItems?: Order["lineItems"];
   shipping?: Order["shipping"];
   notes?: string;
+  /** Full parsed WooCommerce order object (e.g. webhook `POST` body). */
+  woocommerceOrderSnapshot?: unknown;
 }): Promise<Order> {
   if (isDevMockDataEnabled()) return mockUpsertOrderFromWooCommerce(input);
   const db = getDb();
@@ -103,6 +113,10 @@ export async function upsertOrderFromWooCommerce(input: {
     const ref = existing.docs[0].ref;
     const prev = existing.docs[0].data() as Order;
     const paymentLocked = prev.status !== "pending_confirmation";
+    const snap =
+      input.woocommerceOrderSnapshot != null
+        ? cloneJsonForFirestore(input.woocommerceOrderSnapshot)
+        : prev.woocommerceOrderSnapshot;
     const next: Order = {
       ...prev,
       customer: input.customer,
@@ -110,6 +124,7 @@ export async function upsertOrderFromWooCommerce(input: {
       lineItems: input.lineItems ?? prev.lineItems,
       shipping: input.shipping ?? prev.shipping,
       notes: input.notes ?? prev.notes,
+      woocommerceOrderSnapshot: snap,
       updatedAt: now,
     };
     await ref.set(next);
@@ -135,6 +150,10 @@ export async function upsertOrderFromWooCommerce(input: {
     lineItems: input.lineItems,
     shipping: input.shipping,
     notes: input.notes,
+    woocommerceOrderSnapshot:
+      input.woocommerceOrderSnapshot != null
+        ? cloneJsonForFirestore(input.woocommerceOrderSnapshot)
+        : undefined,
     createdAt: now,
     updatedAt: now,
   };

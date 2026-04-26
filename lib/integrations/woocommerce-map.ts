@@ -8,46 +8,68 @@ import type {
 } from "@/lib/types/models";
 import { buildPayment } from "@/lib/logic/payment";
 
-const wooOrderSchema = z.object({
-  id: z.union([z.number(), z.string()]),
-  billing: z
-    .object({
-      first_name: z.string().optional(),
-      last_name: z.string().optional(),
-      email: z.string().optional(),
-      phone: z.string().optional(),
-      address_1: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      postcode: z.string().optional(),
-      country: z.string().optional(),
-    })
-    .optional(),
-  total: z.string().optional(),
-  date_paid: z.string().nullable().optional(),
-  payment_method: z.string().optional(),
-  customer_note: z.string().optional(),
-  line_items: z
-    .array(
-      z.object({
-        id: z.union([z.number(), z.string()]).optional(),
-        name: z.string(),
-        sku: z.union([z.string(), z.number()]).optional(),
-        quantity: z.number().optional(),
-        price: z.string().optional(),
-        total: z.string().optional(),
-      }),
-    )
-    .optional(),
-  shipping_lines: z
-    .array(
-      z.object({
-        method_title: z.string().optional(),
-        total: z.string().optional(),
-      }),
-    )
-    .optional(),
-});
+/** JSON values often arrive as string or number from the WC REST / webhooks. */
+const wcStringOrNumber = z.union([z.string(), z.number()]).nullable().optional();
+const toNum = (v: unknown, fallback = 0): number => {
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  const s = String(v).replace(/,/g, "");
+  const n = parseFloat(s);
+  return Number.isNaN(n) ? fallback : n;
+};
+
+const wcLineItemSchema = z
+  .object({
+    id: z.union([z.number(), z.string()]).optional(),
+    name: wcStringOrNumber,
+    sku: z.union([z.string(), z.number()]).optional().nullable(),
+    quantity: wcStringOrNumber,
+    price: wcStringOrNumber,
+    total: wcStringOrNumber,
+  })
+  .loose();
+
+const wcOrderSchema = z
+  .object({
+    id: z.union([z.number(), z.string()]),
+    billing: z
+      .object({
+        first_name: z.string().optional(),
+        last_name: z.string().optional(),
+        email: z.string().optional(),
+        phone: z.string().optional(),
+        address_1: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postcode: z.string().optional(),
+        country: z.string().optional(),
+      })
+      .optional()
+      .nullable(),
+    total: wcStringOrNumber,
+    date_paid: z.string().nullable().optional(),
+    payment_method: z.string().optional().nullable(),
+    customer_note: z.string().optional().nullable(),
+    line_items: z.array(wcLineItemSchema).optional().nullable(),
+    shipping_lines: z
+      .array(
+        z
+          .object({
+            method_title: z.string().optional().nullable(),
+            total: wcStringOrNumber,
+          })
+          .loose(),
+      )
+      .optional()
+      .nullable(),
+  })
+  .loose();
+
+function lineItemName(n: unknown): string {
+  if (n == null) return "Item";
+  const s = String(n).trim();
+  return s || "Item";
+}
 
 export function mapWooCommerceOrder(body: unknown): {
   wooOrderId: string;
@@ -57,30 +79,44 @@ export function mapWooCommerceOrder(body: unknown): {
   shipping?: OrderShipping;
   notes?: string;
 } {
-  const parsed = wooOrderSchema.parse(body);
-  const wooOrderId = String(parsed.id);
-  const name = [parsed.billing?.first_name, parsed.billing?.last_name]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const parsed = wcOrderSchema.safeParse(body);
+  if (!parsed.success) {
+    const [issue] = parsed.error.issues;
+    const at = issue?.path?.length
+      ? `${issue.path.join(".")}: ${issue.message}`
+      : parsed.error.issues[0]?.message;
+    throw new Error(at ?? "Invalid WooCommerce order payload (schema)");
+  }
+  const w = parsed.data;
+  const billing = w.billing ?? undefined;
+
+  const wooOrderId = String(w.id);
+  const name = [billing?.first_name, billing?.last_name]
+    .filter((x): x is string => Boolean(x && String(x).trim()))
+    .map((s) => String(s).trim())
+    .join(" ");
   const customer: OrderCustomer = {
     name: name || "Customer",
-    email: parsed.billing?.email,
-    phone: parsed.billing?.phone,
+    email: billing?.email ?? undefined,
+    phone: billing?.phone ? String(billing.phone) : undefined,
     address: [
-      parsed.billing?.address_1,
-      parsed.billing?.city,
-      parsed.billing?.state,
-      parsed.billing?.postcode,
-      parsed.billing?.country,
+      billing?.address_1,
+      billing?.city,
+      billing?.state,
+      billing?.postcode,
+      billing?.country,
     ]
-      .filter(Boolean)
+      .filter((x) => x != null && String(x).trim() !== "")
+      .map((x) => String(x).trim())
       .join(", "),
   };
 
-  const total = Number(parsed.total ?? "0");
-  const paid = parsed.date_paid ? total : 0;
-  const method = (parsed.payment_method ?? "").toLowerCase();
+  const total = toNum(w.total, 0);
+  const paid = w.date_paid ? total : 0;
+  const method = (w.payment_method != null
+    ? String(w.payment_method)
+    : ""
+  ).toLowerCase();
   let payment_status: PaymentStatus = "partial";
   if (method.includes("cod") || method === "cod") {
     payment_status = "cod";
@@ -94,15 +130,16 @@ export function mapWooCommerceOrder(body: unknown): {
     paid_amount: paid,
   });
 
-  const lineItems: OrderLineItem[] | undefined = parsed.line_items?.length
-    ? parsed.line_items.map((li) => {
-        const qty = li.quantity ?? 1;
-        const unit = Number(li.price ?? "0");
-        const lineTotal = Number(li.total ?? String(unit * qty));
+  const rawLines = w.line_items;
+  const lineItems: OrderLineItem[] | undefined = rawLines?.length
+    ? rawLines.map((li) => {
+        const qty = toNum(li.quantity, 1) || 1;
+        const unit = toNum(li.price, 0);
+        const lineTotal = toNum(li.total, unit * qty);
         return {
           id: li.id !== undefined ? String(li.id) : undefined,
-          name: li.name,
-          sku: li.sku !== undefined ? String(li.sku) : undefined,
+          name: lineItemName(li.name),
+          sku: li.sku != null && li.sku !== "" ? String(li.sku) : undefined,
           quantity: qty,
           unit_price: unit,
           line_total: lineTotal,
@@ -111,15 +148,19 @@ export function mapWooCommerceOrder(body: unknown): {
     : undefined;
 
   let shipping: OrderShipping | undefined;
-  if (parsed.shipping_lines?.length) {
-    const sl = parsed.shipping_lines[0];
+  if (w.shipping_lines?.length) {
+    const sl = w.shipping_lines[0];
+    const cost = toNum(sl?.total, 0);
+    const title = sl?.method_title;
     shipping = {
-      method: sl.method_title,
-      cost: Number(sl.total ?? "0"),
+      method: title != null ? String(title) : undefined,
+      cost,
     };
   }
 
-  const notes = parsed.customer_note?.trim() || undefined;
+  const notes = w.customer_note
+    ? String(w.customer_note).trim() || undefined
+    : undefined;
 
   return { wooOrderId, customer, payment, lineItems, shipping, notes };
 }

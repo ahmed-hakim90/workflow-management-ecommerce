@@ -6,14 +6,26 @@ import {
   claimIntegrationEvent,
   releaseIntegrationEventClaim,
 } from "@/lib/services/integration-events.service";
+import { appendWebhookIngestLog } from "@/lib/services/webhook-ingest-logs.service";
 import { getServerEnv } from "@/lib/config/env";
 import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
 
 export const runtime = "nodejs";
 
+function wooOrderIdFromBody(body: unknown): string | undefined {
+  if (body && typeof body === "object" && "id" in body) {
+    const id = (body as { id?: unknown }).id;
+    if (id !== undefined && id !== null) return String(id);
+  }
+  return undefined;
+}
+
 export async function POST(req: Request) {
   const rawBody = await req.text();
+  const requestBodyBytes = rawBody.length;
   const sig = req.headers.get("x-wc-webhook-signature");
+  const deliveryId =
+    req.headers.get("x-wc-webhook-delivery-id")?.trim() || "unknown";
   const env = getServerEnv();
   const url = new URL(req.url);
   const tenantId = url.searchParams.get("tenant") ?? "default";
@@ -26,20 +38,41 @@ export async function POST(req: Request) {
   ).trim();
 
   if (!secretForVerify) {
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "no_secret_503",
+      httpStatus: 503,
+      requestBodyBytes,
+    });
     return jsonError("Webhook secret not configured for this tenant", 503);
   }
 
   if (!verifyWooCommerceSignature(rawBody, sig, secretForVerify)) {
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "invalid_signature_401",
+      httpStatus: 401,
+      requestBodyBytes,
+    });
     return jsonError("Invalid webhook signature", 401);
   }
-
-  const deliveryId =
-    req.headers.get("x-wc-webhook-delivery-id") ?? `${Date.now()}`;
 
   let body: unknown;
   try {
     body = JSON.parse(rawBody) as unknown;
   } catch {
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "invalid_json_400",
+      httpStatus: 400,
+      requestBodyBytes,
+    });
     return jsonError("Invalid JSON", 400);
   }
 
@@ -50,6 +83,15 @@ export async function POST(req: Request) {
     payloadSummary: { bytes: rawBody.length },
   });
   if (claim === "duplicate") {
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "duplicate_200",
+      httpStatus: 200,
+      wooOrderId: wooOrderIdFromBody(body),
+      requestBodyBytes,
+    });
     console.info(
       JSON.stringify({
         event: "woocommerce_webhook_duplicate_delivery",
@@ -73,14 +115,36 @@ export async function POST(req: Request) {
       lineItems: mapped.lineItems,
       shipping: mapped.shipping,
       notes: mapped.notes,
+      woocommerceOrderSnapshot: body,
+    });
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "order_upserted_200",
+      httpStatus: 200,
+      orderId: order.id,
+      wooOrderId: mapped.wooOrderId,
+      requestBodyBytes,
     });
     return jsonOk({ orderId: order.id });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Webhook processing failed";
+    const wooId = wooOrderIdFromBody(body);
     await releaseIntegrationEventClaim({
       tenantId,
       source: "woocommerce",
       deliveryId,
+    });
+    appendWebhookIngestLog({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+      outcome: "processing_failed_400",
+      httpStatus: 400,
+      errorMessage: msg,
+      wooOrderId: wooId,
+      requestBodyBytes,
     });
     console.error(
       JSON.stringify({

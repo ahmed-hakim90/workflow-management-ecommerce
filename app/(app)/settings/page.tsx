@@ -18,7 +18,10 @@ import {
 import { defaultKanbanSettings } from "@/lib/kanban/column";
 import { cn } from "@/lib/ui/cn";
 import { can } from "@/lib/auth/rbac";
-import { defaultTenantAutomation } from "@/lib/types/models";
+import {
+  defaultTenantAutomation,
+  type WebhookIngestLog,
+} from "@/lib/types/models";
 import { UsersManagement } from "@/components/users/users-management";
 
 type AdvTabId =
@@ -108,6 +111,17 @@ export default function SettingsPage() {
   const [wooServerBase, setWooServerBase] = useState<string | null>(null);
   const [wooMsg, setWooMsg] = useState<string | null>(null);
   const [wooErr, setWooErr] = useState<string | null>(null);
+  const [wooDiagnostic, setWooDiagnostic] = useState<{
+    hasPerTenantWooSecret: boolean;
+    hasServerEnvWooSecret: boolean;
+    effectiveSecretReady: boolean;
+    hasFirebaseAdmin: boolean;
+    hasCustomAppUrl: boolean;
+    hasVercelUrl: boolean;
+    warnings: string[];
+  } | null>(null);
+  const [wooIngestLogs, setWooIngestLogs] = useState<WebhookIngestLog[]>([]);
+  const [wooIngestLoadErr, setWooIngestLoadErr] = useState<string | null>(null);
   const [wooCopied, setWooCopied] = useState(false);
   const [wooWebhookCanonical, setWooWebhookCanonical] = useState<string | null>(
     null,
@@ -193,6 +207,9 @@ export default function SettingsPage() {
     (async () => {
       setWooErr(null);
       setBostaErr(null);
+      setWooIngestLoadErr(null);
+      setWooDiagnostic(null);
+      setWooIngestLogs([]);
       try {
         const res = await fetch("/api/settings/integrations", {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -216,8 +233,40 @@ export default function SettingsPage() {
           bostaDefaultBuildingNumber?: string | null;
           bostaDefaultAddressLine?: string | null;
           bostaPackageDescription?: string | null;
+          webhookDiagnostics?: {
+            hasPerTenantWooSecret: boolean;
+            hasServerEnvWooSecret: boolean;
+            effectiveSecretReady: boolean;
+            hasFirebaseAdmin: boolean;
+            hasCustomAppUrl: boolean;
+            hasVercelUrl: boolean;
+            warnings: string[];
+          };
         };
         if (!cancelled) {
+          setWooDiagnostic(d.webhookDiagnostics ?? null);
+          try {
+            const ir = await fetch("/api/settings/webhook-ingest-logs?limit=30", {
+              headers: buildAuthHeaders({
+                apiSecret,
+                idToken,
+                tenantId,
+                userId,
+                role,
+              }),
+            });
+            const ij = (await ir.json()) as { data?: WebhookIngestLog[]; error?: string };
+            if (!ir.ok) {
+              if (!cancelled) setWooIngestLoadErr(ij.error ?? "Could not load webhook log");
+            } else if (!cancelled) {
+              setWooIngestLogs(ij.data ?? []);
+            }
+          } catch (ie) {
+            if (!cancelled)
+              setWooIngestLoadErr(
+                ie instanceof Error ? ie.message : "Could not load webhook log",
+              );
+          }
           setWooWebhookCanonical(d.woocommerceWebhookUrl?.trim() || null);
           setWooSecretConfigured(!!d.woocommerceWebhookSecretConfigured);
           setWooServerBase(d.serverPublicBaseUrl?.trim() || null);
@@ -1111,6 +1160,162 @@ export default function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {can(role, "user:manage") ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Webhook health (server)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
+                    <p className="text-[color:var(--color-text-secondary)]">
+                      Shown for admins. These checks reflect the{" "}
+                      <strong>deployed</strong> server: set env vars in Vercel, not
+                      only <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">.env.local</code>.
+                    </p>
+                    {wooDiagnostic ? (
+                      <ul className="space-y-1.5 text-xs">
+                        {[
+                          [
+                            "HMAC: per-tenant secret in Integrations",
+                            wooDiagnostic.hasPerTenantWooSecret,
+                          ],
+                          [
+                            "HMAC: WOOCOMMERCE_WEBHOOK_SECRET on server",
+                            wooDiagnostic.hasServerEnvWooSecret,
+                          ],
+                          [
+                            "HMAC: at least one secret (ready to verify)",
+                            wooDiagnostic.effectiveSecretReady,
+                          ],
+                          [
+                            "FIREBASE_SERVICE_ACCOUNT_JSON (write orders in Firestore)",
+                            wooDiagnostic.hasFirebaseAdmin,
+                          ],
+                          [
+                            "NEXT_PUBLIC_APP_URL (stable production link)",
+                            wooDiagnostic.hasCustomAppUrl,
+                          ],
+                          [
+                            "VERCEL_URL present (Vercel deploy fallback for base URL)",
+                            wooDiagnostic.hasVercelUrl,
+                          ],
+                        ].map(([label, ok]) => (
+                          <li
+                            key={String(label)}
+                            className="flex items-start justify-between gap-2"
+                          >
+                            <span className="text-[color:var(--color-text-secondary)]">
+                              {label}
+                            </span>
+                            <span
+                              className={
+                                ok
+                                  ? "shrink-0 font-medium text-[color:var(--color-success)]"
+                                  : "shrink-0 text-[color:var(--color-text-muted)]"
+                              }
+                            >
+                              {ok ? "OK" : "—"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-[color:var(--color-text-muted)]">
+                        {wooErr
+                          ? "Open this tab with an account that can load Integrations, or fix the error above."
+                          : "Loading…"}
+                      </p>
+                    )}
+                    {wooDiagnostic?.warnings?.length ? (
+                      <div className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+                        {wooDiagnostic.warnings.map((w) => (
+                          <p key={w}>{w}</p>
+                        ))}
+                      </div>
+                    ) : null}
+                    {wooIngestLoadErr ? (
+                      <p className="text-xs text-[color:var(--color-error)]">
+                        {wooIngestLoadErr}
+                      </p>
+                    ) : null}
+                    {wooIngestLogs.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[640px] text-left text-xs [direction:ltr]">
+                          <thead>
+                            <tr className="border-b border-[color:var(--color-divider)] text-[color:var(--color-text-muted)]">
+                              <th className="py-1.5 pe-2 font-medium">Time (UTC)</th>
+                              <th className="py-1.5 pe-2 font-medium">outcome</th>
+                              <th className="py-1.5 pe-2 font-medium">http</th>
+                              <th className="py-1.5 pe-2 font-medium">delivery</th>
+                              <th className="py-1.5 pe-2 font-medium">Woo #</th>
+                              <th className="py-1.5 pe-2 font-medium">OMS order</th>
+                              <th className="py-1.5 font-medium">error</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {wooIngestLogs.map((r) => (
+                              <tr
+                                key={r.id}
+                                className="border-b border-[color:var(--color-border)]/60"
+                              >
+                                <td className="whitespace-nowrap py-1.5 pe-2 font-mono text-[10px] text-[color:var(--color-text-secondary)]">
+                                  {r.createdAt}
+                                </td>
+                                <td className="py-1.5 pe-2 font-mono text-[10px]">
+                                  {r.outcome}
+                                </td>
+                                <td className="py-1.5 pe-2 tabular-nums">
+                                  {r.httpStatus}
+                                </td>
+                                <td
+                                  className="max-w-[8rem] truncate py-1.5 pe-2 font-mono text-[10px]"
+                                  title={r.deliveryId}
+                                >
+                                  {r.deliveryId}
+                                </td>
+                                <td className="py-1.5 pe-2 font-mono text-[10px]">
+                                  {r.wooOrderId ?? "—"}
+                                </td>
+                                <td className="py-1.5 pe-2">
+                                  {r.orderId ? (
+                                    <Link
+                                      className="text-[color:var(--color-primary)] hover:underline"
+                                      href={`/orders/${r.orderId}`}
+                                    >
+                                      {r.orderId.slice(0, 8)}…
+                                    </Link>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                                <td
+                                  className="max-w-[10rem] truncate text-[color:var(--color-error)]"
+                                  title={r.errorMessage}
+                                >
+                                  {r.errorMessage ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p className="mt-2 text-[10px] text-[color:var(--color-text-muted)]">
+                          Rows are written when WordPress calls your server (401/503/400/200
+                          as applicable). A row does not always mean a new OMS order (see{" "}
+                          <code className="rounded bg-[color:var(--color-code-bg)] px-0.5">
+                            outcome
+                          </code>
+                          ).
+                        </p>
+                      </div>
+                    ) : wooDiagnostic && !wooIngestLoadErr && !wooErr ? (
+                      <p className="text-xs text-[color:var(--color-text-muted)]">
+                        No webhook delivery rows yet. Create a test order in WooCommerce or use
+                        &quot;Delivery&quot; on the webhook.
+                      </p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               <Card>
                 <CardHeader>

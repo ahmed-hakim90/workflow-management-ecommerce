@@ -33,6 +33,7 @@ import {
   type AnalyticsDaily,
   type Tenant,
   type TenantWarehouseSettings,
+  type WebhookIngestLog,
 } from "@/lib/types/models";
 import { slugify } from "@/lib/string/slugify";
 
@@ -50,6 +51,7 @@ type MockState = {
   tenantIntegrations: Record<string, TenantIntegrationsDoc>;
   tenantKanban: Record<string, TenantKanbanSettings>;
   activityLogs: ActivityLog[];
+  webhookIngestLogs: WebhookIngestLog[];
   integrationKeys: Set<string>;
   tenants: Record<string, Tenant>;
 };
@@ -341,6 +343,7 @@ function createSeed(): MockState {
     tenantIntegrations: {},
     tenantKanban: {},
     activityLogs: [],
+    webhookIngestLogs: [],
     integrationKeys: new Set(),
     tenants: { [DEMO_TENANT]: demoTenant },
   };
@@ -554,6 +557,7 @@ export async function mockUpsertOrderFromWooCommerce(input: {
   lineItems?: Order["lineItems"];
   shipping?: Order["shipping"];
   notes?: string;
+  woocommerceOrderSnapshot?: unknown;
 }): Promise<Order> {
   const s = ctx();
   const now = iso();
@@ -565,6 +569,12 @@ export async function mockUpsertOrderFromWooCommerce(input: {
   if (existingIdx >= 0) {
     const prev = s.orders[existingIdx];
     const paymentLocked = prev.status !== "pending_confirmation";
+    const snapUp =
+      input.woocommerceOrderSnapshot != null
+        ? (JSON.parse(
+            JSON.stringify(input.woocommerceOrderSnapshot),
+          ) as Order["woocommerceOrderSnapshot"])
+        : prev.woocommerceOrderSnapshot;
     const next: Order = {
       ...prev,
       customer: input.customer,
@@ -572,6 +582,7 @@ export async function mockUpsertOrderFromWooCommerce(input: {
       lineItems: input.lineItems ?? prev.lineItems,
       shipping: input.shipping ?? prev.shipping,
       notes: input.notes ?? prev.notes,
+      woocommerceOrderSnapshot: snapUp,
       updatedAt: now,
     };
     s.orders[existingIdx] = next;
@@ -596,6 +607,12 @@ export async function mockUpsertOrderFromWooCommerce(input: {
     lineItems: input.lineItems,
     shipping: input.shipping,
     notes: input.notes,
+    woocommerceOrderSnapshot:
+      input.woocommerceOrderSnapshot != null
+        ? (JSON.parse(
+            JSON.stringify(input.woocommerceOrderSnapshot),
+          ) as Order["woocommerceOrderSnapshot"])
+        : undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -1567,4 +1584,19 @@ export function mockReleaseIntegrationEventClaim(input: {
 }): void {
   const key = `${input.tenantId}_${input.source}_${input.deliveryId}`;
   ctx().integrationKeys.delete(key);
+}
+
+export function mockAppendWebhookIngestLog(row: WebhookIngestLog): void {
+  const s = ctx();
+  s.webhookIngestLogs.unshift(row);
+  if (s.webhookIngestLogs.length > 500) s.webhookIngestLogs.length = 500;
+}
+
+export function mockListWebhookIngestLogs(
+  tenantId: string,
+  limit: number,
+): WebhookIngestLog[] {
+  return ctx()
+    .webhookIngestLogs.filter((r) => r.tenantId === tenantId)
+    .slice(0, limit);
 }

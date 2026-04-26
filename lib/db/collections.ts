@@ -9,6 +9,8 @@ export const COLLECTIONS = {
   activityLogs: "activity_logs",
   tenantSettings: "tenant_settings",
   integrationEvents: "integration_events",
+  /** WooCommerce (and future) inbound webhook attempt outcomes per tenant. */
+  webhookIngestLogs: "webhook_ingest_logs",
   /** Denormalized counts for dashboard stage metrics (see order-stage-rollup.service). */
   tenantOrderStageRollup: "tenant_order_stage_stats",
 } as const;

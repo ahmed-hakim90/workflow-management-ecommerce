@@ -47,6 +47,18 @@ export interface OrderShipping {
   cost: number;
 }
 
+/**
+ * JSON-serializable value (WooCommerce payloads, snapshots).
+ * Matches Firestore-supported scalars and nested structure.
+ */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: JsonValue }
+  | JsonValue[];
+
 export interface Order {
   id: string;
   tenantId: string;
@@ -61,6 +73,11 @@ export interface Order {
   shipping?: OrderShipping;
   /** Customer / staff notes from source system */
   notes?: string;
+  /**
+   * Last full WooCommerce order resource (webhook JSON body), for audit / integrations.
+   * Omitted in list API responses to keep payloads small; present on `GET` order detail.
+   */
+  woocommerceOrderSnapshot?: JsonValue;
   createdAt: string;
   updatedAt: string;
 }
@@ -192,6 +209,34 @@ export interface ActivityLog {
   userId: string;
   metadata?: Record<string, unknown>;
   timestamp: string;
+}
+
+export type WebhookIngestSource = "woocommerce";
+
+/**
+ * Inbound webhook delivery outcome (for Settings diagnostics). No secrets; optional error text is truncated on write.
+ */
+export type WebhookIngestOutcome =
+  | "no_secret_503"
+  | "invalid_signature_401"
+  | "invalid_json_400"
+  | "duplicate_200"
+  | "order_upserted_200"
+  | "processing_failed_400";
+
+export interface WebhookIngestLog {
+  id: string;
+  tenantId: string;
+  source: WebhookIngestSource;
+  /** WooCommerce `X-WC-Webhook-Delivery-Id` when present. */
+  deliveryId: string;
+  outcome: WebhookIngestOutcome;
+  httpStatus: number;
+  orderId?: string;
+  wooOrderId?: string;
+  errorMessage?: string;
+  requestBodyBytes: number;
+  createdAt: string;
 }
 
 export type AutomationShipmentStage = "confirmed" | "invoiced";

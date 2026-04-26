@@ -574,6 +574,32 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
 
+          {o.woocommerceOrderSnapshot ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>بيانات WooCommerce الكاملة</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <details className="group">
+                  <summary className="cursor-pointer list-none text-sm text-[color:var(--color-primary)] [&::-webkit-details-marker]:hidden">
+                    <span className="underline">عرض / إخفاء الـ JSON</span>
+                    <span className="ms-2 text-[color:var(--color-text-muted)] no-underline group-open:hidden">
+                      (آخر استلام من الويب هوك)
+                    </span>
+                  </summary>
+                  <pre
+                    className={cn(
+                      "mt-3 max-h-[min(480px,50vh)] overflow-auto rounded-lg border border-[color:var(--color-code-border)]",
+                      "bg-[color:var(--color-code-bg)] p-3 text-[11px] leading-relaxed [direction:ltr] [text-align:left]",
+                    )}
+                  >
+                    {JSON.stringify(o.woocommerceOrderSnapshot, null, 2)}
+                  </pre>
+                </details>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle>سجل الإجراءات</CardTitle>
