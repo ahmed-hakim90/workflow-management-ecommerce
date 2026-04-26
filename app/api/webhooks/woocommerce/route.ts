@@ -2,7 +2,10 @@ import { jsonOk, jsonError } from "@/lib/http/json";
 import { verifyWooCommerceSignature } from "@/lib/integrations/woocommerce-webhook";
 import { mapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
 import { upsertOrderFromWooCommerce } from "@/lib/services/orders.service";
-import { claimIntegrationEvent } from "@/lib/services/integration-events.service";
+import {
+  claimIntegrationEvent,
+  releaseIntegrationEventClaim,
+} from "@/lib/services/integration-events.service";
 import { getServerEnv } from "@/lib/config/env";
 import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
 
@@ -16,8 +19,6 @@ export async function POST(req: Request) {
   const tenantId = url.searchParams.get("tenant") ?? "default";
 
   const tenantSecret = await getTenantWooCommerceWebhookSecret(tenantId);
-  console.log("TENANT SECRET:", tenantSecret);
-  console.log("SIGNATURE HEADER:", req.headers.get("x-wc-webhook-signature"));
   const secretForVerify = (
     tenantSecret ??
     env.WOOCOMMERCE_WEBHOOK_SECRET ??
@@ -66,6 +67,11 @@ export async function POST(req: Request) {
     });
     return jsonOk({ orderId: order.id });
   } catch (e) {
+    await releaseIntegrationEventClaim({
+      tenantId,
+      source: "woocommerce",
+      deliveryId,
+    });
     const msg = e instanceof Error ? e.message : "Webhook processing failed";
     return jsonError(msg, 400);
   }

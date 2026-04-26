@@ -1559,3 +1559,12 @@ export function mockClaimIntegrationEvent(input: {
   s.integrationKeys.add(key);
   return "new";
 }
+
+export function mockReleaseIntegrationEventClaim(input: {
+  tenantId: string;
+  source: string;
+  deliveryId: string;
+}): void {
+  const key = `${input.tenantId}_${input.source}_${input.deliveryId}`;
+  ctx().integrationKeys.delete(key);
+}
