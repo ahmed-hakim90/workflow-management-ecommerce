@@ -7,7 +7,8 @@ import {
 } from "@/lib/dev/mock-backend";
 
 /**
- * Idempotency for webhooks using a stable external delivery id.
+ * Idempotency for inbound webhook deliveries only.
+ * `deliveryId` is the provider's webhook delivery id, not an OMS shipment id.
  */
 export async function claimIntegrationEvent(input: {
   tenantId: string;

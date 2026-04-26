@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 /**
  * WooCommerce webhook signatures are base64-encoded HMAC-SHA256 of the raw body.
@@ -19,4 +19,18 @@ export function verifyWooCommerceSignature(
   } catch {
     return false;
   }
+}
+
+export function resolveWooCommerceDeliveryId(
+  req: Request,
+  rawBody: string,
+): string {
+  const headerDeliveryId = req.headers.get("x-wc-webhook-delivery-id")?.trim();
+  if (headerDeliveryId) return headerDeliveryId;
+
+  const bodyHash = createHash("sha256")
+    .update(rawBody)
+    .digest("hex")
+    .slice(0, 32);
+  return `body-sha256-${bodyHash}`;
 }

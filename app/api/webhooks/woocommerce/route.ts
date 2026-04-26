@@ -1,5 +1,8 @@
 import { jsonOk, jsonError } from "@/lib/http/json";
-import { verifyWooCommerceSignature } from "@/lib/integrations/woocommerce-webhook";
+import {
+  resolveWooCommerceDeliveryId,
+  verifyWooCommerceSignature,
+} from "@/lib/integrations/woocommerce-webhook";
 import { mapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
 import { upsertOrderFromWooCommerce } from "@/lib/services/orders.service";
 import {
@@ -24,8 +27,7 @@ export async function POST(req: Request) {
   const rawBody = await req.text();
   const requestBodyBytes = rawBody.length;
   const sig = req.headers.get("x-wc-webhook-signature");
-  const deliveryId =
-    req.headers.get("x-wc-webhook-delivery-id")?.trim() || "unknown";
+  const deliveryId = resolveWooCommerceDeliveryId(req, rawBody);
   const env = getServerEnv();
   const url = new URL(req.url);
   const tenantId = url.searchParams.get("tenant") ?? "default";
