@@ -126,6 +126,21 @@ export default function SettingsPage() {
   const [wooWebhookCanonical, setWooWebhookCanonical] = useState<string | null>(
     null,
   );
+  const [storefrontOrderWebhookCanonical, setStorefrontOrderWebhookCanonical] =
+    useState<string | null>(null);
+  const [storefrontOrderSecretConfigured, setStorefrontOrderSecretConfigured] =
+    useState(false);
+  const [storefrontOrderSecretDraft, setStorefrontOrderSecretDraft] =
+    useState("");
+  const [storefrontOrderHeaderDraft, setStorefrontOrderHeaderDraft] =
+    useState("x-api-secret");
+  const [storefrontOrderCopied, setStorefrontOrderCopied] = useState(false);
+  const [storefrontOrderMsg, setStorefrontOrderMsg] = useState<string | null>(
+    null,
+  );
+  const [storefrontOrderErr, setStorefrontOrderErr] = useState<string | null>(
+    null,
+  );
   const [staffApiKeyConfigured, setStaffApiKeyConfigured] = useState(false);
   const [staffApiKeyLast4, setStaffApiKeyLast4] = useState<string | null>(null);
 
@@ -157,6 +172,18 @@ export default function SettingsPage() {
   const wooDisplayUrl = useMemo(
     () => wooWebhookCanonical?.trim() || wooWebhookUrl,
     [wooWebhookCanonical, wooWebhookUrl],
+  );
+
+  const storefrontOrderWebhookUrl = useMemo(() => {
+    const base = (appOrigin || "").replace(/\/$/, "");
+    if (!base) return "";
+    return `${base}/api/webhooks/storefront-orders?tenant=${encodeURIComponent(tenantId)}`;
+  }, [appOrigin, tenantId]);
+
+  const storefrontOrderDisplayUrl = useMemo(
+    () =>
+      storefrontOrderWebhookCanonical?.trim() || storefrontOrderWebhookUrl,
+    [storefrontOrderWebhookCanonical, storefrontOrderWebhookUrl],
   );
 
   const saveProfile = useCallback(async () => {
@@ -207,6 +234,7 @@ export default function SettingsPage() {
     (async () => {
       setWooErr(null);
       setBostaErr(null);
+      setStorefrontOrderErr(null);
       setWooIngestLoadErr(null);
       setWooDiagnostic(null);
       setWooIngestLogs([]);
@@ -219,6 +247,9 @@ export default function SettingsPage() {
         const d = json.data as {
           serverPublicBaseUrl?: string;
           woocommerceWebhookUrl?: string;
+          storefrontOrderWebhookUrl?: string;
+          storefrontOrderWebhookSecretConfigured?: boolean;
+          storefrontOrderSecretHeaderName?: string;
           woocommerceWebhookSecretConfigured?: boolean;
           woocommerceRestConfigured?: boolean;
           woocommerceStoreUrl?: string | null;
@@ -268,6 +299,15 @@ export default function SettingsPage() {
               );
           }
           setWooWebhookCanonical(d.woocommerceWebhookUrl?.trim() || null);
+          setStorefrontOrderWebhookCanonical(
+            d.storefrontOrderWebhookUrl?.trim() || null,
+          );
+          setStorefrontOrderSecretConfigured(
+            !!d.storefrontOrderWebhookSecretConfigured,
+          );
+          setStorefrontOrderHeaderDraft(
+            d.storefrontOrderSecretHeaderName?.trim() || "x-api-secret",
+          );
           setWooSecretConfigured(!!d.woocommerceWebhookSecretConfigured);
           setWooServerBase(d.serverPublicBaseUrl?.trim() || null);
           setStaffApiKeyConfigured(!!d.staffApiKeyConfigured);
@@ -492,6 +532,88 @@ export default function SettingsPage() {
       window.setTimeout(() => setWooCopied(false), 2000);
     } catch {
       setWooErr("Could not copy to clipboard");
+    }
+  }
+
+  async function copyStorefrontOrderUrl() {
+    const text = storefrontOrderDisplayUrl;
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard)
+      return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setStorefrontOrderCopied(true);
+      window.setTimeout(() => setStorefrontOrderCopied(false), 2000);
+    } catch {
+      setStorefrontOrderErr("Could not copy to clipboard");
+    }
+  }
+
+  async function saveStorefrontOrderWebhook() {
+    setStorefrontOrderMsg(null);
+    setStorefrontOrderErr(null);
+    const secret = storefrontOrderSecretDraft.trim();
+    const headerName = storefrontOrderHeaderDraft.trim() || "x-api-secret";
+    if (!secret) {
+      setStorefrontOrderErr(
+        "Paste the secret that the store frontend will send.",
+      );
+      return;
+    }
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          storefront_order_webhook_secret: secret,
+          storefront_order_secret_header_name: headerName,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        storefrontOrderWebhookSecretConfigured?: boolean;
+        storefrontOrderSecretHeaderName?: string;
+      };
+      setStorefrontOrderSecretConfigured(
+        !!d.storefrontOrderWebhookSecretConfigured,
+      );
+      setStorefrontOrderHeaderDraft(
+        d.storefrontOrderSecretHeaderName?.trim() || "x-api-secret",
+      );
+      setStorefrontOrderSecretDraft("");
+      setStorefrontOrderMsg("Storefront order webhook secret saved.");
+    } catch (e) {
+      setStorefrontOrderErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function clearStorefrontOrderWebhookSecret() {
+    setStorefrontOrderMsg(null);
+    setStorefrontOrderErr(null);
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ storefront_order_webhook_secret: null }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        storefrontOrderWebhookSecretConfigured?: boolean;
+      };
+      setStorefrontOrderSecretConfigured(
+        !!d.storefrontOrderWebhookSecretConfigured,
+      );
+      setStorefrontOrderSecretDraft("");
+      setStorefrontOrderMsg("Storefront order webhook secret removed.");
+    } catch (e) {
+      setStorefrontOrderErr(e instanceof Error ? e.message : "Remove failed");
     }
   }
 
@@ -1158,6 +1280,128 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Storefront order forwarding</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    Use this endpoint as the external API URL in the store
+                    frontend. After WooCommerce creates an order, the store sends
+                    the WooCommerce order JSON here and this OMS saves it for the
+                    selected company.
+                  </p>
+                  <div className="space-y-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      Forwarded order API URL
+                    </span>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <code className="block flex-1 break-all rounded-xl bg-[color:var(--color-code-bg)] px-3 py-2 text-xs shadow-[var(--shadow-neo-inset)]">
+                        {storefrontOrderDisplayUrl ||
+                          "…load this page in the browser to generate the link"}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={!storefrontOrderDisplayUrl}
+                        onClick={() => void copyStorefrontOrderUrl()}
+                      >
+                        {storefrontOrderCopied ? (
+                          <>
+                            <Check className="size-4" aria-hidden />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-4" aria-hidden />
+                            Copy
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                    <Input
+                      label="Secret header name"
+                      placeholder="x-api-secret"
+                      value={storefrontOrderHeaderDraft}
+                      onChange={(e) =>
+                        setStorefrontOrderHeaderDraft(e.target.value)
+                      }
+                    />
+                    <Input
+                      label="Shared secret"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Secret sent by the store frontend"
+                      value={storefrontOrderSecretDraft}
+                      onChange={(e) =>
+                        setStorefrontOrderSecretDraft(e.target.value)
+                      }
+                    />
+                  </div>
+                  <p className="text-xs">
+                    <span
+                      className={
+                        storefrontOrderSecretConfigured
+                          ? "font-medium text-[color:var(--color-success)]"
+                          : "text-[color:var(--color-text-muted)]"
+                      }
+                    >
+                      {storefrontOrderSecretConfigured
+                        ? "Secret is stored for this forwarded-order API."
+                        : "No secret stored yet; forwarded orders will be rejected."}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void saveStorefrontOrderWebhook()}
+                    >
+                      Save forwarding secret
+                    </Button>
+                    {storefrontOrderSecretConfigured ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void clearStorefrontOrderWebhookSecret()}
+                      >
+                        Remove forwarding secret
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-[color:var(--color-text-muted)]">
+                    Expected payload:{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                      event=&quot;order.created&quot;
+                    </code>
+                    ,{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                      source=&quot;sokany-store&quot;
+                    </code>
+                    , and{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                      order
+                    </code>{" "}
+                    containing the WooCommerce order response.
+                  </p>
+                  {storefrontOrderMsg ? (
+                    <p className="text-xs font-medium text-[color:var(--color-success)]">
+                      {storefrontOrderMsg}
+                    </p>
+                  ) : null}
+                  {storefrontOrderErr ? (
+                    <p className="text-xs text-[color:var(--color-error)]">
+                      {storefrontOrderErr}
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
 

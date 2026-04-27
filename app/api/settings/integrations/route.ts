@@ -6,8 +6,10 @@ import { jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import {
   getTenantIntegrations,
+  getTenantStorefrontOrderWebhookSettings,
   getTenantWooCommerceWebhookSecret,
   setTenantBostaFields,
+  setTenantStorefrontOrderFields,
   setTenantWooCommerceRestFields,
   setTenantWooCommerceWebhookSecret,
 } from "@/lib/services/tenant-settings.service";
@@ -27,6 +29,16 @@ const patchSchema = z
     bosta_default_building_number: z.union([z.string().max(50), z.null()]).optional(),
     bosta_default_address_line: z.union([z.string().max(500), z.null()]).optional(),
     bosta_package_description: z.union([z.string().max(500), z.null()]).optional(),
+    storefront_order_webhook_secret: z.union([z.string().max(8192), z.null()]).optional(),
+    storefront_order_secret_header_name: z
+      .union([
+        z
+          .string()
+          .max(100)
+          .regex(/^[!#$%&'*+\-.^_`|~0-9a-zA-Z]+$/, "Invalid HTTP header name"),
+        z.null(),
+      ])
+      .optional(),
   })
   .refine(
     (d) =>
@@ -50,10 +62,11 @@ export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
     assertCan(ctx.role, "user:manage");
-    const [int, tenant, wooSecret] = await Promise.all([
+    const [int, tenant, wooSecret, storefrontOrderWebhook] = await Promise.all([
       getTenantIntegrations(ctx.tenantId),
       getTenant(ctx.tenantId),
       getTenantWooCommerceWebhookSecret(ctx.tenantId),
+      getTenantStorefrontOrderWebhookSettings(ctx.tenantId),
     ]);
     const base = serverPublicBaseUrl();
     const wooSecretOk = wooSecret !== null;
@@ -99,6 +112,10 @@ export async function GET(req: Request) {
       tenantId: ctx.tenantId,
       serverPublicBaseUrl: base,
       woocommerceWebhookUrl: `${base}/api/webhooks/woocommerce?tenant=${encodeURIComponent(webhookTenantKey)}`,
+      storefrontOrderWebhookUrl: `${base}/api/webhooks/storefront-orders?tenant=${encodeURIComponent(webhookTenantKey)}`,
+      storefrontOrderWebhookSecretConfigured:
+        storefrontOrderWebhook.webhookSecret !== null,
+      storefrontOrderSecretHeaderName: storefrontOrderWebhook.secretHeaderName,
       woocommerceWebhookSecretConfigured: wooSecretOk,
       webhookDiagnostics: {
         hasPerTenantWooSecret: wooSecretOk,
@@ -189,9 +206,21 @@ export async function PATCH(req: Request) {
       });
     }
 
+    if (
+      body.storefront_order_webhook_secret !== undefined ||
+      body.storefront_order_secret_header_name !== undefined
+    ) {
+      await setTenantStorefrontOrderFields(ctx.tenantId, {
+        webhookSecret: body.storefront_order_webhook_secret,
+        secretHeaderName: body.storefront_order_secret_header_name,
+      });
+    }
+
     const int = await getTenantIntegrations(ctx.tenantId);
     const wooConfigured =
       (await getTenantWooCommerceWebhookSecret(ctx.tenantId)) !== null;
+    const storefrontOrderWebhook =
+      await getTenantStorefrontOrderWebhookSettings(ctx.tenantId);
     const woo = int.woocommerce ?? {};
     const wooRestConfigured = Boolean(
       woo.storeUrl?.trim() &&
@@ -202,6 +231,9 @@ export async function PATCH(req: Request) {
 
     return jsonOk({
       woocommerceWebhookSecretConfigured: wooConfigured,
+      storefrontOrderWebhookSecretConfigured:
+        storefrontOrderWebhook.webhookSecret !== null,
+      storefrontOrderSecretHeaderName: storefrontOrderWebhook.secretHeaderName,
       woocommerceRestConfigured: wooRestConfigured,
       woocommerceStoreUrl: woo.storeUrl?.trim() || null,
       woocommerceConsumerKeyLast4: last4(woo.consumerKey),

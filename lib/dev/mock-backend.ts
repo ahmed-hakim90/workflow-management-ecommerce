@@ -1319,6 +1319,43 @@ export function mockSetTenantBostaFields(
   }
 }
 
+export function mockSetTenantStorefrontOrderFields(
+  tenantId: string,
+  fields: {
+    webhookSecret?: string | null;
+    secretHeaderName?: string | null;
+  },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const storefrontOrders = { ...(integrations.storefrontOrders ?? {}) };
+  const apply = (
+    key: "webhookSecret" | "secretHeaderName",
+    val: string | null | undefined,
+  ) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete storefrontOrders[key];
+    } else {
+      storefrontOrders[key] = val.trim();
+    }
+  };
+  apply("webhookSecret", fields.webhookSecret);
+  apply("secretHeaderName", fields.secretHeaderName);
+  if (Object.keys(storefrontOrders).length === 0) {
+    delete integrations.storefrontOrders;
+  } else {
+    integrations.storefrontOrders = storefrontOrders;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
 export function mockRevertOrder(input: {
   tenantId: string;
   orderId: string;

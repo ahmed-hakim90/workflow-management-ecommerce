@@ -7,6 +7,7 @@ import {
   mockGetTenantIntegrations,
   mockSetTenantAutomation,
   mockSetTenantBostaFields,
+  mockSetTenantStorefrontOrderFields,
   mockSetTenantWooCommerceRestFields,
   mockSetTenantWooCommerceWebhookSecret,
 } from "@/lib/dev/mock-backend";
@@ -15,6 +16,7 @@ import {
   defaultTenantWarehouse,
   type TenantAutomationSettings,
   type TenantIntegrationsDoc,
+  type TenantStorefrontOrdersIntegration,
   type TenantWarehouseSettings,
 } from "@/lib/types/models";
 
@@ -136,6 +138,29 @@ export async function getTenantWooCommerceWebhookSecret(
   return s || null;
 }
 
+export type TenantStorefrontOrderWebhookSettings = {
+  webhookSecret: string | null;
+  secretHeaderName: string;
+};
+
+export function normalizeSecretHeaderName(raw: string | null | undefined): string {
+  const t = raw?.trim().toLowerCase();
+  return t || "x-api-secret";
+}
+
+export async function getTenantStorefrontOrderWebhookSettings(
+  tenantId: string,
+): Promise<TenantStorefrontOrderWebhookSettings> {
+  const doc = await getTenantIntegrations(tenantId);
+  const s = doc.storefrontOrders?.webhookSecret?.trim();
+  return {
+    webhookSecret: s || null,
+    secretHeaderName: normalizeSecretHeaderName(
+      doc.storefrontOrders?.secretHeaderName,
+    ),
+  };
+}
+
 /** Bosta Node SDK uses `${base}/api/v0/...` — host only, no /api/v2 suffix. */
 export function normalizeBostaBaseUrlForSdk(raw: string): string {
   let u = raw.trim().replace(/\/+$/, "");
@@ -212,6 +237,64 @@ export async function setTenantBostaFields(
     delete integrations.bosta;
   } else {
     integrations.bosta = bosta;
+  }
+  await ref.set(
+    {
+      integrations,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+}
+
+export async function setTenantStorefrontOrderFields(
+  tenantId: string,
+  fields: {
+    webhookSecret?: string | null;
+    secretHeaderName?: string | null;
+  },
+): Promise<void> {
+  const normalizedHeader =
+    fields.secretHeaderName === undefined
+      ? undefined
+      : normalizeSecretHeaderName(fields.secretHeaderName);
+  if (isDevMockDataEnabled()) {
+    mockSetTenantStorefrontOrderFields(tenantId, {
+      webhookSecret: fields.webhookSecret,
+      secretHeaderName: normalizedHeader,
+    });
+    return;
+  }
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
+  const snap = await ref.get();
+  const data = snap.data() as
+    | { integrations?: TenantIntegrationsDoc }
+    | undefined;
+  const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
+  const storefrontOrders: TenantStorefrontOrdersIntegration = {
+    ...(integrations.storefrontOrders ?? {}),
+  };
+
+  const apply = (
+    key: keyof TenantStorefrontOrdersIntegration,
+    val: string | null | undefined,
+  ) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete storefrontOrders[key];
+    } else {
+      storefrontOrders[key] = val.trim();
+    }
+  };
+
+  apply("webhookSecret", fields.webhookSecret);
+  apply("secretHeaderName", normalizedHeader);
+
+  if (Object.keys(storefrontOrders).length === 0) {
+    delete integrations.storefrontOrders;
+  } else {
+    integrations.storefrontOrders = storefrontOrders;
   }
   await ref.set(
     {

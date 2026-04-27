@@ -211,7 +211,7 @@ export interface ActivityLog {
   timestamp: string;
 }
 
-export type WebhookIngestSource = "woocommerce";
+export type WebhookIngestSource = "woocommerce" | "storefront_order_forwarding";
 
 /**
  * Inbound webhook delivery outcome (for Settings diagnostics). No secrets; optional error text is truncated on write.
@@ -219,7 +219,9 @@ export type WebhookIngestSource = "woocommerce";
 export type WebhookIngestOutcome =
   | "no_secret_503"
   | "invalid_signature_401"
+  | "invalid_secret_401"
   | "invalid_json_400"
+  | "invalid_payload_400"
   | "duplicate_200"
   | "order_upserted_200"
   | "processing_failed_400"
@@ -285,6 +287,13 @@ export interface TenantBostaIntegration {
   packageDescription?: string;
 }
 
+export interface TenantStorefrontOrdersIntegration {
+  /** Shared secret expected from the store frontend when it forwards created orders. */
+  webhookSecret?: string;
+  /** Header that carries `webhookSecret`; defaults to `x-api-secret`. */
+  secretHeaderName?: string;
+}
+
 export interface TenantWarehouseSettings {
   /** true = one AWB scan from `ready_for_warehouse` → `shipped` (per tenant). */
   singleScanFulfills?: boolean;
@@ -306,6 +315,7 @@ export const defaultTenantWarehouse: Required<
 export interface TenantIntegrationsDoc {
   woocommerce?: TenantWooCommerceIntegration;
   bosta?: TenantBostaIntegration;
+  storefrontOrders?: TenantStorefrontOrdersIntegration;
   /** سلوك المسح في المخزن (بدون واتساب). */
   warehouse?: TenantWarehouseSettings;
 }

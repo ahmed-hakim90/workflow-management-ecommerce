@@ -7,11 +7,15 @@ import {
   createTenantRecord,
   resolveTenantByIdOrSlug,
 } from "../services/tenants.service";
-import { setTenantWooCommerceWebhookSecret } from "../services/tenant-settings.service";
+import {
+  setTenantStorefrontOrderFields,
+  setTenantWooCommerceWebhookSecret,
+} from "../services/tenant-settings.service";
 import { omitUndefinedForFirestore } from "../util/json-snapshot";
 import { mapWooCommerceOrder } from "./woocommerce-map";
 import { resolveWooCommerceDeliveryId } from "./woocommerce-webhook";
 import { POST as postWooCommerceWebhook } from "../../app/api/webhooks/woocommerce/route";
+import { POST as postStorefrontOrderWebhook } from "../../app/api/webhooks/storefront-orders/route";
 import { GET as getIntegrationsSettings } from "../../app/api/settings/integrations/route";
 
 const originalDevMockData = process.env.DEV_MOCK_DATA;
@@ -142,6 +146,68 @@ describe("WooCommerce webhook order flow", () => {
 
     expect(res.status).toBe(200);
     expect(json.data.orderId).toEqual(expect.any(String));
+  });
+
+  it("accepts forwarded storefront orders addressed by tenant slug", async () => {
+    const tenant = await createTenantRecord("Forwarded Orders Co");
+    await setTenantStorefrontOrderFields(tenant.id, {
+      webhookSecret: "forward-secret",
+      secretHeaderName: "x-api-secret",
+    });
+    const rawBody = JSON.stringify({
+      event: "order.created",
+      source: "sokany-store",
+      order: wooPayload("forwarded-1"),
+    });
+
+    const res = await postStorefrontOrderWebhook(
+      new Request(
+        "https://oms.example.test/api/webhooks/storefront-orders?tenant=forwarded-orders-co",
+        {
+          method: "POST",
+          body: rawBody,
+          headers: {
+            "x-api-secret": "forward-secret",
+            "x-order-forwarding-delivery-id": "forwarded-delivery-1",
+          },
+        },
+      ),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.orderId).toEqual(expect.any(String));
+  });
+
+  it("rejects forwarded storefront orders with the wrong secret", async () => {
+    const tenant = await createTenantRecord("Forwarded Secret Co");
+    await setTenantStorefrontOrderFields(tenant.id, {
+      webhookSecret: "forward-secret",
+      secretHeaderName: "x-api-secret",
+    });
+    const rawBody = JSON.stringify({
+      event: "order.created",
+      source: "sokany-store",
+      order: wooPayload("forwarded-401"),
+    });
+
+    const res = await postStorefrontOrderWebhook(
+      new Request(
+        "https://oms.example.test/api/webhooks/storefront-orders?tenant=forwarded-secret-co",
+        {
+          method: "POST",
+          body: rawBody,
+          headers: {
+            "x-api-secret": "wrong-secret",
+            "x-order-forwarding-delivery-id": "forwarded-delivery-401",
+          },
+        },
+      ),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(401);
+    expect(json.error).toBe("Invalid storefront order secret");
   });
 
   it("keeps accepting WooCommerce webhooks addressed by tenant id", async () => {
