@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  PackageCheck,
+  Truck,
+  UserRound,
+  WalletCards,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +40,91 @@ import { cn } from "@/lib/ui/cn";
 
 type Bundle = { order: Order; shipments: Shipment[] };
 
+function displayOrderId(order: Order) {
+  return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
+}
+
+function formatMoney(value: number) {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+}
+
+function formatWhen(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("ar-EG", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function latestAwb(shipments: Shipment[]) {
+  return shipments.find((s) => s.type === "delivery")?.awb?.trim() ?? "—";
+}
+
+function DetailItem({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-1", className)}>
+      <div className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+        {label}
+      </div>
+      <div className="text-sm text-[color:var(--color-text-primary)]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  detail,
+  icon,
+  children,
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail?: React.ReactNode;
+  icon: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Card className="shadow-[var(--shadow-neo-raised-sm)]">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+              {label}
+            </p>
+            <div className="text-lg font-semibold text-[color:var(--color-text-primary)]">
+              {value}
+            </div>
+          </div>
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--color-muted-bg)] text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+            {icon}
+          </span>
+        </div>
+        {detail ? (
+          <p className="text-xs text-[color:var(--color-text-muted)]">{detail}</p>
+        ) : null}
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -54,6 +147,7 @@ export default function OrderDetailPage() {
   const [whatsappTemplate, setWhatsappTemplate] = useState(
     defaultTenantAutomation.whatsappMessageTemplate!,
   );
+  const [orderLinkTemplate, setOrderLinkTemplate] = useState("");
 
   const headers = useMemo(
     () => buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
@@ -89,7 +183,10 @@ export default function OrderDetailPage() {
       setUsers(uJson.data as User[]);
       if (wRes.ok) {
         const wJson = (await wRes.json()) as {
-          data: { whatsappMessageTemplate: string };
+          data: {
+            whatsappMessageTemplate: string;
+            orderLinkTemplate?: string;
+          };
         };
         if (wJson.data?.whatsappMessageTemplate) {
           setWhatsappTemplate(wJson.data.whatsappMessageTemplate);
@@ -98,10 +195,12 @@ export default function OrderDetailPage() {
             defaultTenantAutomation.whatsappMessageTemplate!,
           );
         }
+        setOrderLinkTemplate(wJson.data?.orderLinkTemplate?.trim() ?? "");
       } else {
         setWhatsappTemplate(
           defaultTenantAutomation.whatsappMessageTemplate!,
         );
+        setOrderLinkTemplate("");
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "خطأ");
@@ -205,9 +304,17 @@ export default function OrderDetailPage() {
     if (!o?.customer.phone) return;
     const deliveryAwb =
       shipments?.find((s) => s.type === "delivery")?.awb?.trim() ?? "—";
+    const displayOrderId = o.wooCommerceOrderId?.trim() || o.id;
+    const wooOrderId = o.wooCommerceOrderId?.trim() || "";
+    const orderLink = orderLinkTemplate
+      .replaceAll("{wooOrderId}", wooOrderId || displayOrderId)
+      .replaceAll("{orderId}", displayOrderId)
+      .trim();
     const body = formatConfirmationWhatsAppMessage(whatsappTemplate, {
       name: o.customer.name,
-      orderId: o.id,
+      orderId: displayOrderId,
+      wooOrderId: wooOrderId || undefined,
+      orderLink,
       awb: deliveryAwb,
     });
     const url = buildWhatsAppUrl(o.customer.phone, body);
@@ -229,12 +336,18 @@ export default function OrderDetailPage() {
   }
 
   const o = bundle?.order;
+  const displayId = o ? displayOrderId(o) : orderId.slice(0, 8).toUpperCase();
+  const deliveryAwb = bundle ? latestAwb(bundle.shipments) : "—";
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={loading ? "تفاصيل الطلب" : `طلب ${o?.id.slice(0, 8)}…`}
-        description="عنوان، بنود، شحن، دفع، بوليصات، سجل الإجراءات."
+        title={loading ? "تفاصيل الطلب" : `طلب #${displayId}`}
+        description={
+          loading
+            ? "تحميل بيانات الطلب، العميل، الدفع، الشحن وسجل الإجراءات."
+            : `آخر تحديث: ${o ? formatWhen(o.updatedAt) : "—"}`
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link href="/orders">
@@ -270,12 +383,12 @@ export default function OrderDetailPage() {
       />
 
       {!loading && err ? (
-        <p className="rounded-lg border border-[color:var(--color-error)]/40 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
+        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
       ) : null}
       {msg ? (
-        <p className="rounded-lg border border-[color:var(--color-success)]/40 bg-[color:var(--color-success)]/10 p-3 text-sm text-[color:var(--color-success)]">
+        <p className="rounded-xl border-0 bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
           {msg}
         </p>
       ) : null}
@@ -284,33 +397,79 @@ export default function OrderDetailPage() {
         <OrderDetailSkeleton />
       ) : o ? (
         <>
-          <div className="flex flex-wrap gap-2">
-            {can(role, "order:confirm") && o.status === "pending_confirmation" ? (
-              <Button type="button" onClick={onConfirm}>
-                تأكيد الطلب
-              </Button>
-            ) : null}
-            {can(role, "order:cancel") && o.status !== "cancelled" ? (
-              <Button type="button" variant="danger" onClick={onCancel}>
-                إلغاء
-              </Button>
-            ) : null}
-            {can(role, "order:invoice") &&
-            (o.status === "confirmed" || o.status === "invoicing") ? (
-              <Button type="button" variant="secondary" onClick={onInvoice}>
-                فوترة / جاهز للمخزن
-              </Button>
-            ) : null}
-            {can(role, "order:assign") ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onAssign}>
-                تعيين
-              </Button>
-            ) : null}
-            {can(role, "order:confirm") && o.customer.phone ? (
-              <Button type="button" variant="secondary" onClick={onWhatsApp}>
-                واتساب + تسجيل
-              </Button>
-            ) : null}
+          <div className="rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <OrderStatusBadge status={o.status} />
+                  <PaymentBadge status={o.payment.payment_status} />
+                </div>
+                <p className="text-sm text-[color:var(--color-text-secondary)]">
+                  إدارة سريعة للطلب مع الاحتفاظ بسجل كل إجراء يتم تنفيذه.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {can(role, "order:confirm") &&
+                o.status === "pending_confirmation" ? (
+                  <Button type="button" onClick={onConfirm}>
+                    تأكيد الطلب
+                  </Button>
+                ) : null}
+                {can(role, "order:cancel") && o.status !== "cancelled" ? (
+                  <Button type="button" variant="danger" onClick={onCancel}>
+                    إلغاء
+                  </Button>
+                ) : null}
+                {can(role, "order:invoice") &&
+                (o.status === "confirmed" || o.status === "invoicing") ? (
+                  <Button type="button" variant="secondary" onClick={onInvoice}>
+                    فوترة / جاهز للمخزن
+                  </Button>
+                ) : null}
+                {can(role, "order:assign") ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onAssign}
+                  >
+                    تعيين
+                  </Button>
+                ) : null}
+                {can(role, "order:confirm") && o.customer.phone ? (
+                  <Button type="button" variant="secondary" onClick={onWhatsApp}>
+                    واتساب + تسجيل
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              label="Customer"
+              value={o.customer.name}
+              detail={o.customer.phone ?? o.customer.email ?? "لا توجد وسيلة تواصل"}
+              icon={<UserRound className="size-5" aria-hidden />}
+            />
+            <SummaryCard
+              label="Order total"
+              value={formatMoney(o.payment.total_amount)}
+              detail={`متبقي ${formatMoney(o.payment.remaining_amount)}`}
+              icon={<WalletCards className="size-5" aria-hidden />}
+            />
+            <SummaryCard
+              label="Shipments"
+              value={`${bundle.shipments.length} بوليصة`}
+              detail={`AWB: ${deliveryAwb}`}
+              icon={<Truck className="size-5" aria-hidden />}
+            />
+            <SummaryCard
+              label="Items"
+              value={`${o.lineItems?.length ?? 0} صنف`}
+              detail={`تم إنشاء الطلب ${formatWhen(o.createdAt)}`}
+              icon={<PackageCheck className="size-5" aria-hidden />}
+            />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -318,28 +477,21 @@ export default function OrderDetailPage() {
               <CardHeader>
                 <CardTitle>العميل والعنوان</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div>
-                  <span className="text-[color:var(--color-text-muted)]">الاسم</span>
-                  <div className="font-medium">{o.customer.name}</div>
-                </div>
-                <div>
-                  <span className="text-[color:var(--color-text-muted)]">الهاتف</span>
-                  <div>{o.customer.phone ?? "—"}</div>
-                </div>
-                <div>
-                  <span className="text-[color:var(--color-text-muted)]">البريد</span>
-                  <div>{o.customer.email ?? "—"}</div>
-                </div>
-                <div>
-                  <span className="text-[color:var(--color-text-muted)]">العنوان</span>
-                  <div>{o.customer.address ?? "—"}</div>
-                </div>
+              <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+                <DetailItem label="الاسم">
+                  <span className="font-medium">{o.customer.name}</span>
+                </DetailItem>
+                <DetailItem label="الهاتف">{o.customer.phone ?? "—"}</DetailItem>
+                <DetailItem label="البريد">{o.customer.email ?? "—"}</DetailItem>
+                <DetailItem label="العنوان" className="sm:col-span-2">
+                  {o.customer.address ?? "—"}
+                </DetailItem>
                 {o.notes ? (
-                  <div>
-                    <span className="text-[color:var(--color-text-muted)]">ملاحظات</span>
-                    <div>{o.notes}</div>
-                  </div>
+                  <DetailItem label="ملاحظات" className="sm:col-span-2">
+                    <span className="block rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
+                      {o.notes}
+                    </span>
+                  </DetailItem>
                 ) : null}
               </CardContent>
             </Card>
@@ -353,45 +505,46 @@ export default function OrderDetailPage() {
                   <OrderStatusBadge status={o.status} />
                   <PaymentBadge status={o.payment.payment_status} />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">الإجمالي</div>
-                    <div className="font-semibold">{o.payment.total_amount}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">المدفوع</div>
-                    <div>{o.payment.paid_amount}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">المتبقي</div>
-                    <div>{o.payment.remaining_amount}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">التحصيل عند الاستلام</div>
-                    <div>{o.payment.cod_amount}</div>
-                  </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailItem label="الإجمالي">
+                    <span className="font-semibold tabular-nums">
+                      {formatMoney(o.payment.total_amount)}
+                    </span>
+                  </DetailItem>
+                  <DetailItem label="المدفوع">
+                    <span className="tabular-nums">
+                      {formatMoney(o.payment.paid_amount)}
+                    </span>
+                  </DetailItem>
+                  <DetailItem label="المتبقي">
+                    <span className="tabular-nums">
+                      {formatMoney(o.payment.remaining_amount)}
+                    </span>
+                  </DetailItem>
+                  <DetailItem label="التحصيل عند الاستلام">
+                    <span className="tabular-nums">
+                      {formatMoney(o.payment.cod_amount)}
+                    </span>
+                  </DetailItem>
                 </div>
                 {o.invoice ? (
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">فاتورة</div>
-                    <div>
+                  <DetailItem label="فاتورة">
+                    <span className="font-mono text-xs">
                       {o.invoice.number} — {o.invoice.issuedAt ?? ""}
-                    </div>
-                  </div>
+                    </span>
+                  </DetailItem>
                 ) : null}
                 {o.wooCommerceOrderId ? (
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">WooCommerce</div>
+                  <DetailItem label="WooCommerce">
                     <div className="font-mono text-xs">{o.wooCommerceOrderId}</div>
-                  </div>
+                  </DetailItem>
                 ) : null}
                 {o.assigned_to ? (
-                  <div>
-                    <div className="text-xs text-[color:var(--color-text-muted)]">معيّن إلى</div>
-                    <div>
+                  <DetailItem label="معيّن إلى">
+                    <span>
                       {userName(o.assigned_to)} ({o.assigned_to})
-                    </div>
-                  </div>
+                    </span>
+                  </DetailItem>
                 ) : null}
               </CardContent>
             </Card>
@@ -403,9 +556,15 @@ export default function OrderDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {o.shipping ? (
-                <div className="text-sm">
-                  <span className="text-[color:var(--color-text-muted)]">الشحن: </span>
-                  {o.shipping.method ?? "—"} — {o.shipping.cost}
+                <div className="grid gap-3 rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)] sm:grid-cols-2">
+                  <DetailItem label="طريقة الشحن">
+                    {o.shipping.method ?? "—"}
+                  </DetailItem>
+                  <DetailItem label="تكلفة الشحن">
+                    <span className="font-semibold tabular-nums">
+                      {formatMoney(o.shipping.cost)}
+                    </span>
+                  </DetailItem>
                 </div>
               ) : null}
               {o.lineItems?.length ? (
@@ -426,9 +585,13 @@ export default function OrderDetailPage() {
                           <Tr key={`${li.sku ?? li.name}-${i}`}>
                             <Td>{li.name}</Td>
                             <Td className="font-mono text-xs">{li.sku ?? "—"}</Td>
-                            <Td>{li.quantity}</Td>
-                            <Td>{li.unit_price}</Td>
-                            <Td>{li.line_total}</Td>
+                            <Td className="tabular-nums">{li.quantity}</Td>
+                            <Td className="tabular-nums">
+                              {formatMoney(li.unit_price)}
+                            </Td>
+                            <Td className="font-semibold tabular-nums">
+                              {formatMoney(li.line_total)}
+                            </Td>
                           </Tr>
                         ))}
                       </tbody>
@@ -459,14 +622,16 @@ export default function OrderDetailPage() {
                                 <div className="text-xs text-[color:var(--color-text-muted)]">
                                   سعر
                                 </div>
-                                <div className="tabular-nums">{li.unit_price}</div>
+                                <div className="tabular-nums">
+                                  {formatMoney(li.unit_price)}
+                                </div>
                               </div>
                               <div>
                                 <div className="text-xs text-[color:var(--color-text-muted)]">
                                   الإجمالي
                                 </div>
                                 <div className="tabular-nums font-semibold">
-                                  {li.line_total}
+                                  {formatMoney(li.line_total)}
                                 </div>
                               </div>
                             </div>
@@ -477,7 +642,7 @@ export default function OrderDetailPage() {
                   }
                 />
               ) : (
-                <p className="text-sm text-[color:var(--color-text-muted)]">
+                <p className="rounded-xl bg-[color:var(--color-bg-subtle)] p-4 text-center text-sm text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
                   لا توجد بنود مسجلة (استورد من ووكومرس أو أضف يدوياً لاحقاً).
                 </p>
               )}
@@ -490,7 +655,9 @@ export default function OrderDetailPage() {
             </CardHeader>
             <CardContent>
               {bundle.shipments.length === 0 ? (
-                <p className="text-sm text-[color:var(--color-text-muted)]">لا شحنات بعد.</p>
+                <p className="rounded-xl bg-[color:var(--color-bg-subtle)] p-4 text-center text-sm text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+                  لا شحنات بعد.
+                </p>
               ) : (
                 <ResponsiveTable
                   desktop={
@@ -508,7 +675,11 @@ export default function OrderDetailPage() {
                           <Tr key={s.id}>
                             <Td className="font-mono text-xs">{s.awb}</Td>
                             <Td>{s.type}</Td>
-                            <Td>{s.status}</Td>
+                            <Td>
+                              <span className="rounded-full bg-[color:var(--color-muted-bg)] px-2 py-1 text-xs font-medium text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                                {s.status}
+                              </span>
+                            </Td>
                             <Td>
                               {s.createdByUserName ?? "—"}
                               {s.createdByUserId ? (
@@ -527,7 +698,7 @@ export default function OrderDetailPage() {
                     <div className="space-y-3">
                       {bundle.shipments.map((s) => (
                         <ResponsiveCard key={s.id}>
-                          <div className="space-y-2 text-sm">
+                          <div className="space-y-3 text-sm">
                             <div>
                               <div className="text-xs text-[color:var(--color-text-muted)]">
                                 تتبع (AWB)
@@ -536,7 +707,7 @@ export default function OrderDetailPage() {
                                 {s.awb}
                               </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-2 gap-2 text-[color:var(--color-text-secondary)]">
                               <div>
                                 <div className="text-xs text-[color:var(--color-text-muted)]">
                                   النوع
@@ -547,7 +718,11 @@ export default function OrderDetailPage() {
                                 <div className="text-xs text-[color:var(--color-text-muted)]">
                                   الحالة
                                 </div>
-                                <div>{s.status}</div>
+                                <div>
+                                  <span className="rounded-full bg-[color:var(--color-muted-bg)] px-2 py-1 text-xs font-medium shadow-[var(--shadow-neo-inset)]">
+                                    {s.status}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                             <div>
@@ -576,20 +751,23 @@ export default function OrderDetailPage() {
 
           {o.woocommerceOrderSnapshot ? (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <CardTitle>بيانات WooCommerce الكاملة</CardTitle>
+                <span className="rounded-full bg-[color:var(--color-muted-bg)] px-2 py-1 text-xs font-medium text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                  Snapshot
+                </span>
               </CardHeader>
               <CardContent>
                 <details className="group">
-                  <summary className="cursor-pointer list-none text-sm text-[color:var(--color-primary)] [&::-webkit-details-marker]:hidden">
-                    <span className="underline">عرض / إخفاء الـ JSON</span>
+                  <summary className="cursor-pointer list-none rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-sm font-medium text-[color:var(--color-primary)] shadow-[var(--shadow-neo-inset)] [&::-webkit-details-marker]:hidden">
+                    <span>عرض / إخفاء الـ JSON</span>
                     <span className="ms-2 text-[color:var(--color-text-muted)] no-underline group-open:hidden">
                       (آخر استلام من الويب هوك)
                     </span>
                   </summary>
                   <pre
                     className={cn(
-                      "mt-3 max-h-[min(480px,50vh)] overflow-auto rounded-lg border border-[color:var(--color-code-border)]",
+                      "mt-3 max-h-[min(480px,50vh)] overflow-auto rounded-xl border-0 shadow-[var(--shadow-neo-inset)]",
                       "bg-[color:var(--color-code-bg)] p-3 text-[11px] leading-relaxed [direction:ltr] [text-align:left]",
                     )}
                   >
@@ -606,22 +784,32 @@ export default function OrderDetailPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               {activities.length === 0 ? (
-                <p className="text-[color:var(--color-text-muted)]">لا سجلات بعد.</p>
+                <p className="rounded-xl bg-[color:var(--color-bg-subtle)] p-4 text-center text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+                  لا سجلات بعد.
+                </p>
               ) : (
-                <ul className="space-y-2 border-s-2 border-[color:var(--color-border)] ps-3">
+                <ul className="space-y-3 border-s-2 border-[color:var(--color-divider)] ps-4">
                   {activities.map((a) => (
-                    <li key={a.id} className="text-[color:var(--color-text-secondary)]">
-                      <span className="font-medium text-[color:var(--color-text-primary)]">
-                        {a.action}
-                      </span>{" "}
-                      — {userName(a.userId)}{" "}
-                      <span className="text-xs text-[color:var(--color-text-muted)]">
-                        {new Date(a.timestamp).toLocaleString("ar-EG")}
-                      </span>
+                    <li
+                      key={a.id}
+                      className="relative rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)]"
+                    >
+                      <span className="absolute -start-[21px] top-4 size-2 rounded-full bg-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)]" />
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="font-medium text-[color:var(--color-text-primary)]">
+                          {a.action}
+                        </span>
+                        <span className="text-xs text-[color:var(--color-text-muted)]">
+                          {new Date(a.timestamp).toLocaleString("ar-EG")}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
+                        {userName(a.userId)}
+                      </p>
                       {a.metadata && Object.keys(a.metadata).length > 0 ? (
                         <pre
                           className={cn(
-                            "mt-1 overflow-x-auto rounded border border-[color:var(--color-code-border)]",
+                            "mt-3 overflow-x-auto rounded-lg border-0 shadow-[var(--shadow-neo-inset)]",
                             "bg-[color:var(--color-code-bg)] p-2 text-[11px]",
                           )}
                         >

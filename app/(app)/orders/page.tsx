@@ -51,6 +51,10 @@ function inDateRange(iso: string, from: string, to: string) {
   return t >= a && t <= b;
 }
 
+function displayOrderId(order: Order) {
+  return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
+}
+
 export default function OrdersPage() {
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
@@ -460,7 +464,7 @@ export default function OrdersPage() {
                         href={`/orders/${o.id}`}
                         className="font-mono text-sm font-medium text-[color:var(--color-primary)] hover:underline"
                       >
-                        #{o.id.slice(0, 8).toUpperCase()}
+                        #{displayOrderId(o)}
                       </Link>
                     </Td>
                     <Td>
@@ -527,7 +531,7 @@ export default function OrdersPage() {
                       href={`/orders/${o.id}`}
                       className="font-mono text-sm font-medium text-[color:var(--color-primary)]"
                     >
-                      #{o.id.slice(0, 8).toUpperCase()}
+                      #{displayOrderId(o)}
                     </Link>
                     <div className="flex items-center gap-2">
                       <span className="flex size-9 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold shadow-[var(--shadow-neo-inset)]">

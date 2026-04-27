@@ -4,10 +4,18 @@
  */
 export function formatConfirmationWhatsAppMessage(
   template: string,
-  params: { name: string; orderId: string; awb: string },
+  params: {
+    name: string;
+    orderId: string;
+    awb: string;
+    wooOrderId?: string;
+    orderLink?: string;
+  },
 ) {
   return template
     .replaceAll("{name}", params.name)
     .replaceAll("{orderId}", params.orderId)
+    .replaceAll("{wooOrderId}", params.wooOrderId ?? params.orderId)
+    .replaceAll("{orderLink}", params.orderLink ?? "")
     .replaceAll("{awb}", params.awb);
 }

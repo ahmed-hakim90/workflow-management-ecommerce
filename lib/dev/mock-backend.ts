@@ -17,6 +17,7 @@ import {
   defaultTenantWarehouse,
   type ActivityEntityType,
   type ActivityLog,
+  type OutboundWebhookDeliveryLog,
   type Order,
   type OrderStatus,
   type Shipment,
@@ -52,6 +53,7 @@ type MockState = {
   tenantKanban: Record<string, TenantKanbanSettings>;
   activityLogs: ActivityLog[];
   webhookIngestLogs: WebhookIngestLog[];
+  outboundWebhookLogs: OutboundWebhookDeliveryLog[];
   integrationKeys: Set<string>;
   tenants: Record<string, Tenant>;
 };
@@ -344,6 +346,7 @@ function createSeed(): MockState {
     tenantKanban: {},
     activityLogs: [],
     webhookIngestLogs: [],
+    outboundWebhookLogs: [],
     integrationKeys: new Set(),
     tenants: { [DEMO_TENANT]: demoTenant },
   };
@@ -1201,6 +1204,24 @@ export function mockSetTenantAutomation(
 ) {
   const s = ctx();
   s.tenantAutomation[tenantId] = automation;
+}
+
+export function mockAppendOutboundWebhookDeliveryLog(
+  row: OutboundWebhookDeliveryLog,
+): void {
+  const s = ctx();
+  s.outboundWebhookLogs.push(row);
+}
+
+export function mockListOutboundWebhookDeliveryLogs(
+  tenantId: string,
+  limit: number,
+): OutboundWebhookDeliveryLog[] {
+  const s = ctx();
+  return s.outboundWebhookLogs
+    .filter((r) => r.tenantId === tenantId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, limit);
 }
 
 export function mockGetTenantIntegrations(

@@ -249,16 +249,49 @@ export interface TenantAutomationSettings {
   create_shipment_stage: AutomationShipmentStage;
   /**
    * رسالة واتساب الافتراضية لفريق التأكيد عند التواصل مع العميل.
-   * Placeholders: `{name}`, `{orderId}`, `{awb}`.
+   * Placeholders: `{name}`, `{orderId}`, `{wooOrderId}`, `{awb}`, `{orderLink}`.
    */
   whatsappMessageTemplate?: string;
+  /** Optional per-tenant order/tracking URL template. Placeholders: `{orderId}`, `{wooOrderId}`. */
+  orderLinkTemplate?: string;
+  /** Outbound HTTP webhooks fired after order status changes. */
+  outboundWebhooks?: TenantOutboundWebhook[];
 }
 
 export const defaultTenantAutomation: TenantAutomationSettings = {
   auto_create_shipment: false,
   create_shipment_stage: "confirmed",
-  whatsappMessageTemplate: "مرحباً {name} — متابعة طلبك رقم {orderId}",
+  whatsappMessageTemplate:
+    "مرحباً {name} — متابعة طلبك رقم {orderId}\n{orderLink}",
 };
+
+export interface TenantOutboundWebhook {
+  id: string;
+  name: string;
+  enabled: boolean;
+  url: string;
+  /** Optional HMAC secret used for X-OMS-Signature. */
+  secret?: string;
+  /** Fire only when the order moves into one of these statuses. Empty means never. */
+  statuses: OrderStatus[];
+  /** Include the heavy WooCommerce snapshot when available. Off by default. */
+  includeOrderSnapshot?: boolean;
+}
+
+export interface OutboundWebhookDeliveryLog {
+  id: string;
+  tenantId: string;
+  webhookId: string;
+  webhookName: string;
+  event: "order.status_changed";
+  orderId: string;
+  fromStatus: OrderStatus;
+  toStatus: OrderStatus;
+  success: boolean;
+  httpStatus?: number;
+  errorMessage?: string;
+  createdAt: string;
+}
 
 /** Stored under Firestore `tenant_settings` doc field `integrations` (per tenant). */
 export interface TenantWooCommerceIntegration {

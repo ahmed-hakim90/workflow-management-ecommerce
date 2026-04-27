@@ -16,7 +16,10 @@ export async function GET(req: Request) {
     const t =
       a.whatsappMessageTemplate?.trim() ||
       defaultTenantAutomation.whatsappMessageTemplate;
-    return jsonOk({ whatsappMessageTemplate: t! });
+    return jsonOk({
+      whatsappMessageTemplate: t!,
+      orderLinkTemplate: a.orderLinkTemplate?.trim() || "",
+    });
   } catch (e) {
     return handleRouteError(e);
   }

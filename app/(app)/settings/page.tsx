@@ -99,6 +99,7 @@ export default function SettingsPage() {
   const [whSingleScan, setWhSingleScan] = useState(false);
   const [whCooldownSec, setWhCooldownSec] = useState(3.5);
   const [whTemplate, setWhTemplate] = useState("");
+  const [orderLinkTemplateDraft, setOrderLinkTemplateDraft] = useState("");
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [settingsErr, setSettingsErr] = useState<string | null>(null);
   const [mockDataOn, setMockDataOn] = useState(false);
@@ -738,6 +739,7 @@ export default function SettingsPage() {
           auto_create_shipment: boolean;
           create_shipment_stage: "confirmed" | "invoiced";
           whatsappMessageTemplate?: string;
+          orderLinkTemplate?: string;
         };
         if (!cancelled) {
           setAutoShip(d.auto_create_shipment);
@@ -747,6 +749,7 @@ export default function SettingsPage() {
               defaultTenantAutomation.whatsappMessageTemplate ||
               "",
           );
+          setOrderLinkTemplateDraft(d.orderLinkTemplate?.trim() ?? "");
         }
         if (whRes.ok) {
           const wj = await whRes.json();
@@ -831,6 +834,7 @@ export default function SettingsPage() {
           auto_create_shipment: autoShip,
           create_shipment_stage: shipStage,
           whatsappMessageTemplate: whTemplate.trim() || null,
+          orderLinkTemplate: orderLinkTemplateDraft.trim() || null,
         }),
       });
       const json = await res.json();
@@ -838,6 +842,7 @@ export default function SettingsPage() {
       if (json.data?.whatsappMessageTemplate) {
         setWhTemplate(json.data.whatsappMessageTemplate);
       }
+      setOrderLinkTemplateDraft(json.data?.orderLinkTemplate?.trim() ?? "");
       setSettingsMsg("Shipment automation & confirmation WhatsApp saved.");
     } catch (e) {
       setSettingsErr(e instanceof Error ? e.message : "Save failed");
@@ -2026,7 +2031,8 @@ export default function SettingsPage() {
                     <div className="space-y-1">
                       <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
                         رسالة واتساب الافتراضية (فريق التأكيد) — {`{name}`}،{" "}
-                        {`{orderId}`}، {`{awb}`}
+                        {`{orderId}`}، {`{wooOrderId}`}، {`{awb}`}،{" "}
+                        {`{orderLink}`}
                       </span>
                       <textarea
                         className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
@@ -2035,6 +2041,23 @@ export default function SettingsPage() {
                         placeholder="مثال: مرحباً {name} — طلب {orderId}"
                         spellCheck={false}
                       />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                        قالب لينك الطلب/التتبع لكل شركة — {`{orderId}`}،{" "}
+                        {`{wooOrderId}`}
+                      </span>
+                      <Input
+                        value={orderLinkTemplateDraft}
+                        onChange={(e) =>
+                          setOrderLinkTemplateDraft(e.target.value)
+                        }
+                        placeholder="https://store.example.com/order-tracking/{wooOrderId}"
+                      />
+                      <p className="text-xs text-[color:var(--color-text-muted)]">
+                        استخدم {`{orderLink}`} داخل رسالة واتساب لإظهار هذا
+                        الرابط. لو الحقل فارغ، {`{orderLink}`} يتحول لنص فارغ.
+                      </p>
                     </div>
                     <Button type="button" onClick={() => void saveAutomation()}>
                       حفظ الأتمتة وواتساب التأكيد

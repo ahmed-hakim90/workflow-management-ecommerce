@@ -13,12 +13,14 @@ const patchSchema = z
     auto_create_shipment: z.boolean().optional(),
     create_shipment_stage: z.enum(["confirmed", "invoiced"]).optional(),
     whatsappMessageTemplate: z.string().min(1).max(2000).nullable().optional(),
+    orderLinkTemplate: z.string().max(1000).nullable().optional(),
   })
   .refine(
     (d) =>
       d.auto_create_shipment !== undefined ||
       d.create_shipment_stage !== undefined ||
-      d.whatsappMessageTemplate !== undefined,
+      d.whatsappMessageTemplate !== undefined ||
+      d.orderLinkTemplate !== undefined,
     { message: "At least one field is required" },
   );
 

@@ -68,9 +68,10 @@ export async function getTenantAutomation(
 }
 
 type TenantAutomationPatch = Partial<
-  Omit<TenantAutomationSettings, "whatsappMessageTemplate">
+  Omit<TenantAutomationSettings, "whatsappMessageTemplate" | "orderLinkTemplate">
 > & {
   whatsappMessageTemplate?: string | null;
+  orderLinkTemplate?: string | null;
 };
 
 function mergeTenantAutomationPatch(
@@ -87,6 +88,17 @@ function mergeTenantAutomationPatch(
       delete next.whatsappMessageTemplate;
     } else {
       next.whatsappMessageTemplate = updates.whatsappMessageTemplate.trim();
+    }
+  }
+  if ("orderLinkTemplate" in updates) {
+    if (
+      updates.orderLinkTemplate == null ||
+      (typeof updates.orderLinkTemplate === "string" &&
+        !updates.orderLinkTemplate.trim())
+    ) {
+      delete next.orderLinkTemplate;
+    } else {
+      next.orderLinkTemplate = updates.orderLinkTemplate.trim();
     }
   }
   return next as unknown as TenantAutomationSettings;
