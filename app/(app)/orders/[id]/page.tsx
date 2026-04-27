@@ -7,7 +7,10 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  MessageCircle,
   PackageCheck,
+  Trash2,
   Truck,
   UserRound,
   WalletCards,
@@ -141,6 +144,7 @@ export default function OrderDetailPage() {
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [nav, setNav] = useState(() => readOrderNav());
@@ -298,6 +302,32 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function onDelete() {
+    if (
+      !window.confirm(
+        "تأكيد حذف الطلب نهائياً؟ سيتم حذف الشحنات والتذاكر المرتبطة به، مع حفظ سجل بالحذف.",
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setMsg(null);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      router.push("/orders");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "فشل حذف الطلب");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function onWhatsApp() {
     const o = bundle?.order;
     const shipments = bundle?.shipments;
@@ -338,6 +368,8 @@ export default function OrderDetailPage() {
   const o = bundle?.order;
   const displayId = o ? displayOrderId(o) : orderId.slice(0, 8).toUpperCase();
   const deliveryAwb = bundle ? latestAwb(bundle.shipments) : "—";
+  const whatsappUser =
+    o?.whatsappSentByUserName?.trim() || o?.whatsappSentByUserId?.trim();
 
   return (
     <div className="space-y-6">
@@ -441,6 +473,18 @@ export default function OrderDetailPage() {
                     واتساب + تسجيل
                   </Button>
                 ) : null}
+                {can(role, "order:delete") ? (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    loading={deleting}
+                    onClick={onDelete}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    حذف نهائي
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -536,7 +580,31 @@ export default function OrderDetailPage() {
                 ) : null}
                 {o.wooCommerceOrderId ? (
                   <DetailItem label="WooCommerce">
-                    <div className="font-mono text-xs">{o.wooCommerceOrderId}</div>
+                    {o.wooCommerceOrderAdminUrl ? (
+                      <a
+                        href={o.wooCommerceOrderAdminUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[color:var(--color-primary)] hover:underline"
+                      >
+                        #{o.wooCommerceOrderId}
+                        <ExternalLink className="size-3" aria-hidden />
+                      </a>
+                    ) : (
+                      <div className="font-mono text-xs">
+                        {o.wooCommerceOrderId}
+                      </div>
+                    )}
+                  </DetailItem>
+                ) : null}
+                {o.whatsappSentAt ? (
+                  <DetailItem label="واتساب">
+                    <div className="inline-flex flex-wrap items-center gap-1 rounded-full bg-[color:var(--color-success)]/12 px-2 py-1 text-xs font-medium text-[color:var(--color-success)]">
+                      <MessageCircle className="size-3.5" aria-hidden />
+                      <span>تم الإرسال</span>
+                      <span>بواسطة {whatsappUser ?? "مستخدم"}</span>
+                      <span>· {formatWhen(o.whatsappSentAt)}</span>
+                    </div>
                   </DetailItem>
                 ) : null}
                 {o.assigned_to ? (

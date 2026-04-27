@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Eye } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, Eye, MessageCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,6 +45,19 @@ function columnForStatus(status: OrderStatus): ColumnId {
   }
   if (status === "cancelled") return "pending_confirmation";
   return "pending_confirmation";
+}
+
+function formatWhen(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("ar-EG", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
 export default function KanbanPage() {
@@ -118,13 +132,38 @@ export default function KanbanPage() {
         columns={COLUMNS}
         countFor={(id) => grouped[id].length}
         renderColumnCards={(columnId) =>
-          grouped[columnId].map((o) => (
+          grouped[columnId].map((o) => {
+            const wooOrderId = o.wooCommerceOrderId?.trim();
+            const wooOrderUrl = o.wooCommerceOrderAdminUrl?.trim();
+            const whatsappSentAt = o.whatsappSentAt?.trim();
+            const whatsappUser =
+              o.whatsappSentByUserName?.trim() ||
+              o.whatsappSentByUserId?.trim();
+
+            return (
             <Card key={o.id}>
               <CardContent className="space-y-2 p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <span className="font-mono text-[11px] text-[color:var(--color-text-muted)]">
-                    {o.id.slice(0, 10)}…
-                  </span>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <Link
+                      href={`/orders/${o.id}`}
+                      className="truncate font-mono text-[11px] font-semibold text-[color:var(--color-primary)] hover:underline"
+                    >
+                      #{wooOrderId || `${o.id.slice(0, 10)}...`}
+                    </Link>
+                    {wooOrderUrl ? (
+                      <a
+                        href={wooOrderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 items-center text-[color:var(--color-primary)] hover:text-[color:var(--color-text-primary)]"
+                        title="Open in WooCommerce"
+                        aria-label={`Open WooCommerce order ${wooOrderId}`}
+                      >
+                        <ExternalLink className="size-3 shrink-0" aria-hidden />
+                      </a>
+                    ) : null}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -159,10 +198,21 @@ export default function KanbanPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <PaymentBadge status={o.payment.payment_status} />
+                  {whatsappSentAt ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-success)]/12 px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-success)]"
+                      title={`WhatsApp sent${whatsappUser ? ` by ${whatsappUser}` : ""} at ${formatWhen(whatsappSentAt)}`}
+                    >
+                      <MessageCircle className="size-3" aria-hidden />
+                      واتساب تم
+                      {whatsappUser ? ` · ${whatsappUser}` : ""}
+                    </span>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
-          ))
+          );
+          })
         }
       />
       )}

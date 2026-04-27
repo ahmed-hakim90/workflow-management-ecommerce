@@ -16,6 +16,7 @@ import {
   defaultTenantWarehouse,
   type TenantAutomationSettings,
   type TenantIntegrationsDoc,
+  type TenantOutboundWebhook,
   type TenantStorefrontOrdersIntegration,
   type TenantWarehouseSettings,
 } from "@/lib/types/models";
@@ -68,11 +69,30 @@ export async function getTenantAutomation(
 }
 
 type TenantAutomationPatch = Partial<
-  Omit<TenantAutomationSettings, "whatsappMessageTemplate" | "orderLinkTemplate">
+  Omit<
+    TenantAutomationSettings,
+    "whatsappMessageTemplate" | "orderLinkTemplate" | "outboundWebhooks"
+  >
 > & {
   whatsappMessageTemplate?: string | null;
   orderLinkTemplate?: string | null;
+  outboundWebhooks?: TenantOutboundWebhook[];
 };
+
+function normalizeOutboundWebhooks(
+  webhooks: TenantOutboundWebhook[] | undefined,
+): TenantOutboundWebhook[] | undefined {
+  if (!webhooks) return undefined;
+  return webhooks.map((w) => ({
+    id: w.id,
+    name: w.name.trim(),
+    enabled: w.enabled,
+    url: w.url.trim(),
+    secret: w.secret?.trim() || undefined,
+    statuses: [...w.statuses],
+    includeOrderSnapshot: !!w.includeOrderSnapshot,
+  }));
+}
 
 function mergeTenantAutomationPatch(
   current: TenantAutomationSettings,
@@ -100,6 +120,9 @@ function mergeTenantAutomationPatch(
     } else {
       next.orderLinkTemplate = updates.orderLinkTemplate.trim();
     }
+  }
+  if ("outboundWebhooks" in updates) {
+    next.outboundWebhooks = normalizeOutboundWebhooks(updates.outboundWebhooks);
   }
   return next as unknown as TenantAutomationSettings;
 }

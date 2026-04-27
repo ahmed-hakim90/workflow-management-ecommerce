@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, MoreHorizontal, Plus, RotateCcw } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  MessageCircle,
+  MoreHorizontal,
+  Plus,
+  RotateCcw,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -161,11 +168,13 @@ export default function OrdersPage() {
       if (payment && o.payment.payment_status !== payment) return false;
       if (!needle) return true;
       const id = o.id.toLowerCase();
+      const wooId = (o.wooCommerceOrderId ?? "").toLowerCase();
       const phone = (o.customer.phone ?? "").toLowerCase();
       const name = (o.customer.name ?? "").toLowerCase();
       const email = (o.customer.email ?? "").toLowerCase();
       return (
         id.includes(needle) ||
+        wooId.includes(needle) ||
         phone.includes(needle) ||
         name.includes(needle) ||
         email.includes(needle)
@@ -457,15 +466,45 @@ export default function OrdersPage() {
                   </Td>
                 </Tr>
               ) : (
-                pageRows.map((o) => (
+                pageRows.map((o) => {
+                  const wooOrderId = o.wooCommerceOrderId?.trim();
+                  const wooOrderUrl = o.wooCommerceOrderAdminUrl?.trim();
+                  const whatsappSentAt = o.whatsappSentAt?.trim();
+                  const whatsappUser =
+                    o.whatsappSentByUserName?.trim() ||
+                    o.whatsappSentByUserId?.trim();
+
+                  return (
                   <Tr key={o.id}>
                     <Td>
-                      <Link
-                        href={`/orders/${o.id}`}
-                        className="font-mono text-sm font-medium text-[color:var(--color-primary)] hover:underline"
-                      >
-                        #{displayOrderId(o)}
-                      </Link>
+                      <div className="space-y-1">
+                        {wooOrderId && wooOrderUrl ? (
+                          <a
+                            href={wooOrderUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[color:var(--color-primary)] hover:underline"
+                          >
+                            #{wooOrderId}
+                            <ExternalLink className="size-3.5" aria-hidden />
+                          </a>
+                        ) : (
+                          <Link
+                            href={`/orders/${o.id}`}
+                            className="font-mono text-sm font-medium text-[color:var(--color-primary)] hover:underline"
+                          >
+                            #{displayOrderId(o)}
+                          </Link>
+                        )}
+                        {wooOrderId && wooOrderUrl ? (
+                          <Link
+                            href={`/orders/${o.id}`}
+                            className="block text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] hover:underline"
+                          >
+                            OMS details
+                          </Link>
+                        ) : null}
+                      </div>
                     </Td>
                     <Td>
                       <div className="flex items-center gap-2">
@@ -479,6 +518,16 @@ export default function OrdersPage() {
                           <div className="truncate text-xs text-[color:var(--color-text-muted)]">
                             {o.customer.email ?? o.customer.phone ?? "—"}
                           </div>
+                        {whatsappSentAt ? (
+                          <div
+                            className="mt-1 inline-flex items-center gap-1 rounded-full bg-[color:var(--color-success)]/12 px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-success)]"
+                            title={`WhatsApp sent at ${formatWhen(whatsappSentAt)}`}
+                          >
+                            <MessageCircle className="size-3" aria-hidden />
+                            واتساب: {whatsappUser ?? "تم"} ·{" "}
+                            {formatWhen(whatsappSentAt)}
+                          </div>
+                        ) : null}
                         </div>
                       </div>
                     </Td>
@@ -510,7 +559,8 @@ export default function OrdersPage() {
                       </Button>
                     </Td>
                   </Tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </TableWrap>
@@ -524,21 +574,58 @@ export default function OrdersPage() {
                 No orders
               </p>
             ) : (
-              pageRows.map((o) => (
+              pageRows.map((o) => {
+                const wooOrderId = o.wooCommerceOrderId?.trim();
+                const wooOrderUrl = o.wooCommerceOrderAdminUrl?.trim();
+                const whatsappSentAt = o.whatsappSentAt?.trim();
+                const whatsappUser =
+                  o.whatsappSentByUserName?.trim() ||
+                  o.whatsappSentByUserId?.trim();
+
+                return (
                 <ResponsiveCard key={o.id}>
                   <div className="space-y-3">
-                    <Link
-                      href={`/orders/${o.id}`}
-                      className="font-mono text-sm font-medium text-[color:var(--color-primary)]"
-                    >
-                      #{displayOrderId(o)}
-                    </Link>
+                    <div className="space-y-1">
+                      {wooOrderId && wooOrderUrl ? (
+                        <a
+                          href={wooOrderUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[color:var(--color-primary)]"
+                        >
+                          #{wooOrderId}
+                          <ExternalLink className="size-3.5" aria-hidden />
+                        </a>
+                      ) : (
+                        <Link
+                          href={`/orders/${o.id}`}
+                          className="font-mono text-sm font-medium text-[color:var(--color-primary)]"
+                        >
+                          #{displayOrderId(o)}
+                        </Link>
+                      )}
+                      {wooOrderId && wooOrderUrl ? (
+                        <Link
+                          href={`/orders/${o.id}`}
+                          className="block text-xs text-[color:var(--color-text-muted)]"
+                        >
+                          OMS details
+                        </Link>
+                      ) : null}
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className="flex size-9 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold shadow-[var(--shadow-neo-inset)]">
                         {initials(o.customer.name)}
                       </span>
                       <div className="font-medium">{o.customer.name}</div>
                     </div>
+                    {whatsappSentAt ? (
+                      <div className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-success)]/12 px-2 py-1 text-xs font-medium text-[color:var(--color-success)]">
+                        <MessageCircle className="size-3.5" aria-hidden />
+                        واتساب اتبعت بواسطة {whatsappUser ?? "مستخدم"} ·{" "}
+                        {formatWhen(whatsappSentAt)}
+                      </div>
+                    ) : null}
                     <div className="text-lg font-semibold tabular-nums">
                       {o.payment.total_amount.toLocaleString("en-US", {
                         style: "currency",
@@ -560,7 +647,8 @@ export default function OrdersPage() {
                     </Button>
                   </div>
                 </ResponsiveCard>
-              ))
+                );
+              })
             )}
           </div>
         }

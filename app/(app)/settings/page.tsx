@@ -19,7 +19,10 @@ import { defaultKanbanSettings } from "@/lib/kanban/column";
 import { cn } from "@/lib/ui/cn";
 import { can } from "@/lib/auth/rbac";
 import {
+  ORDER_STATUSES,
   defaultTenantAutomation,
+  type OrderStatus,
+  type OutboundWebhookDeliveryLog,
   type WebhookIngestLog,
 } from "@/lib/types/models";
 import { UsersManagement } from "@/components/users/users-management";
@@ -28,6 +31,7 @@ type AdvTabId =
   | "general"
   | "kanban"
   | "shipment"
+  | "webhooks"
   | "payment"
   | "users"
   | "developer";
@@ -35,11 +39,23 @@ type AdvTabId =
 const ADV_TAB_DEFS: { id: AdvTabId; label: string }[] = [
   { id: "general", label: "General" },
   { id: "shipment", label: "Shipment rules" },
+  { id: "webhooks", label: "Status webhooks" },
   { id: "kanban", label: "Kanban JSON" },
   { id: "payment", label: "Payment" },
   { id: "users", label: "Users" },
   { id: "developer", label: "Developer session" },
 ];
+
+type OutboundWebhookDraft = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  url: string;
+  secret: string;
+  secretConfigured?: boolean;
+  statuses: OrderStatus[];
+  includeOrderSnapshot: boolean;
+};
 
 type SectionId =
   | "profile"
@@ -100,6 +116,15 @@ export default function SettingsPage() {
   const [whCooldownSec, setWhCooldownSec] = useState(3.5);
   const [whTemplate, setWhTemplate] = useState("");
   const [orderLinkTemplateDraft, setOrderLinkTemplateDraft] = useState("");
+  const [outboundWebhookDrafts, setOutboundWebhookDrafts] = useState<
+    OutboundWebhookDraft[]
+  >([]);
+  const [outboundWebhookLogs, setOutboundWebhookLogs] = useState<
+    OutboundWebhookDeliveryLog[]
+  >([]);
+  const [outboundWebhookErr, setOutboundWebhookErr] = useState<string | null>(
+    null,
+  );
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [settingsErr, setSettingsErr] = useState<string | null>(null);
   const [mockDataOn, setMockDataOn] = useState(false);
@@ -773,6 +798,48 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!authReady) return;
+    if (section !== "advanced" || advTab !== "webhooks") return;
+    if (!can(role, "user:manage")) return;
+    let cancelled = false;
+    (async () => {
+      setOutboundWebhookErr(null);
+      try {
+        const res = await fetch("/api/settings/outbound-webhooks", {
+          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? res.statusText);
+        const d = json.data as {
+          outboundWebhooks: (Omit<OutboundWebhookDraft, "secret"> & {
+            secretConfigured: boolean;
+          })[];
+          logs?: OutboundWebhookDeliveryLog[];
+        };
+        if (!cancelled) {
+          setOutboundWebhookDrafts(
+            d.outboundWebhooks.map((w) => ({
+              ...w,
+              secret: "",
+              includeOrderSnapshot: !!w.includeOrderSnapshot,
+            })),
+          );
+          setOutboundWebhookLogs(d.logs ?? []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setOutboundWebhookErr(
+            e instanceof Error ? e.message : "Could not load outbound webhooks",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role]);
+
+  useEffect(() => {
+    if (!authReady) return;
     if (section !== "advanced" || advTab !== "kanban") return;
     let cancelled = false;
     (async () => {
@@ -821,6 +888,86 @@ export default function SettingsPage() {
   function resetKanbanDefault() {
     setKanbanJson(JSON.stringify(defaultKanbanSettings().columns, null, 2));
     setKanbanErr(null);
+  }
+
+  function addOutboundWebhookDraft() {
+    setOutboundWebhookDrafts((rows) => [
+      ...rows,
+      {
+        id: crypto.randomUUID(),
+        name: "Order status webhook",
+        enabled: true,
+        url: "",
+        secret: "",
+        statuses: ["confirmed"],
+        includeOrderSnapshot: false,
+      },
+    ]);
+  }
+
+  function updateOutboundWebhookDraft(
+    id: string,
+    patch: Partial<OutboundWebhookDraft>,
+  ) {
+    setOutboundWebhookDrafts((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function toggleOutboundWebhookStatus(id: string, status: OrderStatus) {
+    setOutboundWebhookDrafts((rows) =>
+      rows.map((row) => {
+        if (row.id !== id) return row;
+        const has = row.statuses.includes(status);
+        return {
+          ...row,
+          statuses: has
+            ? row.statuses.filter((s) => s !== status)
+            : [...row.statuses, status],
+        };
+      }),
+    );
+  }
+
+  async function saveOutboundWebhooks() {
+    setSettingsMsg(null);
+    setSettingsErr(null);
+    setOutboundWebhookErr(null);
+    try {
+      const outboundWebhooks = outboundWebhookDrafts.map((w) => ({
+        id: w.id,
+        name: w.name.trim(),
+        enabled: w.enabled,
+        url: w.url.trim(),
+        secret: w.secret.trim() ? w.secret.trim() : undefined,
+        statuses: w.statuses,
+        includeOrderSnapshot: w.includeOrderSnapshot,
+      }));
+      const res = await fetch("/api/settings/outbound-webhooks", {
+        method: "PATCH",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        body: JSON.stringify({ outboundWebhooks }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const saved = json.data?.outboundWebhooks as
+        | (Omit<OutboundWebhookDraft, "secret"> & { secretConfigured: boolean })[]
+        | undefined;
+      if (saved) {
+        setOutboundWebhookDrafts(
+          saved.map((w) => ({
+            ...w,
+            secret: "",
+            includeOrderSnapshot: !!w.includeOrderSnapshot,
+          })),
+        );
+      }
+      setSettingsMsg("Order status webhooks saved.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Save failed";
+      setSettingsErr(msg);
+      setOutboundWebhookErr(msg);
+    }
   }
 
   async function saveAutomation() {
@@ -2104,6 +2251,240 @@ export default function SettingsPage() {
                     </Button>
                   </CardContent>
                 </Card>
+              )}
+
+              {advTab === "webhooks" && can(role, "user:manage") && (
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <CardTitle>Order status webhooks</CardTitle>
+                        <p className="mt-1 text-sm font-normal text-[color:var(--color-text-secondary)]">
+                          Send a signed HTTP POST after selected order statuses.
+                          Deliveries are non-blocking and never stop the order flow.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={addOutboundWebhookDraft}
+                      >
+                        Add webhook
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {outboundWebhookErr ? (
+                        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+                          {outboundWebhookErr}
+                        </p>
+                      ) : null}
+                      {outboundWebhookDrafts.length === 0 ? (
+                        <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-4 text-sm text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                          No outbound webhooks yet. Add one to notify Zapier,
+                          Make, WordPress, or any custom platform when an order
+                          reaches a status.
+                        </div>
+                      ) : null}
+                      {outboundWebhookDrafts.map((webhook, index) => (
+                        <div
+                          key={webhook.id}
+                          className="space-y-4 rounded-xl bg-[color:var(--color-bg-subtle)] p-4 shadow-[var(--shadow-neo-raised-sm)]"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <label className="flex items-center gap-2 text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={webhook.enabled}
+                                onChange={(e) =>
+                                  updateOutboundWebhookDraft(webhook.id, {
+                                    enabled: e.target.checked,
+                                  })
+                                }
+                              />
+                              Enabled
+                            </label>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setOutboundWebhookDrafts((rows) =>
+                                  rows.filter((row) => row.id !== webhook.id),
+                                )
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Input
+                              label="Name"
+                              value={webhook.name}
+                              onChange={(e) =>
+                                updateOutboundWebhookDraft(webhook.id, {
+                                  name: e.target.value,
+                                })
+                              }
+                            />
+                            <Input
+                              label="Webhook URL"
+                              placeholder="https://hooks.example.com/order-status"
+                              value={webhook.url}
+                              onChange={(e) =>
+                                updateOutboundWebhookDraft(webhook.id, {
+                                  url: e.target.value,
+                                })
+                              }
+                            />
+                            <Input
+                              label={
+                                webhook.secretConfigured
+                                  ? "Secret (stored; enter a new value to rotate)"
+                                  : "Secret (optional)"
+                              }
+                              type="password"
+                              autoComplete="new-password"
+                              placeholder={
+                                webhook.secretConfigured
+                                  ? "Leave empty to keep existing secret"
+                                  : "Used for X-OMS-Signature"
+                              }
+                              value={webhook.secret}
+                              onChange={(e) =>
+                                updateOutboundWebhookDraft(webhook.id, {
+                                  secret: e.target.value,
+                                })
+                              }
+                            />
+                            <label className="flex items-center gap-2 self-end text-sm">
+                              <input
+                                type="checkbox"
+                                checked={webhook.includeOrderSnapshot}
+                                onChange={(e) =>
+                                  updateOutboundWebhookDraft(webhook.id, {
+                                    includeOrderSnapshot: e.target.checked,
+                                  })
+                                }
+                              />
+                              Include WooCommerce snapshot
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                              Send when status becomes
+                            </span>
+                            <div className="flex flex-wrap gap-2">
+                              {ORDER_STATUSES.map((status) => (
+                                <label
+                                  key={`${webhook.id}-${status}`}
+                                  className="flex items-center gap-1.5 rounded-lg bg-[color:var(--color-card)] px-2 py-1 text-xs text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={webhook.statuses.includes(status)}
+                                    onChange={() =>
+                                      toggleOutboundWebhookStatus(
+                                        webhook.id,
+                                        status,
+                                      )
+                                    }
+                                  />
+                                  {status}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-[color:var(--color-text-muted)]">
+                            Payload event:{" "}
+                            <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                              order.status_changed
+                            </code>{" "}
+                            . Webhook #{index + 1} keeps the order status update
+                            successful even if delivery fails.
+                          </p>
+                        </div>
+                      ))}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          onClick={() => void saveOutboundWebhooks()}
+                        >
+                          Save webhooks
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={addOutboundWebhookDraft}
+                        >
+                          Add another
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Recent webhook deliveries</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {outboundWebhookLogs.length === 0 ? (
+                        <p className="text-[color:var(--color-text-muted)]">
+                          No delivery attempts yet.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[720px] text-left text-xs [direction:ltr]">
+                            <thead>
+                              <tr className="border-b border-[color:var(--color-divider)] text-[color:var(--color-text-muted)]">
+                                <th className="py-1.5 pe-2 font-medium">time</th>
+                                <th className="py-1.5 pe-2 font-medium">webhook</th>
+                                <th className="py-1.5 pe-2 font-medium">order</th>
+                                <th className="py-1.5 pe-2 font-medium">from</th>
+                                <th className="py-1.5 pe-2 font-medium">to</th>
+                                <th className="py-1.5 pe-2 font-medium">http</th>
+                                <th className="py-1.5 font-medium">result</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {outboundWebhookLogs.map((row) => (
+                                <tr
+                                  key={row.id}
+                                  className="border-b border-[color:var(--color-border)]/60"
+                                >
+                                  <td className="py-1.5 pe-2 font-mono text-[10px] text-[color:var(--color-text-secondary)]">
+                                    {row.createdAt}
+                                  </td>
+                                  <td className="py-1.5 pe-2">
+                                    {row.webhookName}
+                                  </td>
+                                  <td className="py-1.5 pe-2 font-mono text-[10px]">
+                                    {row.orderId.slice(0, 8)}
+                                  </td>
+                                  <td className="py-1.5 pe-2">{row.fromStatus}</td>
+                                  <td className="py-1.5 pe-2">{row.toStatus}</td>
+                                  <td className="py-1.5 pe-2">
+                                    {row.httpStatus ?? "—"}
+                                  </td>
+                                  <td
+                                    className={
+                                      row.success
+                                        ? "py-1.5 font-medium text-[color:var(--color-success)]"
+                                        : "py-1.5 text-[color:var(--color-error)]"
+                                    }
+                                    title={row.errorMessage}
+                                  >
+                                    {row.success ? "success" : row.errorMessage ?? "failed"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
               {advTab === "payment" && (

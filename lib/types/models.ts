@@ -10,6 +10,18 @@ export type OrderStatus =
   | "follow_up"
   | "cancelled";
 
+export const ORDER_STATUSES: OrderStatus[] = [
+  "pending_confirmation",
+  "confirmed",
+  "invoicing",
+  "ready_for_warehouse",
+  "packed",
+  "shipped",
+  "delivered",
+  "follow_up",
+  "cancelled",
+];
+
 export type PaymentStatus = "paid" | "partial" | "cod";
 
 export interface Payment {
@@ -69,6 +81,13 @@ export interface Order {
   shipmentIds: string[];
   assigned_to?: string | null;
   wooCommerceOrderId?: string;
+  /** Computed API field for opening the source order in WooCommerce admin. */
+  wooCommerceOrderAdminUrl?: string;
+  /** Computed API fields from the latest `order.whatsapp_sent` activity. */
+  whatsappSentAt?: string;
+  whatsappSentByUserId?: string;
+  whatsappSentByUserName?: string;
+  whatsappSentPhone?: string;
   lineItems?: OrderLineItem[];
   shipping?: OrderShipping;
   /** Customer / staff notes from source system */

@@ -6,7 +6,8 @@ export type OrderAction =
   | "order:invoice"
   | "order:cancel"
   | "order:assign"
-  | "order:revert";
+  | "order:revert"
+  | "order:delete";
 
 export type ShipmentAction =
   | "shipment:create"

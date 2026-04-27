@@ -11,6 +11,7 @@ import {
   mockCancelOrder,
   mockAssignOrder,
   mockRevertOrder,
+  mockDeleteOrder,
 } from "@/lib/dev/mock-backend";
 import { assertTransition } from "@/lib/logic/order-state-machine";
 import { assertWarehouseRevert } from "@/lib/logic/order-state-machine-warehouse";
@@ -23,6 +24,7 @@ import {
   createShipmentForOrder,
   listShipmentsForOrder,
 } from "@/lib/services/shipments.service";
+import { dispatchOrderStatusWebhooks } from "@/lib/services/outbound-webhooks.service";
 import { logActivity } from "@/lib/services/activity.service";
 import {
   applyOrderStageRollupDelta,
@@ -232,6 +234,14 @@ async function transition(
     actorUserId,
   });
 
+  await dispatchOrderStatusWebhooks({
+    tenantId,
+    order: next,
+    fromStatus: prevStatus,
+    toStatus: to,
+    actorUserId,
+  });
+
   return { prevStatus, order: next };
 }
 
@@ -240,7 +250,20 @@ export async function confirmOrder(input: {
   orderId: string;
   actorUserId: string;
 }) {
-  if (isDevMockDataEnabled()) return mockConfirmOrder(input);
+  if (isDevMockDataEnabled()) {
+    const prev = mockGetOrder(input.tenantId, input.orderId);
+    const order = await mockConfirmOrder(input);
+    if (prev) {
+      await dispatchOrderStatusWebhooks({
+        tenantId: input.tenantId,
+        order,
+        fromStatus: prev.status,
+        toStatus: order.status,
+        actorUserId: input.actorUserId,
+      });
+    }
+    return order;
+  }
   const { order } = await transition(
     input.tenantId,
     input.orderId,
@@ -265,7 +288,20 @@ export async function invoiceOrder(input: {
   invoiceNumber: string;
   actorUserId: string;
 }) {
-  if (isDevMockDataEnabled()) return mockInvoiceOrder(input);
+  if (isDevMockDataEnabled()) {
+    const prev = mockGetOrder(input.tenantId, input.orderId);
+    const order = await mockInvoiceOrder(input);
+    if (prev) {
+      await dispatchOrderStatusWebhooks({
+        tenantId: input.tenantId,
+        order,
+        fromStatus: prev.status,
+        toStatus: order.status,
+        actorUserId: input.actorUserId,
+      });
+    }
+    return order;
+  }
   const db = getDb();
   const ref = db.collection(COLLECTIONS.orders).doc(input.orderId);
   const snap = await ref.get();
@@ -311,6 +347,14 @@ export async function invoiceOrder(input: {
       actorUserId: input.actorUserId,
     });
 
+    await dispatchOrderStatusWebhooks({
+      tenantId: input.tenantId,
+      order: current,
+      fromStatus: prevStatus,
+      toStatus: "invoicing",
+      actorUserId: input.actorUserId,
+    });
+
     const automation = await getTenantAutomation(input.tenantId);
     if (
       shouldAutoCreateShipment(prevStatus, "invoicing", automation) &&
@@ -351,7 +395,20 @@ export async function cancelOrder(input: {
   orderId: string;
   actorUserId: string;
 }) {
-  if (isDevMockDataEnabled()) return mockCancelOrder(input);
+  if (isDevMockDataEnabled()) {
+    const prev = mockGetOrder(input.tenantId, input.orderId);
+    const order = await mockCancelOrder(input);
+    if (prev) {
+      await dispatchOrderStatusWebhooks({
+        tenantId: input.tenantId,
+        order,
+        fromStatus: prev.status,
+        toStatus: order.status,
+        actorUserId: input.actorUserId,
+      });
+    }
+    return order;
+  }
   const { order } = await transition(
     input.tenantId,
     input.orderId,
@@ -359,6 +416,83 @@ export async function cancelOrder(input: {
     input.actorUserId,
   );
   return order;
+}
+
+export async function deleteOrder(input: {
+  tenantId: string;
+  orderId: string;
+  actorUserId: string;
+}): Promise<{
+  orderId: string;
+  deletedShipmentIds: string[];
+  deletedTicketIds: string[];
+}> {
+  if (isDevMockDataEnabled()) return mockDeleteOrder(input);
+
+  const db = getDb();
+  const orderRef = db.collection(COLLECTIONS.orders).doc(input.orderId);
+  const orderSnap = await orderRef.get();
+  const order = orderSnap.data() as Order | undefined;
+  if (!order || order.tenantId !== input.tenantId) {
+    throw new Error("Order not found");
+  }
+
+  const [shipmentSnap, ticketSnap] = await Promise.all([
+    db
+      .collection(COLLECTIONS.shipments)
+      .where("tenantId", "==", input.tenantId)
+      .where("order_id", "==", input.orderId)
+      .get(),
+    db
+      .collection(COLLECTIONS.tickets)
+      .where("tenantId", "==", input.tenantId)
+      .where("order_id", "==", input.orderId)
+      .get(),
+  ]);
+
+  const deletedShipmentIds = shipmentSnap.docs.map((doc) => doc.id);
+  const deletedTicketIds = ticketSnap.docs.map((doc) => doc.id);
+  const now = new Date().toISOString();
+  const activityId = crypto.randomUUID();
+  const batch = db.batch();
+
+  for (const doc of shipmentSnap.docs) batch.delete(doc.ref);
+  for (const doc of ticketSnap.docs) batch.delete(doc.ref);
+  batch.delete(orderRef);
+  batch.set(
+    db.collection(COLLECTIONS.activityLogs).doc(activityId),
+    omitUndefinedForFirestore({
+      id: activityId,
+      tenantId: input.tenantId,
+      action: "order.deleted",
+      entityType: "order",
+      entityId: input.orderId,
+      userId: input.actorUserId,
+      metadata: {
+        status: order.status,
+        wooCommerceOrderId: order.wooCommerceOrderId,
+        customerName: order.customer.name,
+        totalAmount: order.payment.total_amount,
+        deletedShipmentIds,
+        deletedTicketIds,
+      },
+      timestamp: now,
+    }),
+  );
+
+  await batch.commit();
+  await applyOrderStageRollupDelta({
+    tenantId: input.tenantId,
+    from: order.status,
+    to: null,
+    orderValue: orderValueForStageRollup(order),
+  });
+
+  return {
+    orderId: input.orderId,
+    deletedShipmentIds,
+    deletedTicketIds,
+  };
 }
 
 export async function assignOrder(input: {
@@ -408,10 +542,21 @@ export async function revertOrderStage(input: {
     throw e;
   }
   if (isDevMockDataEnabled()) {
-    return mockRevertOrder({
+    const prev = mockGetOrder(input.tenantId, input.orderId);
+    const order = mockRevertOrder({
       ...input,
       to: input.to,
     });
+    if (prev) {
+      await dispatchOrderStatusWebhooks({
+        tenantId: input.tenantId,
+        order,
+        fromStatus: prev.status,
+        toStatus: order.status,
+        actorUserId: input.actorUserId,
+      });
+    }
+    return order;
   }
 
   const db = getDb();
@@ -472,6 +617,14 @@ export async function revertOrderStage(input: {
   enqueueSyncOrderStatusToWooCommerce({
     tenantId: input.tenantId,
     order: result.next,
+    actorUserId: input.actorUserId,
+  });
+
+  await dispatchOrderStatusWebhooks({
+    tenantId: input.tenantId,
+    order: result.next,
+    fromStatus: result.from,
+    toStatus: result.next.status,
     actorUserId: input.actorUserId,
   });
 

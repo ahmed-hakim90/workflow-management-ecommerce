@@ -739,6 +739,59 @@ export async function mockCancelOrder(input: {
   return order;
 }
 
+export function mockDeleteOrder(input: {
+  tenantId: string;
+  orderId: string;
+  actorUserId: string;
+}): {
+  orderId: string;
+  deletedShipmentIds: string[];
+  deletedTicketIds: string[];
+} {
+  const s = ctx();
+  const idx = findOrderIndex(input.orderId);
+  if (idx < 0) throw new Error("Order not found");
+  const order = s.orders[idx];
+  if (order.tenantId !== input.tenantId) throw new Error("Order not found");
+
+  const deletedShipmentIds = s.shipments
+    .filter((sh) => sh.tenantId === input.tenantId && sh.order_id === input.orderId)
+    .map((sh) => sh.id);
+  const deletedTicketIds = s.tickets
+    .filter((t) => t.tenantId === input.tenantId && t.order_id === input.orderId)
+    .map((t) => t.id);
+
+  s.shipments = s.shipments.filter(
+    (sh) => !(sh.tenantId === input.tenantId && sh.order_id === input.orderId),
+  );
+  s.tickets = s.tickets.filter(
+    (t) => !(t.tenantId === input.tenantId && t.order_id === input.orderId),
+  );
+  s.orders.splice(idx, 1);
+
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "order.deleted",
+    entityType: "order",
+    entityId: input.orderId,
+    userId: input.actorUserId,
+    metadata: {
+      status: order.status,
+      wooCommerceOrderId: order.wooCommerceOrderId,
+      customerName: order.customer.name,
+      totalAmount: order.payment.total_amount,
+      deletedShipmentIds,
+      deletedTicketIds,
+    },
+  });
+
+  return {
+    orderId: input.orderId,
+    deletedShipmentIds,
+    deletedTicketIds,
+  };
+}
+
 export async function mockAssignOrder(input: {
   tenantId: string;
   orderId: string;

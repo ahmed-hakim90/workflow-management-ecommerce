@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StageBarChart } from "@/components/charts/stage-bar-chart";
@@ -23,6 +25,17 @@ type AdminSummary = {
     performancePct: number;
   }[];
   bottleneck?: string;
+  overdueAlerts?: {
+    orderId: string;
+    displayOrderId: string;
+    customerName: string;
+    status: string;
+    nextAction: string;
+    thresholdMinutes: number;
+    ageMinutes: number;
+    updatedAt: string;
+    assignedTo?: string | null;
+  }[];
 };
 
 export default function AdminPage() {
@@ -63,6 +76,13 @@ export default function AdminPage() {
 
   const fmtStageMoney = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+  const fmtDuration = (minutes: number) => {
+    if (minutes < 60) return `${minutes}m`;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  };
 
   const barData =
     data?.stages &&
@@ -138,6 +158,110 @@ export default function AdminPage() {
             </span>
           </div>
         ) : null}
+        <Card className="col-span-12">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle
+                className="size-5 text-[color:var(--color-callout-warning-text)]"
+                aria-hidden
+              />
+              Manager alerts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ResponsiveTable
+              desktop={
+                <TableWrap className="rounded-none border-0 shadow-none">
+                  <thead>
+                    <tr>
+                      <Th>Order</Th>
+                      <Th>Customer</Th>
+                      <Th>Stage</Th>
+                      <Th>Waiting</Th>
+                      <Th>Required next action</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading && !err ? (
+                      Array.from({ length: 4 }).map((_, i) => (
+                        <Tr key={i}>
+                          {Array.from({ length: 5 }).map((__, j) => (
+                            <Td key={j}>
+                              <Skeleton className="h-4 w-full max-w-[10rem]" />
+                            </Td>
+                          ))}
+                        </Tr>
+                      ))
+                    ) : (data?.overdueAlerts ?? []).length === 0 ? (
+                      <Tr>
+                        <Td
+                          colSpan={5}
+                          className="text-center text-[color:var(--color-text-muted)]"
+                        >
+                          No overdue stage alerts.
+                        </Td>
+                      </Tr>
+                    ) : (
+                      (data?.overdueAlerts ?? []).map((a) => (
+                        <Tr key={`${a.orderId}-${a.status}`}>
+                          <Td>
+                            <Link
+                              href={`/orders/${a.orderId}`}
+                              className="font-mono text-sm font-semibold text-[color:var(--color-primary)] hover:underline"
+                            >
+                              #{a.displayOrderId}
+                            </Link>
+                          </Td>
+                          <Td>{a.customerName}</Td>
+                          <Td>{humanizeOrderStageKey(a.status)}</Td>
+                          <Td className="font-semibold text-[color:var(--color-callout-warning-text)]">
+                            {fmtDuration(a.ageMinutes)}
+                          </Td>
+                          <Td>{a.nextAction}</Td>
+                        </Tr>
+                      ))
+                    )}
+                  </tbody>
+                </TableWrap>
+              }
+              mobile={
+                <div className="space-y-3 p-4">
+                  {loading && !err ? (
+                    <>
+                      <CardSkeleton />
+                      <CardSkeleton />
+                    </>
+                  ) : (data?.overdueAlerts ?? []).length === 0 ? (
+                    <p className="text-center text-sm text-[color:var(--color-text-muted)]">
+                      No overdue stage alerts.
+                    </p>
+                  ) : (
+                    (data?.overdueAlerts ?? []).map((a) => (
+                      <ResponsiveCard key={`${a.orderId}-${a.status}`}>
+                        <div className="space-y-2 text-sm">
+                          <Link
+                            href={`/orders/${a.orderId}`}
+                            className="font-mono font-semibold text-[color:var(--color-primary)]"
+                          >
+                            #{a.displayOrderId}
+                          </Link>
+                          <div className="font-medium">{a.customerName}</div>
+                          <div className="text-[color:var(--color-text-secondary)]">
+                            {humanizeOrderStageKey(a.status)} · waiting{" "}
+                            <span className="font-semibold text-[color:var(--color-callout-warning-text)]">
+                              {fmtDuration(a.ageMinutes)}
+                            </span>
+                          </div>
+                          <div>{a.nextAction}</div>
+                        </div>
+                      </ResponsiveCard>
+                    ))
+                  )}
+                </div>
+              }
+            />
+          </CardContent>
+        </Card>
         <Card className="col-span-12">
           <CardHeader>
             <CardTitle>Team</CardTitle>

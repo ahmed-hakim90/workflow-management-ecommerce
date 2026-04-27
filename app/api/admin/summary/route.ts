@@ -2,6 +2,8 @@ import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
 import { jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
+import { computeOrderOverdueAlerts } from "@/lib/logic/order-overdue-alerts";
+import { listOrders } from "@/lib/services/orders.service";
 import { getOrdersPerStage } from "@/lib/services/analytics.service";
 import { listUsers } from "@/lib/services/users.service";
 import { getUserStatsForToday } from "@/lib/services/analytics.service";
@@ -15,7 +17,10 @@ export async function GET(req: Request) {
       (err as Error & { status: number }).status = 403;
       throw err;
     }
-    const perStage = await getOrdersPerStage(ctx.tenantId);
+    const [perStage, orders] = await Promise.all([
+      getOrdersPerStage(ctx.tenantId),
+      listOrders(ctx.tenantId),
+    ]);
     const { stageValues, ...stages } = perStage;
     const users = await listUsers(ctx.tenantId);
     const team = await Promise.all(
@@ -39,7 +44,8 @@ export async function GET(req: Request) {
     const bottleneck = Object.entries(stages)
       .filter(([k]) => k !== "warehouse")
       .sort((a, b) => b[1] - a[1])[0]?.[0];
-    return jsonOk({ stages, stageValues, team, bottleneck });
+    const overdueAlerts = computeOrderOverdueAlerts(orders).slice(0, 25);
+    return jsonOk({ stages, stageValues, team, bottleneck, overdueAlerts });
   } catch (e) {
     return handleRouteError(e);
   }

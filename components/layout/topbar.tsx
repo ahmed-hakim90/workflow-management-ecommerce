@@ -11,7 +11,7 @@ import {
   UserCircle2,
   X,
 } from "lucide-react";
-import { useSessionStore } from "@/store/zustand/session-store";
+import { buildAuthHeaders, useSessionStore } from "@/store/zustand/session-store";
 import { cn } from "@/lib/ui/cn";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
@@ -21,12 +21,17 @@ import { useOrderAlertsStore } from "@/store/zustand/order-alerts-store";
 export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
+  const apiSecret = useSessionStore((s) => s.apiSecret);
+  const idToken = useSessionStore((s) => s.idToken);
+  const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const authReady = useSessionStore((s) => s.authReady);
   const displayName = useSessionStore((s) => s.displayName);
   const tenantName = useSessionStore((s) => s.tenantName);
   const [mockOn, setMockOn] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [managerAlertCount, setManagerAlertCount] = useState(0);
 
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
@@ -53,6 +58,35 @@ export function Topbar() {
     if (isMdUp) setSearchOpen(false);
   }, [isMdUp]);
 
+  useEffect(() => {
+    if (!authReady || (role !== "admin" && role !== "moderator")) {
+      setManagerAlertCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/admin/summary", {
+          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? res.statusText);
+        const alerts = (json.data?.overdueAlerts ?? []) as unknown[];
+        if (!cancelled) setManagerAlertCount(alerts.length);
+      } catch {
+        if (!cancelled) setManagerAlertCount(0);
+      }
+    };
+
+    void load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+
   const searchPlaceholder = useMemo(() => {
     if (pathname.startsWith("/tickets")) {
       return "Search tickets, IDs, or agents…";
@@ -62,6 +96,8 @@ export function Topbar() {
     }
     return "Search orders, customers, or items…";
   }, [pathname]);
+
+  const bellCount = orderUnread + managerAlertCount;
 
   return (
     <header
@@ -168,19 +204,19 @@ export function Topbar() {
           type="button"
           className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
           aria-label={
-            orderUnread > 0
-              ? `Order notifications, ${orderUnread} new`
+            bellCount > 0
+              ? `Order notifications, ${bellCount} alerts`
               : "Order notifications"
           }
           onClick={() => {
             markNotificationsSeen();
-            router.push("/orders");
+            router.push(managerAlertCount > 0 ? "/admin" : "/orders");
           }}
         >
           <Bell className="size-5" />
-          {orderUnread > 0 ? (
-            <span className="absolute top-1 end-1 min-h-[1.125rem] min-w-[1.125rem] rounded-full bg-[color:var(--color-primary)] px-0.5 text-center text-[10px] font-semibold leading-tight text-[color:var(--color-primary-foreground)]">
-              {orderUnread > 9 ? "9+" : orderUnread}
+          {bellCount > 0 ? (
+            <span className="absolute top-1 end-1 min-h-[1.125rem] min-w-[1.125rem] rounded-full bg-[color:var(--color-error)] px-0.5 text-center text-[10px] font-semibold leading-tight text-white">
+              {bellCount > 9 ? "9+" : bellCount}
             </span>
           ) : null}
         </button>

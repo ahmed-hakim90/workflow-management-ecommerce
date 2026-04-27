@@ -5,6 +5,7 @@ import {
   mockCreateShipmentForOrder,
   mockListShipmentsForOrder,
   mockListShipmentsForTenant,
+  mockGetOrder,
   mockScanAwb,
 } from "@/lib/dev/mock-backend";
 import type { Order, Shipment, ShipmentStatus, ShipmentType } from "@/lib/types/models";
@@ -20,6 +21,7 @@ import { recordDeliveryShipmentAnalytics } from "@/lib/services/analytics-daily.
 import { getUser } from "@/lib/services/users.service";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 import { getWarehouseSettings } from "@/lib/services/tenant-settings.service";
+import { dispatchOrderStatusWebhooks } from "@/lib/services/outbound-webhooks.service";
 
 async function getOrder(tenantId: string, orderId: string): Promise<Order | null> {
   const db = getDb();
@@ -142,7 +144,22 @@ export async function scanAwb(input: {
   awb: string;
   actorUserId: string;
 }): Promise<{ order: Order; shipment: Shipment }> {
-  if (isDevMockDataEnabled()) return mockScanAwb(input);
+  if (isDevMockDataEnabled()) {
+    const shipments = mockListShipmentsForTenant(input.tenantId);
+    const match = shipments.find((s) => s.awb === input.awb);
+    const prevOrder = match ? mockGetOrder(input.tenantId, match.order_id) : null;
+    const result = await mockScanAwb(input);
+    if (prevOrder) {
+      await dispatchOrderStatusWebhooks({
+        tenantId: input.tenantId,
+        order: result.order,
+        fromStatus: prevOrder.status,
+        toStatus: result.order.status,
+        actorUserId: input.actorUserId,
+      });
+    }
+    return result;
+  }
   const wh = await getWarehouseSettings(input.tenantId);
   const mode = wh.singleScanFulfills ? "single_fulfill" : "per_step";
   const cooldownMs = wh.scanCooldownMs;
@@ -260,6 +277,14 @@ export async function scanAwb(input: {
   enqueueSyncOrderStatusToWooCommerce({
     tenantId: input.tenantId,
     order: result.order,
+    actorUserId: input.actorUserId,
+  });
+
+  await dispatchOrderStatusWebhooks({
+    tenantId: input.tenantId,
+    order: result.order,
+    fromStatus: result.prevOrderStatus,
+    toStatus: result.order.status,
     actorUserId: input.actorUserId,
   });
 

@@ -13,6 +13,22 @@ export function normalizeWooCommerceStoreUrl(raw: string): string {
   }
 }
 
+export function buildWooCommerceOrderAdminUrl(input: {
+  storeUrl?: string | null;
+  wooOrderId?: string | null;
+}): string | undefined {
+  const base = normalizeWooCommerceStoreUrl(input.storeUrl ?? "");
+  const orderId = input.wooOrderId?.trim();
+  if (!base || !orderId) return undefined;
+
+  const params = new URLSearchParams({
+    page: "wc-orders",
+    action: "edit",
+    id: orderId,
+  });
+  return `${base}/wp-admin/admin.php?${params.toString()}`;
+}
+
 function basicAuthHeader(consumerKey: string, consumerSecret: string): string {
   const token = Buffer.from(
     `${consumerKey}:${consumerSecret}`,
