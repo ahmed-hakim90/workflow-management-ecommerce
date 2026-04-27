@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       await setTenantOwner(tenant.id, user.id);
       return jsonOk({
         tenantId: tenant.id,
+        tenantSlug: tenant.slug,
         userId: user.id,
         staffApiKey: tenant.staffApiKey,
         mode: "mock",
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
     await setTenantOwner(tenant.id, user.id);
     return jsonOk({
       tenantId: tenant.id,
+      tenantSlug: tenant.slug,
       userId: user.id,
       staffApiKey: tenant.staffApiKey,
     });

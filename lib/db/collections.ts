@@ -8,6 +8,7 @@ export const COLLECTIONS = {
   analyticsDaily: "analytics_daily",
   activityLogs: "activity_logs",
   tenantSettings: "tenant_settings",
+  tenantSlugs: "tenant_slugs",
   integrationEvents: "integration_events",
   /** WooCommerce (and future) inbound webhook attempt outcomes per tenant. */
   webhookIngestLogs: "webhook_ingest_logs",

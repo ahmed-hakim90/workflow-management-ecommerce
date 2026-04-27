@@ -932,15 +932,31 @@ export function mockGetTenant(tenantId: string): Tenant | null {
   return ctx().tenants[tenantId] ?? null;
 }
 
+export function mockGetTenantBySlug(slug: string): Tenant | null {
+  const normalizedSlug = slugify(slug);
+  return (
+    Object.values(ctx().tenants).find((tenant) => tenant.slug === normalizedSlug) ??
+    null
+  );
+}
+
 export function mockCreateTenant(name: string): Tenant {
   const s = ctx();
+  const slug = slugify(name);
+  if (mockGetTenantBySlug(slug)) {
+    const e = new Error("Company name is already registered") as Error & {
+      status: number;
+    };
+    e.status = 409;
+    throw e;
+  }
   const id = crypto.randomUUID();
   const now = iso();
   const staffApiKey = `mock-${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`;
   const tenant: Tenant = {
     id,
     name: name.trim(),
-    slug: `${slugify(name)}-${id.slice(0, 8)}`,
+    slug,
     ownerUserId: "",
     staffApiKey,
     createdAt: now,

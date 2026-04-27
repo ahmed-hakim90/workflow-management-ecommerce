@@ -1,12 +1,21 @@
+import { createHmac } from "crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDevMockBackend } from "../dev/mock-backend";
 import { confirmOrder, upsertOrderFromWooCommerce } from "../services/orders.service";
 import { claimIntegrationEvent } from "../services/integration-events.service";
+import {
+  createTenantRecord,
+  resolveTenantByIdOrSlug,
+} from "../services/tenants.service";
+import { setTenantWooCommerceWebhookSecret } from "../services/tenant-settings.service";
 import { omitUndefinedForFirestore } from "../util/json-snapshot";
 import { mapWooCommerceOrder } from "./woocommerce-map";
 import { resolveWooCommerceDeliveryId } from "./woocommerce-webhook";
+import { POST as postWooCommerceWebhook } from "../../app/api/webhooks/woocommerce/route";
+import { GET as getIntegrationsSettings } from "../../app/api/settings/integrations/route";
 
 const originalDevMockData = process.env.DEV_MOCK_DATA;
+const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
 
 function wooPayload(id: string, total = "120.00") {
   return {
@@ -58,9 +67,110 @@ afterAll(() => {
   } else {
     process.env.DEV_MOCK_DATA = originalDevMockData;
   }
+  if (originalAppUrl === undefined) {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+  } else {
+    process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
+  }
 });
 
 describe("WooCommerce webhook order flow", () => {
+  it("creates unique tenant slugs from company names", async () => {
+    const tenant = await createTenantRecord("Acme Store");
+
+    expect(tenant.slug).toBe("acme-store");
+    await expect(createTenantRecord("  acme   store  ")).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it("resolves tenants by either id or slug", async () => {
+    const tenant = await createTenantRecord("Slug Lookup Co");
+
+    await expect(resolveTenantByIdOrSlug(tenant.id)).resolves.toMatchObject({
+      id: tenant.id,
+    });
+    await expect(resolveTenantByIdOrSlug("slug-lookup-co")).resolves.toMatchObject({
+      id: tenant.id,
+    });
+  });
+
+  it("shows the WooCommerce webhook URL with the tenant slug", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://oms.example.test";
+    const tenant = await createTenantRecord("Webhook URL Co");
+
+    const res = await getIntegrationsSettings(
+      new Request("https://oms.example.test/api/settings/integrations", {
+        headers: {
+          authorization: `Bearer ${tenant.staffApiKey}`,
+          "x-tenant-id": tenant.id,
+          "x-user-id": "admin-1",
+          "x-user-role": "admin",
+        },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.woocommerceWebhookUrl).toBe(
+      "https://oms.example.test/api/webhooks/woocommerce?tenant=webhook-url-co",
+    );
+  });
+
+  it("accepts WooCommerce webhooks addressed by tenant slug", async () => {
+    const tenant = await createTenantRecord("Woo Slug Co");
+    await setTenantWooCommerceWebhookSecret(tenant.id, "woo-secret");
+    const rawBody = JSON.stringify(wooPayload("woo-slug-1"));
+    const signature = createHmac("sha256", "woo-secret")
+      .update(rawBody)
+      .digest("base64");
+
+    const res = await postWooCommerceWebhook(
+      new Request(
+        "https://oms.example.test/api/webhooks/woocommerce?tenant=woo-slug-co",
+        {
+          method: "POST",
+          body: rawBody,
+          headers: {
+            "x-wc-webhook-signature": signature,
+            "x-wc-webhook-delivery-id": "delivery-slug-1",
+          },
+        },
+      ),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.orderId).toEqual(expect.any(String));
+  });
+
+  it("keeps accepting WooCommerce webhooks addressed by tenant id", async () => {
+    const tenant = await createTenantRecord("Woo Id Co");
+    await setTenantWooCommerceWebhookSecret(tenant.id, "woo-secret");
+    const rawBody = JSON.stringify(wooPayload("woo-id-1"));
+    const signature = createHmac("sha256", "woo-secret")
+      .update(rawBody)
+      .digest("base64");
+
+    const res = await postWooCommerceWebhook(
+      new Request(
+        `https://oms.example.test/api/webhooks/woocommerce?tenant=${tenant.id}`,
+        {
+          method: "POST",
+          body: rawBody,
+          headers: {
+            "x-wc-webhook-signature": signature,
+            "x-wc-webhook-delivery-id": "delivery-id-1",
+          },
+        },
+      ),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.orderId).toEqual(expect.any(String));
+  });
+
   it("uses the provider delivery header when WooCommerce sends one", () => {
     const rawBody = JSON.stringify(wooPayload("woo-1"));
     const req = new Request("https://example.test/api/webhooks/woocommerce", {

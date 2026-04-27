@@ -94,10 +94,11 @@ export async function GET(req: Request) {
         "No public base URL: set NEXT_PUBLIC_APP_URL, or use a Vercel deployment so VERCEL_URL is set.",
       );
     }
+    const webhookTenantKey = tenant?.slug?.trim() || ctx.tenantId;
     return jsonOk({
       tenantId: ctx.tenantId,
       serverPublicBaseUrl: base,
-      woocommerceWebhookUrl: `${base}/api/webhooks/woocommerce?tenant=${encodeURIComponent(ctx.tenantId)}`,
+      woocommerceWebhookUrl: `${base}/api/webhooks/woocommerce?tenant=${encodeURIComponent(webhookTenantKey)}`,
       woocommerceWebhookSecretConfigured: wooSecretOk,
       webhookDiagnostics: {
         hasPerTenantWooSecret: wooSecretOk,

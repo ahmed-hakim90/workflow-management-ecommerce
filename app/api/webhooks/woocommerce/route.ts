@@ -12,6 +12,7 @@ import {
 import { appendWebhookIngestLog } from "@/lib/services/webhook-ingest-logs.service";
 import { getServerEnv } from "@/lib/config/env";
 import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
+import { resolveTenantByIdOrSlug } from "@/lib/services/tenants.service";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,12 @@ export async function POST(req: Request) {
   const deliveryId = resolveWooCommerceDeliveryId(req, rawBody);
   const env = getServerEnv();
   const url = new URL(req.url);
-  const tenantId = url.searchParams.get("tenant") ?? "default";
+  const tenantKey = url.searchParams.get("tenant")?.trim() || "default";
+  const tenant = await resolveTenantByIdOrSlug(tenantKey);
+  if (!tenant) {
+    return jsonError("Unknown tenant in webhook URL", 404, { tenant: tenantKey });
+  }
+  const tenantId = tenant.id;
 
   const tenantSecret = await getTenantWooCommerceWebhookSecret(tenantId);
   const secretForVerify = (
@@ -98,8 +104,10 @@ export async function POST(req: Request) {
       wooOrderId: wooOrderIdFromBody(body),
       requestBodyBytes,
     });
+    
     return jsonError("Could not process webhook (idempotency); retry from WooCommerce.", 500);
   }
+  console.log("CLAIM RESULT:", claim);
 
   if (claim === "duplicate") {
     await appendWebhookIngestLog({
