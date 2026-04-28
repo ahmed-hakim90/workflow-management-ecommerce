@@ -99,7 +99,10 @@ export async function createShipmentForOrder(input: {
     actorUserName: createdByUserName,
   });
 
-  const shipping_fees = bosta.shippingFee ?? order.shipping?.cost ?? 0;
+  const shipping_fees =
+    bosta.provider === "bosta"
+      ? bosta.shippingFee
+      : bosta.shippingFee ?? order.shipping?.cost ?? 0;
 
   const shipment: Shipment = {
     id,
@@ -141,7 +144,7 @@ export async function createShipmentForOrder(input: {
     tenantId: input.tenantId,
     shipmentCreatedAt: now,
     type,
-    shippingCost: shipping_fees,
+    shippingCost: shipping_fees ?? 0,
   });
 
   return shipment;
@@ -163,6 +166,7 @@ export async function syncShipmentTracking(input: {
   const tracking = await trackBostaShipment({
     tenantId: input.tenantId,
     awb: shipment.awb,
+    externalId: shipment.externalId,
   });
   const now = new Date().toISOString();
   const event = {

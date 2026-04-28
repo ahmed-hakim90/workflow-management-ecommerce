@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, PackagePlus } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, PackagePlus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,9 +49,9 @@ function formatWhen(iso?: string) {
 }
 
 function formatMoney(value: number) {
-  return value.toLocaleString("en-US", {
+  return value.toLocaleString("ar-EG-u-nu-latn", {
     style: "currency",
-    currency: "USD",
+    currency: "EGP",
   });
 }
 
@@ -78,6 +78,7 @@ function Detail({
 
 export default function TicketDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const ticketId = params.id as string;
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
@@ -106,6 +107,7 @@ export default function TicketDetailPage() {
   const permissionSubject = { role, permissions };
   const canWorkTicket = can(permissionSubject, "ticket:resolve");
   const canAssignTicket = can(permissionSubject, "ticket:assign");
+  const canDeleteTicket = role === "admin" && can(permissionSubject, "ticket:delete");
   const canViewFinance = can(permissionSubject, "finance:view");
 
   const userName = useCallback(
@@ -212,6 +214,30 @@ export default function TicketDetailPage() {
     }
   }
 
+  async function deleteCurrentTicket() {
+    if (!canDeleteTicket || busy) return;
+    const confirmed = window.confirm(
+      "Delete this ticket? This cannot be undone.",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: "DELETE",
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      router.push("/tickets");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to delete ticket");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ticket = bundle?.ticket;
   const order = bundle?.order;
 
@@ -225,12 +251,26 @@ export default function TicketDetailPage() {
             : "Review the customer issue, order context, and resolution actions."
         }
         actions={
-          <Link href="/tickets">
-            <Button type="button" variant="secondary" size="sm">
-              <ArrowLeft className="size-4" aria-hidden />
-              Tickets
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {canDeleteTicket && ticket ? (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                loading={busy}
+                onClick={() => void deleteCurrentTicket()}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Delete
+              </Button>
+            ) : null}
+            <Link href="/tickets">
+              <Button type="button" variant="secondary" size="sm">
+                <ArrowLeft className="size-4" aria-hidden />
+                Tickets
+              </Button>
+            </Link>
+          </div>
         }
       />
 

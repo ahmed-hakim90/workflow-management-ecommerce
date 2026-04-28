@@ -13,6 +13,10 @@ import { appendWebhookIngestLog } from "@/lib/services/webhook-ingest-logs.servi
 import { getServerEnv } from "@/lib/config/env";
 import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
 import { resolveTenantByIdOrSlug } from "@/lib/services/tenants.service";
+import {
+  assertTenantCanIngestOrder,
+  assertTenantCanUseIntegration,
+} from "@/lib/services/platform-packages.service";
 
 export const runtime = "nodejs";
 
@@ -38,6 +42,13 @@ export async function POST(req: Request) {
     return jsonError("Unknown tenant in webhook URL", 404, { tenant: tenantKey });
   }
   const tenantId = tenant.id;
+  try {
+    await assertTenantCanUseIntegration(tenantId, "woocommerce");
+  } catch (e) {
+    const status = e instanceof Error ? (e as Error & { status?: number }).status : 402;
+    const message = e instanceof Error ? e.message : "WooCommerce is not enabled";
+    return jsonError(message, status ?? 402);
+  }
 
   const tenantSecret = await getTenantWooCommerceWebhookSecret(tenantId);
   const secretForVerify = (
@@ -146,6 +157,7 @@ export async function POST(req: Request) {
       });
       return jsonOk({ diagnostic: true, wooOrderId: mapped.wooOrderId });
     }
+    await assertTenantCanIngestOrder(tenantId);
     const order = await upsertOrderFromWooCommerce({
       tenantId,
       wooOrderId: mapped.wooOrderId,

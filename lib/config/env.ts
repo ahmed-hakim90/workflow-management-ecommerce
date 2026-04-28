@@ -9,6 +9,8 @@ const serverSchema = z.object({
   DEV_MOCK_DATA: z.string().optional(),
   /** When `firebase` and Firebase Admin is configured, staff API accepts only ID tokens (not per-tenant staffApiKey). */
   STAFF_AUTH_MODE: z.enum(["legacy", "firebase"]).optional(),
+  /** Separate internal token for `/api/platform/*` super-admin routes. */
+  PLATFORM_ADMIN_SECRET: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });
@@ -24,6 +26,7 @@ export function getServerEnv(): ServerEnv {
     DEV_MOCK_DATA: process.env.DEV_MOCK_DATA,
     STAFF_AUTH_MODE:
       process.env.STAFF_AUTH_MODE?.trim() || undefined,
+    PLATFORM_ADMIN_SECRET: process.env.PLATFORM_ADMIN_SECRET,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
   });

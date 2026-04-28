@@ -3,6 +3,12 @@ import type { Order } from "@/lib/types/models";
 import { formatConfirmationWhatsAppMessage } from "./confirmation-whatsapp";
 
 describe("formatConfirmationWhatsAppMessage", () => {
+  const formatEgp = (value: number) =>
+    value.toLocaleString("ar-EG-u-nu-latn", {
+      style: "currency",
+      currency: "EGP",
+    });
+
   const order: Order = {
     id: "internal-1",
     tenantId: "default",
@@ -93,7 +99,7 @@ describe("formatConfirmationWhatsAppMessage", () => {
     );
 
     expect(message).toBe(
-      "مرحباً Ahmed Sayed\nالعنوان: 12 Nile St, Cairo\nالإجمالي: $150.00\nالشحن: Flat rate\nRaw: 150\nUnsafe: ",
+      `مرحباً Ahmed Sayed\nالعنوان: 12 Nile St, Cairo\nالإجمالي: ${formatEgp(150)}\nالشحن: Flat rate\nRaw: 150\nUnsafe: `,
     );
   });
 
@@ -104,9 +110,9 @@ describe("formatConfirmationWhatsAppMessage", () => {
     });
 
     expect(message).toContain(
-      "- T-Shirt x2 = $100.00 (SKU: TS-1 | Size: M, Color: Black | Link: https://store.example.com/product/t-shirt)",
+      `- T-Shirt x2 = ${formatEgp(100)} (SKU: TS-1 | Size: M, Color: Black | Link: https://store.example.com/product/t-shirt)`,
     );
-    expect(message).toContain("- Cap x1 = $50.00 (SKU: CAP-1)");
+    expect(message).toContain(`- Cap x1 = ${formatEgp(50)} (SKU: CAP-1)`);
   });
 
   it("renders custom product rows from selected item fields", () => {
@@ -119,7 +125,7 @@ describe("formatConfirmationWhatsAppMessage", () => {
     );
 
     expect(message).toBe(
-      "T-Shirt - 2 - $100.00 - TS-1 - https://store.example.com/product/t-shirt\nCap - 1 - $50.00 - CAP-1",
+      `T-Shirt - 2 - ${formatEgp(100)} - TS-1 - https://store.example.com/product/t-shirt\nCap - 1 - ${formatEgp(50)} - CAP-1`,
     );
   });
 });

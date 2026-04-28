@@ -7,6 +7,13 @@ import { confirmOrder } from "@/lib/services/orders.service";
 
 const bodySchema = z.object({
   orderId: z.string().min(1),
+  paidAmount: z.preprocess(
+    (value) =>
+      value == null || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : Number(value),
+    z.number().finite().optional(),
+  ),
 });
 
 export async function POST(req: Request) {
@@ -14,11 +21,12 @@ export async function POST(req: Request) {
     const ctx = await requireTenant(req);
     assertCan(ctx, "order:confirm");
     const json = await req.json();
-    const { orderId } = bodySchema.parse(json);
+    const { orderId, paidAmount } = bodySchema.parse(json);
     const order = await confirmOrder({
       tenantId: ctx.tenantId,
       orderId,
       actorUserId: ctx.userId,
+      paidAmount,
     });
     return jsonOk(order);
   } catch (e) {

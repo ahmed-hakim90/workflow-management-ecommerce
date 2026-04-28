@@ -4,7 +4,7 @@ import { jsonError, jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import { listActivitiesForEntity } from "@/lib/services/activity.service";
 import { getOrderDetailBundle } from "@/lib/services/orders.service";
-import { getTicket } from "@/lib/services/tickets.service";
+import { deleteTicket, getTicket } from "@/lib/services/tickets.service";
 import { listUsers } from "@/lib/services/users.service";
 
 export async function GET(
@@ -35,6 +35,27 @@ export async function GET(
       activities,
       users,
     });
+  } catch (e) {
+    return handleRouteError(e);
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ ticketId: string }> },
+) {
+  try {
+    const ctx = await requireTenant(req);
+    assertCan(ctx, "ticket:delete");
+    if (ctx.role !== "admin") return jsonError("Forbidden", 403);
+    const { ticketId } = await context.params;
+    if (!ticketId?.trim()) return jsonError("Missing ticket id", 400);
+    await deleteTicket({
+      tenantId: ctx.tenantId,
+      ticketId,
+      actorUserId: ctx.userId,
+    });
+    return jsonOk({ deleted: true });
   } catch (e) {
     return handleRouteError(e);
   }

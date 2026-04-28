@@ -15,6 +15,7 @@ import {
 } from "@/lib/services/tenant-settings.service";
 import { getServerEnv } from "@/lib/config/env";
 import { getTenant } from "@/lib/services/tenants.service";
+import { assertTenantCanUseIntegration } from "@/lib/services/platform-packages.service";
 
 const patchSchema = z
   .object({
@@ -56,6 +57,10 @@ function last4(raw: string | undefined): string | null {
   const t = raw?.trim();
   if (!t || t.length < 4) return null;
   return t.slice(-4);
+}
+
+function hasEnabledValue(raw: string | null | undefined): boolean {
+  return typeof raw === "string" && raw.trim().length > 0;
 }
 
 export async function GET(req: Request) {
@@ -159,6 +164,9 @@ export async function PATCH(req: Request) {
 
     if (body.woocommerce_webhook_secret !== undefined) {
       const secret = normalizeSecret(body.woocommerce_webhook_secret);
+      if (secret) {
+        await assertTenantCanUseIntegration(ctx.tenantId, "woocommerce");
+      }
       await setTenantWooCommerceWebhookSecret(ctx.tenantId, secret);
     }
 
@@ -167,6 +175,13 @@ export async function PATCH(req: Request) {
       body.woocommerce_consumer_key !== undefined ||
       body.woocommerce_consumer_secret !== undefined
     ) {
+      if (
+        hasEnabledValue(body.woocommerce_store_url) ||
+        hasEnabledValue(body.woocommerce_consumer_key) ||
+        hasEnabledValue(body.woocommerce_consumer_secret)
+      ) {
+        await assertTenantCanUseIntegration(ctx.tenantId, "woocommerce");
+      }
       await setTenantWooCommerceRestFields(ctx.tenantId, {
         storeUrl: body.woocommerce_store_url,
         consumerKey: body.woocommerce_consumer_key,
@@ -183,6 +198,9 @@ export async function PATCH(req: Request) {
       body.bosta_default_address_line !== undefined ||
       body.bosta_package_description !== undefined
     ) {
+      if (hasEnabledValue(body.bosta_api_key)) {
+        await assertTenantCanUseIntegration(ctx.tenantId, "bosta");
+      }
       await setTenantBostaFields(ctx.tenantId, {
         ...(body.bosta_api_key !== undefined
           ? { apiKey: body.bosta_api_key }
@@ -212,6 +230,9 @@ export async function PATCH(req: Request) {
       body.storefront_order_webhook_secret !== undefined ||
       body.storefront_order_secret_header_name !== undefined
     ) {
+      if (hasEnabledValue(body.storefront_order_webhook_secret)) {
+        await assertTenantCanUseIntegration(ctx.tenantId, "storefrontOrders");
+      }
       await setTenantStorefrontOrderFields(ctx.tenantId, {
         webhookSecret: body.storefront_order_webhook_secret,
         secretHeaderName: body.storefront_order_secret_header_name,

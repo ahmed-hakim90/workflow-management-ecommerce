@@ -8,6 +8,7 @@ import {
   setTenantAutomation,
 } from "@/lib/services/tenant-settings.service";
 import { listOutboundWebhookDeliveryLogs } from "@/lib/services/outbound-webhooks.service";
+import { assertTenantCanUseIntegration } from "@/lib/services/platform-packages.service";
 import type { TenantOutboundWebhook } from "@/lib/types/models";
 
 const orderStatusSchema = z.enum([
@@ -100,6 +101,9 @@ export async function PATCH(req: Request) {
       body.outboundWebhooks,
       current.outboundWebhooks ?? [],
     );
+    if (outboundWebhooks.some((w) => w.enabled)) {
+      await assertTenantCanUseIntegration(ctx.tenantId, "outboundWebhooks");
+    }
     await setTenantAutomation(ctx.tenantId, { outboundWebhooks });
     const next = await getTenantAutomation(ctx.tenantId);
     return jsonOk({

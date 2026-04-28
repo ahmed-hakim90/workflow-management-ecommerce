@@ -75,7 +75,10 @@ export default function AdminPage() {
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const fmtStageMoney = (n: number) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    n.toLocaleString("ar-EG-u-nu-latn", {
+      style: "currency",
+      currency: "EGP",
+    });
 
   const fmtDuration = (minutes: number) => {
     if (minutes < 60) return `${minutes}m`;

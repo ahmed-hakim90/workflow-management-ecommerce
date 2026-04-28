@@ -39,14 +39,14 @@ export async function createUser(input: {
     id,
     tenantId: input.tenantId,
     name: input.name,
-    email: input.email,
-    firebaseUid: input.firebaseUid,
     role: input.role,
     permissions: input.permissions ?? [],
     daily_target: input.daily_target ?? 0,
     createdAt: now,
     updatedAt: now,
   };
+  if (input.email) user.email = input.email;
+  if (input.firebaseUid) user.firebaseUid = input.firebaseUid;
   await db.collection(COLLECTIONS.users).doc(id).set(user);
   await logActivity({
     tenantId: input.tenantId,

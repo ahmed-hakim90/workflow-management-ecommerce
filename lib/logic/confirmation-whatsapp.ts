@@ -22,9 +22,9 @@ type ConfirmationWhatsAppParams =
 const UNSAFE_PATH_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
 function formatMoney(value: number | undefined): string {
-  return (value ?? 0).toLocaleString("en-US", {
+  return (value ?? 0).toLocaleString("ar-EG-u-nu-latn", {
     style: "currency",
-    currency: "USD",
+    currency: "EGP",
   });
 }
 

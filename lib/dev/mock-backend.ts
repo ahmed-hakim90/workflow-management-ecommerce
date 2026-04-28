@@ -33,7 +33,10 @@ import {
   type TenantIntegrationsDoc,
   type TenantKanbanSettings,
   type AnalyticsDaily,
+  type PlatformPackage,
   type Tenant,
+  type TenantEntitlements,
+  type TenantStatus,
   type TenantWarehouseSettings,
   type WebhookIngestLog,
 } from "@/lib/types/models";
@@ -57,6 +60,8 @@ type MockState = {
   outboundWebhookLogs: OutboundWebhookDeliveryLog[];
   integrationKeys: Set<string>;
   tenants: Record<string, Tenant>;
+  platformPackages: Record<string, PlatformPackage>;
+  tenantEntitlements: Record<string, TenantEntitlements>;
 };
 
 let state: MockState | null = null;
@@ -328,7 +333,25 @@ function createSeed(): MockState {
     name: "Demo Company",
     slug: "demo",
     ownerUserId: "user-admin-1",
+    status: "active",
     staffApiKey: "demo-staff-api-key-mock-only",
+    createdAt: t0,
+    updatedAt: t0,
+  };
+
+  const starterPackage: PlatformPackage = {
+    id: "pkg-starter",
+    name: "Starter",
+    description: "Default mock package for local platform testing.",
+    active: true,
+    limits: { maxUsers: 10, maxOrdersPerMonth: 500 },
+    features: {
+      woocommerce: true,
+      bosta: true,
+      storefrontOrders: true,
+      outboundWebhooks: false,
+    },
+    supportTier: "standard",
     createdAt: t0,
     updatedAt: t0,
   };
@@ -350,6 +373,17 @@ function createSeed(): MockState {
     outboundWebhookLogs: [],
     integrationKeys: new Set(),
     tenants: { [DEMO_TENANT]: demoTenant },
+    platformPackages: { [starterPackage.id]: starterPackage },
+    tenantEntitlements: {
+      [DEMO_TENANT]: {
+        tenantId: DEMO_TENANT,
+        packageId: starterPackage.id,
+        packageSnapshot: starterPackage,
+        assignedAt: t0,
+        assignedBy: "mock-seed",
+        updatedAt: t0,
+      },
+    },
   };
   state = st;
   mockRebuildAnalyticsDay(DEMO_TENANT, "2026-04-20");
@@ -664,12 +698,41 @@ export async function mockConfirmOrder(input: {
   tenantId: string;
   orderId: string;
   actorUserId: string;
+  paidAmount?: number;
 }) {
+  const s = ctx();
+  const idx = findOrderIndex(input.orderId);
+  if (idx < 0) throw new Error("Order not found");
+  const current = s.orders[idx];
+  if (current.tenantId !== input.tenantId) throw new Error("Order not found");
+  let extra: Partial<Order> | undefined;
+  if (current.payment.payment_status === "partial") {
+    if (input.paidAmount === undefined) {
+      throw new Error("Paid amount is required for partial orders");
+    }
+    if (!Number.isFinite(input.paidAmount)) {
+      throw new Error("Paid amount must be a valid number");
+    }
+    if (input.paidAmount < 0) {
+      throw new Error("Paid amount cannot be negative");
+    }
+    if (input.paidAmount > current.payment.total_amount) {
+      throw new Error("Paid amount cannot exceed order total");
+    }
+    extra = {
+      payment: buildPayment({
+        payment_status: "partial",
+        total_amount: current.payment.total_amount,
+        paid_amount: input.paidAmount,
+      }),
+    };
+  }
   const { order } = await mockTransition(
     input.tenantId,
     input.orderId,
     "confirmed",
     input.actorUserId,
+    extra,
   );
   await mockIncrementUserStat({
     tenantId: input.tenantId,
@@ -1106,6 +1169,12 @@ export function mockGetTenantBySlug(slug: string): Tenant | null {
   );
 }
 
+export function mockListTenants(): Tenant[] {
+  return Object.values(ctx().tenants).sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
+  );
+}
+
 export function mockCreateTenant(name: string): Tenant {
   const s = ctx();
   const slug = slugify(name);
@@ -1138,6 +1207,27 @@ export function mockSetTenantOwner(tenantId: string, ownerUserId: string) {
   if (!t) throw new Error("Tenant not found");
   t.ownerUserId = ownerUserId;
   t.updatedAt = iso();
+}
+
+export function mockSetTenantStatus(input: {
+  tenantId: string;
+  status: TenantStatus;
+  reason?: string | null;
+}): Tenant {
+  const s = ctx();
+  const t = s.tenants[input.tenantId];
+  if (!t) throw new Error("Tenant not found");
+  const now = iso();
+  const next: Tenant = {
+    ...t,
+    status: input.status,
+    suspendedAt: input.status === "suspended" ? now : undefined,
+    suspendedReason:
+      input.status === "suspended" ? input.reason?.trim() || undefined : undefined,
+    updatedAt: now,
+  };
+  s.tenants[input.tenantId] = next;
+  return next;
 }
 
 export function mockGetUserByFirebaseUid(firebaseUid: string): User | null {
@@ -1301,6 +1391,31 @@ export function mockGetTicket(
   const t = ctx().tickets.find((x) => x.id === ticketId);
   if (!t || t.tenantId !== tenantId) return null;
   return t;
+}
+
+export function mockDeleteTicket(input: {
+  tenantId: string;
+  ticketId: string;
+  actorUserId: string;
+}): void {
+  const s = ctx();
+  const idx = s.tickets.findIndex((t) => t.id === input.ticketId);
+  if (idx < 0) throw new Error("Ticket not found");
+  const ticket = s.tickets[idx];
+  if (ticket.tenantId !== input.tenantId) throw new Error("Ticket not found");
+  s.tickets.splice(idx, 1);
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "ticket.deleted",
+    entityType: "ticket",
+    entityId: input.ticketId,
+    userId: input.actorUserId,
+    metadata: {
+      orderId: ticket.order_id,
+      type: ticket.type,
+      status: ticket.status,
+    },
+  });
 }
 
 export function mockAddTicketNote(input: {
@@ -1922,4 +2037,70 @@ export function mockListWebhookIngestLogs(
   return ctx()
     .webhookIngestLogs.filter((r) => r.tenantId === tenantId)
     .slice(0, limit);
+}
+
+export function mockListPlatformPackages(): PlatformPackage[] {
+  return Object.values(ctx().platformPackages).sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
+  );
+}
+
+export function mockGetPlatformPackage(
+  packageId: string,
+): PlatformPackage | null {
+  return ctx().platformPackages[packageId] ?? null;
+}
+
+export function mockCreatePlatformPackage(
+  pkg: PlatformPackage,
+): PlatformPackage {
+  ctx().platformPackages[pkg.id] = pkg;
+  return pkg;
+}
+
+export function mockUpdatePlatformPackage(input: {
+  packageId: string;
+  name?: string;
+  description?: string | null;
+  limits?: PlatformPackage["limits"];
+  features?: Partial<PlatformPackage["features"]>;
+  supportTier?: PlatformPackage["supportTier"];
+  active?: boolean;
+}): PlatformPackage {
+  const s = ctx();
+  const current = s.platformPackages[input.packageId];
+  if (!current) {
+    const e = new Error("Package not found") as Error & { status: number };
+    e.status = 404;
+    throw e;
+  }
+  const next: PlatformPackage = {
+    ...current,
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.description !== undefined
+      ? { description: input.description?.trim() || undefined }
+      : {}),
+    ...(input.limits !== undefined ? { limits: input.limits } : {}),
+    ...(input.features !== undefined
+      ? { features: { ...current.features, ...input.features } }
+      : {}),
+    ...(input.supportTier !== undefined ? { supportTier: input.supportTier } : {}),
+    ...(input.active !== undefined ? { active: input.active } : {}),
+    updatedAt: iso(),
+  };
+  s.platformPackages[input.packageId] = next;
+  return next;
+}
+
+export function mockGetTenantEntitlements(
+  tenantId: string,
+): TenantEntitlements | null {
+  return ctx().tenantEntitlements[tenantId] ?? null;
+}
+
+export function mockAssignTenantPackage(
+  entitlements: TenantEntitlements,
+): TenantEntitlements {
+  ctx().tenantEntitlements[entitlements.tenantId] = entitlements;
+  return entitlements;
 }

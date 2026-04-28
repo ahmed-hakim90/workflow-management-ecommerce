@@ -8,6 +8,7 @@ import {
   mockResolveTicket,
   mockGetTicket,
   mockAddTicketNote,
+  mockDeleteTicket,
 } from "@/lib/dev/mock-backend";
 import type {
   Ticket,
@@ -97,6 +98,28 @@ export async function getTicket(
   const t = snap.data() as Ticket | undefined;
   if (!t || t.tenantId !== tenantId) return null;
   return t;
+}
+
+export async function deleteTicket(input: {
+  tenantId: string;
+  ticketId: string;
+  actorUserId: string;
+}): Promise<void> {
+  if (isDevMockDataEnabled()) return mockDeleteTicket(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.tickets).doc(input.ticketId);
+  const snap = await ref.get();
+  const t = snap.data() as Ticket | undefined;
+  if (!t || t.tenantId !== input.tenantId) throw new Error("Ticket not found");
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "ticket.deleted",
+    entityType: "ticket",
+    entityId: input.ticketId,
+    userId: input.actorUserId,
+    metadata: { orderId: t.order_id, type: t.type, status: t.status },
+  });
+  await ref.delete();
 }
 
 export async function addTicketNote(input: {

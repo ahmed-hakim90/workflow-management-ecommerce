@@ -28,7 +28,8 @@ export type TicketAction =
   | "ticket:create"
   | "ticket:read"
   | "ticket:assign"
-  | "ticket:resolve";
+  | "ticket:resolve"
+  | "ticket:delete";
 
 export type UserAction = "user:read" | "user:manage";
 
@@ -77,6 +78,7 @@ export const ACTION_PERMISSIONS: Permission[] = [
   "ticket:read",
   "ticket:assign",
   "ticket:resolve",
+  "ticket:delete",
   "user:read",
   "user:manage",
   "finance:view",

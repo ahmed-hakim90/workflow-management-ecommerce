@@ -572,9 +572,9 @@ export default function OrdersPage() {
                     </Td>
                     {canViewFinance ? (
                       <Td className="font-semibold tabular-nums">
-                        {o.payment.total_amount.toLocaleString("en-US", {
+                        {o.payment.total_amount.toLocaleString("ar-EG-u-nu-latn", {
                           style: "currency",
-                          currency: "USD",
+                          currency: "EGP",
                         })}
                       </Td>
                     ) : null}
@@ -678,9 +678,9 @@ export default function OrdersPage() {
                     ) : null}
                     {canViewFinance ? (
                       <div className="text-lg font-semibold tabular-nums">
-                        {o.payment.total_amount.toLocaleString("en-US", {
+                        {o.payment.total_amount.toLocaleString("ar-EG-u-nu-latn", {
                           style: "currency",
-                          currency: "USD",
+                          currency: "EGP",
                         })}
                       </div>
                     ) : null}
@@ -773,9 +773,9 @@ export default function OrdersPage() {
                 Revenue (MTD)
               </p>
               <p className="text-2xl font-bold tabular-nums">
-                {revenueMtd.toLocaleString("en-US", {
+                {revenueMtd.toLocaleString("ar-EG-u-nu-latn", {
                   style: "currency",
-                  currency: "USD",
+                  currency: "EGP",
                 })}
               </p>
               <p className="text-xs font-medium text-[color:var(--color-success)]">

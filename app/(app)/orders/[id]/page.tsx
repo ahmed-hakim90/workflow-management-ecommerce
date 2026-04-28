@@ -49,10 +49,17 @@ function displayOrderId(order: Order) {
 }
 
 function formatMoney(value: number) {
-  return value.toLocaleString("en-US", {
+  return value.toLocaleString("ar-EG-u-nu-latn", {
     style: "currency",
-    currency: "USD",
+    currency: "EGP",
   });
+}
+
+function parseMoneyInput(value: string): number | null {
+  const normalized = value.trim().replace(/,/g, "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatWhen(iso: string) {
@@ -255,7 +262,30 @@ export default function OrderDetailPage() {
 
   async function onConfirm() {
     try {
-      await postJson("/api/orders/confirm", { orderId });
+      const body: { orderId: string; paidAmount?: number } = { orderId };
+      const order = bundle?.order;
+      if (order?.payment.payment_status === "partial") {
+        const raw = window.prompt(
+          `قيمة الدفع المسبق للطلب؟ الإجمالي ${formatMoney(order.payment.total_amount)}`,
+          order.payment.paid_amount > 0 ? String(order.payment.paid_amount) : "",
+        );
+        if (raw === null) return;
+        const paidAmount = parseMoneyInput(raw);
+        if (paidAmount === null) {
+          setErr("قيمة الدفع المسبق غير صحيحة.");
+          return;
+        }
+        if (paidAmount < 0) {
+          setErr("قيمة الدفع المسبق لا يمكن أن تكون بالسالب.");
+          return;
+        }
+        if (paidAmount > order.payment.total_amount) {
+          setErr("قيمة الدفع المسبق لا يمكن أن تتجاوز إجمالي الطلب.");
+          return;
+        }
+        body.paidAmount = paidAmount;
+      }
+      await postJson("/api/orders/confirm", body);
       setMsg("تم تأكيد الطلب.");
       await load();
     } catch (e) {

@@ -220,14 +220,71 @@ export interface User {
 }
 
 /** One company / merchant (Firestore `tenants` document id = `id`). */
+export type TenantStatus = "active" | "suspended";
+
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
   ownerUserId: string;
+  status?: TenantStatus;
+  suspendedAt?: string;
+  suspendedReason?: string;
   /** Per-tenant staff API key (send as Bearer + X-User-Id + X-User-Role). */
   staffApiKey: string;
   createdAt: string;
+  updatedAt: string;
+}
+
+export type PlatformAdminRole = "owner" | "operator";
+
+export interface PlatformAdmin {
+  id: string;
+  name: string;
+  email?: string;
+  role: PlatformAdminRole;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformPackageLimits {
+  maxUsers?: number;
+  maxOrdersPerMonth?: number;
+  maxWebhookEventsPerMonth?: number;
+}
+
+export interface PlatformPackageFeatures {
+  woocommerce: boolean;
+  bosta: boolean;
+  storefrontOrders: boolean;
+  outboundWebhooks: boolean;
+}
+
+export type PlatformSupportTier = "standard" | "priority" | "dedicated";
+
+export interface PlatformPackage {
+  id: string;
+  name: string;
+  description?: string;
+  active: boolean;
+  limits: PlatformPackageLimits;
+  features: PlatformPackageFeatures;
+  supportTier: PlatformSupportTier;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantEntitlements {
+  tenantId: string;
+  packageId: string | null;
+  packageSnapshot?: PlatformPackage;
+  overrides?: Partial<PlatformPackageLimits> & {
+    features?: Partial<PlatformPackageFeatures>;
+    supportTier?: PlatformSupportTier;
+  };
+  assignedAt?: string;
+  assignedBy?: string;
   updatedAt: string;
 }
 

@@ -413,6 +413,38 @@ describe("WooCommerce webhook order flow", () => {
     expect(updated.customer.name).toBe("Mona Ali");
   });
 
+  it("records prepaid amount before confirming a partial order", async () => {
+    const payload = {
+      ...wooPayload("woo-partial", "1000.00"),
+      payment_method: "card",
+    };
+    const mapped = mapWooCommerceOrder(payload);
+    const created = await upsertOrderFromWooCommerce({
+      tenantId: "default",
+      wooOrderId: mapped.wooOrderId,
+      customer: mapped.customer,
+      payment: mapped.payment,
+      actorUserId: "system:woocommerce",
+      lineItems: mapped.lineItems,
+      shipping: mapped.shipping,
+      notes: mapped.notes,
+      woocommerceOrderSnapshot: payload,
+    });
+
+    const confirmed = await confirmOrder({
+      tenantId: "default",
+      orderId: created.id,
+      actorUserId: "user-1",
+      paidAmount: 300,
+    });
+
+    expect(confirmed.status).toBe("confirmed");
+    expect(confirmed.payment.payment_status).toBe("partial");
+    expect(confirmed.payment.paid_amount).toBe(300);
+    expect(confirmed.payment.remaining_amount).toBe(700);
+    expect(confirmed.payment.cod_amount).toBe(700);
+  });
+
   it("runs a signed diagnostic webhook without saving an order", async () => {
     process.env.NEXT_PUBLIC_APP_URL = "https://oms.example.test";
     const tenant = await createTenantRecord("Diagnostic Woo Co");

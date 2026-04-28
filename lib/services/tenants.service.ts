@@ -6,10 +6,13 @@ import {
   mockCreateTenant,
   mockGetTenant,
   mockGetTenantBySlug,
+  mockListTenants,
   mockSetTenantOwner,
+  mockSetTenantStatus,
 } from "@/lib/dev/mock-backend";
 import { slugify } from "@/lib/string/slugify";
-import type { Tenant } from "@/lib/types/models";
+import type { Tenant, TenantStatus } from "@/lib/types/models";
+import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
 
 function duplicateTenantSlugError(slug: string) {
   const e = new Error("Company name is already registered") as Error & {
@@ -27,6 +30,16 @@ export async function getTenant(tenantId: string): Promise<Tenant | null> {
   const snap = await db.collection(COLLECTIONS.tenants).doc(tenantId).get();
   if (!snap.exists) return null;
   return snap.data() as Tenant;
+}
+
+export async function listTenants(): Promise<Tenant[]> {
+  if (isDevMockDataEnabled()) return mockListTenants();
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.tenants)
+    .orderBy("createdAt", "desc")
+    .get();
+  return snap.docs.map((d) => d.data() as Tenant);
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
@@ -103,4 +116,32 @@ export async function setTenantOwner(
     .collection(COLLECTIONS.tenants)
     .doc(tenantId)
     .set({ ownerUserId, updatedAt: now }, { merge: true });
+}
+
+export async function setTenantStatus(input: {
+  tenantId: string;
+  status: TenantStatus;
+  reason?: string | null;
+}): Promise<Tenant> {
+  if (isDevMockDataEnabled()) return mockSetTenantStatus(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.tenants).doc(input.tenantId);
+  const snap = await ref.get();
+  const tenant = snap.data() as Tenant | undefined;
+  if (!tenant) {
+    const e = new Error("Tenant not found") as Error & { status: number };
+    e.status = 404;
+    throw e;
+  }
+  const now = new Date().toISOString();
+  const next: Tenant = {
+    ...tenant,
+    status: input.status,
+    suspendedAt: input.status === "suspended" ? now : undefined,
+    suspendedReason:
+      input.status === "suspended" ? input.reason?.trim() || undefined : undefined,
+    updatedAt: now,
+  };
+  await ref.set(omitUndefinedForFirestore(next));
+  return next;
 }

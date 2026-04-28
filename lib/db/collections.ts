@@ -16,4 +16,10 @@ export const COLLECTIONS = {
   outboundWebhookLogs: "outbound_webhook_logs",
   /** Denormalized counts for dashboard stage metrics (see order-stage-rollup.service). */
   tenantOrderStageRollup: "tenant_order_stage_stats",
+  /** Internal platform-admin identities (separate from tenant users). */
+  platformAdmins: "platform_admins",
+  /** Internal SaaS package definitions managed by platform admins. */
+  platformPackages: "platform_packages",
+  /** Per-tenant package assignment and entitlement overrides. */
+  tenantEntitlements: "tenant_entitlements",
 } as const;

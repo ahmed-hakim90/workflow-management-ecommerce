@@ -41,6 +41,7 @@ import {
   omitUndefinedForFirestore,
 } from "@/lib/util/json-snapshot";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
+import { buildPayment } from "@/lib/logic/payment";
 
 /** List views should not load large Woo snapshot payloads. */
 function omitWooSnapshotForList(o: Order): Order {
@@ -48,6 +49,32 @@ function omitWooSnapshotForList(o: Order): Order {
   const rest = { ...o };
   delete rest.woocommerceOrderSnapshot;
   return rest as Order;
+}
+
+function paymentUpdateForConfirmation(
+  order: Order,
+  paidAmount: number | undefined,
+): Pick<Order, "payment"> | undefined {
+  if (order.payment.payment_status !== "partial") return undefined;
+  if (paidAmount === undefined) {
+    throw new Error("Paid amount is required for partial orders");
+  }
+  if (!Number.isFinite(paidAmount)) {
+    throw new Error("Paid amount must be a valid number");
+  }
+  if (paidAmount < 0) {
+    throw new Error("Paid amount cannot be negative");
+  }
+  if (paidAmount > order.payment.total_amount) {
+    throw new Error("Paid amount cannot exceed order total");
+  }
+  return {
+    payment: buildPayment({
+      payment_status: "partial",
+      total_amount: order.payment.total_amount,
+      paid_amount: paidAmount,
+    }),
+  };
 }
 
 export async function listOrders(
@@ -259,6 +286,7 @@ export async function confirmOrder(input: {
   tenantId: string;
   orderId: string;
   actorUserId: string;
+  paidAmount?: number;
 }) {
   if (isDevMockDataEnabled()) {
     const prev = mockGetOrder(input.tenantId, input.orderId);
@@ -274,11 +302,15 @@ export async function confirmOrder(input: {
     }
     return order;
   }
+  const current = await getOrder(input.tenantId, input.orderId);
+  if (!current) throw new Error("Order not found");
+  const paymentExtra = paymentUpdateForConfirmation(current, input.paidAmount);
   const { order } = await transition(
     input.tenantId,
     input.orderId,
     "confirmed",
     input.actorUserId,
+    paymentExtra,
   );
   await incrementUserStat({
     tenantId: input.tenantId,

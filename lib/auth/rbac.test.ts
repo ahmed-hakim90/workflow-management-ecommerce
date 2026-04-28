@@ -10,6 +10,7 @@ describe("rbac", () => {
   it("admin can all", () => {
     expect(can("admin", "order:cancel")).toBe(true);
     expect(can("admin", "order:delete")).toBe(true);
+    expect(can("admin", "ticket:delete")).toBe(true);
   });
 
   it("warehouse cannot cancel", () => {
@@ -18,6 +19,7 @@ describe("rbac", () => {
 
   it("moderator cannot delete orders", () => {
     expect(can("moderator", "order:delete")).toBe(false);
+    expect(can("moderator", "ticket:delete")).toBe(false);
   });
 
   it("warehouse can revert order", () => {

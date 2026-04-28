@@ -277,7 +277,10 @@ export default function AnalyticsPage() {
       : 0;
 
   const fmtMoney = (n: number) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    n.toLocaleString("ar-EG-u-nu-latn", {
+      style: "currency",
+      currency: "EGP",
+    });
 
   async function onRebuildDay() {
     setRebuildBusy(true);
@@ -422,7 +425,7 @@ export default function AnalyticsPage() {
                     "text-[color:var(--color-success)]",
                   trend: revenueTrend,
                   spark: revenueSpark,
-                  sub: "Target: $500k (Achieved)",
+                  sub: "Target: 500k ج.م (Achieved)",
                 },
                 {
                   title: "Shipping cost",

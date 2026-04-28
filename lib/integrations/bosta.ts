@@ -23,9 +23,9 @@ function splitCustomerName(name: string): { firstName: string; lastName: string 
   return { firstName: t.slice(0, i), lastName: t.slice(i + 1).trim() || "." };
 }
 
-function codAmountFromOrder(order: Order): number {
+export function codAmountFromOrder(order: Order): number {
   const p = order.payment;
-  if (p.payment_status === "cod") {
+  if (p.payment_status === "cod" || p.payment_status === "partial") {
     return Math.max(0, Math.round(p.cod_amount || p.remaining_amount || 0));
   }
   return 0;
@@ -158,11 +158,21 @@ export async function createBostaShipment(input: {
     if (!trackingNumber) {
       throw new Error("Bosta response missing trackingNumber");
     }
+    const externalId = created?._id ? String(created._id) : undefined;
+    let shippingFee = extractShippingFee(rawCreated);
+    if (shippingFee === undefined) {
+      const details = await getBostaDeliveryDetails({
+        tenantId: input.tenantId,
+        awb: String(trackingNumber),
+        externalId,
+      }).catch(() => null);
+      shippingFee = details ? extractShippingFee(details) : undefined;
+    }
     return {
       awb: String(trackingNumber),
       provider: "bosta",
-      externalId: created?._id ? String(created._id) : undefined,
-      shippingFee: extractShippingFee(rawCreated) ?? fallbackFee,
+      externalId,
+      shippingFee,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -214,10 +224,18 @@ function extractShippingFee(raw: Record<string, unknown>): number | undefined {
     "shippingFee",
     "shippingFees",
     "shipping_fees",
+    "shippingCost",
+    "shippingCosts",
     "deliveryFee",
     "deliveryFees",
+    "deliveryCost",
+    "deliveryCosts",
     "carrierFee",
     "carrierFees",
+    "totalFee",
+    "totalFees",
+    "calculatedFee",
+    "calculatedFees",
     "fees",
     "fee",
     "price",
@@ -225,7 +243,17 @@ function extractShippingFee(raw: Record<string, unknown>): number | undefined {
     "total",
   ]);
   if (direct !== undefined) return direct;
-  for (const key of ["data", "message", "delivery", "shipment", "pricing"]) {
+  for (const key of [
+    "data",
+    "message",
+    "delivery",
+    "shipment",
+    "pricing",
+    "fees",
+    "deliveryFees",
+    "shippingFees",
+    "invoice",
+  ]) {
     const nested = nestedRecord(raw, key);
     if (!nested) continue;
     const fee = extractShippingFee(nested);
@@ -306,10 +334,52 @@ function normalizeBostaTracking(raw: Record<string, unknown>): BostaTrackingResu
   return { status, details, shippingFee: extractShippingFee(raw), raw };
 }
 
+function isBostaNotFound(e: unknown): boolean {
+  return (
+    e instanceof Error &&
+    (e as Error & { upstreamStatus?: number }).upstreamStatus === 404
+  );
+}
+
+async function getBostaDeliveryDetails(input: {
+  tenantId: string;
+  awb: string;
+  externalId?: string;
+}): Promise<Record<string, unknown>> {
+  const targets = [input.externalId, input.awb].filter((v): v is string =>
+    Boolean(v?.trim()),
+  );
+  let notFound: unknown;
+  for (const target of targets) {
+    try {
+      return await bostaHttpRequest({
+        tenantId: input.tenantId,
+        path: `/deliveries/${encodeURIComponent(target)}`,
+      });
+    } catch (e) {
+      if (!isBostaNotFound(e)) throw e;
+      notFound = e;
+    }
+  }
+  throw notFound instanceof Error ? notFound : new Error("Bosta delivery not found");
+}
+
+async function resolveBostaDeliveryId(input: {
+  tenantId: string;
+  awb: string;
+  externalId?: string;
+}): Promise<string> {
+  if (input.externalId?.trim()) return input.externalId.trim();
+  const details = await getBostaDeliveryDetails(input);
+  const source = unwrapBostaObject(details);
+  const id = pickString(source, ["_id", "id", "deliveryId"]);
+  return id ?? input.awb;
+}
+
 async function bostaHttpRequest(input: {
   tenantId: string;
   path: string;
-  method?: "GET" | "POST" | "PUT" | "PATCH";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
@@ -333,7 +403,9 @@ async function bostaHttpRequest(input: {
       pickString(data, ["message", "error"]) ??
       `Bosta request failed with ${res.status}`;
     const err = new Error(`Bosta: ${message}`);
-    (err as Error & { status?: number }).status = 502;
+    (err as Error & { status?: number; upstreamStatus?: number }).status = 502;
+    (err as Error & { status?: number; upstreamStatus?: number }).upstreamStatus =
+      res.status;
     throw err;
   }
   return data;
@@ -362,15 +434,27 @@ export async function listBostaZones(
 export async function trackBostaShipment(input: {
   tenantId: string;
   awb: string;
+  externalId?: string;
 }): Promise<BostaTrackingResult> {
   const { apiKey } = await resolveBostaCredentials(input.tenantId);
   if (!apiKey) {
     return { status: "mock_in_transit", details: "Demo tracking update" };
   }
 
-  const raw = await bostaHttpRequest({
+  try {
+    const raw = await bostaHttpRequest({
+      tenantId: input.tenantId,
+      path: `/deliveries/${encodeURIComponent(input.awb)}/tracking`,
+    });
+    return normalizeBostaTracking(raw);
+  } catch (e) {
+    if (!isBostaNotFound(e)) throw e;
+  }
+
+  const raw = await getBostaDeliveryDetails({
     tenantId: input.tenantId,
-    path: `/deliveries/${encodeURIComponent(input.awb)}/tracking`,
+    awb: input.awb,
+    externalId: input.externalId,
   });
   return normalizeBostaTracking(raw);
 }
@@ -385,11 +469,21 @@ export async function cancelBostaShipment(input: {
     return { status: "cancelled", details: "Demo shipment cancelled" };
   }
 
-  const target = input.externalId ?? input.awb;
-  const raw = await bostaHttpRequest({
-    tenantId: input.tenantId,
-    path: `/deliveries/${encodeURIComponent(target)}/cancel`,
-    method: "POST",
-  });
+  const deliveryId = await resolveBostaDeliveryId(input);
+  let raw: Record<string, unknown>;
+  try {
+    raw = await bostaHttpRequest({
+      tenantId: input.tenantId,
+      path: `/deliveries/${encodeURIComponent(deliveryId)}`,
+      method: "DELETE",
+    });
+  } catch (e) {
+    if (!isBostaNotFound(e)) throw e;
+    raw = await bostaHttpRequest({
+      tenantId: input.tenantId,
+      path: `/deliveries/${encodeURIComponent(deliveryId)}/cancel`,
+      method: "POST",
+    });
+  }
   return normalizeBostaTracking({ ...raw, status: "cancelled" });
 }

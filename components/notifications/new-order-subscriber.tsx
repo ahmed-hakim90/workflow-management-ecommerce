@@ -43,7 +43,10 @@ function maybeDesktopNotify(o: Order) {
   const total = o.payment?.total_amount;
   const amount =
     typeof total === "number"
-      ? total.toLocaleString("en-US", { style: "currency", currency: "USD" })
+      ? total.toLocaleString("ar-EG-u-nu-latn", {
+          style: "currency",
+          currency: "EGP",
+        })
       : "";
   new Notification("طلب جديد", {
     body: [name, amount].filter(Boolean).join(" — "),

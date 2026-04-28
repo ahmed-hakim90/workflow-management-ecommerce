@@ -32,7 +32,7 @@ function formatDateTime(value?: string) {
 
 function formatCarrierFee(value?: number) {
   if (value === undefined || value === null) return "—";
-  return value.toLocaleString("en-US", {
+  return value.toLocaleString("ar-EG-u-nu-latn", {
     style: "currency",
     currency: "EGP",
   });

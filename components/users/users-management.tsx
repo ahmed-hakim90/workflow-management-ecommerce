@@ -71,6 +71,7 @@ const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] = [
       "ticket:read",
       "ticket:assign",
       "ticket:resolve",
+      "ticket:delete",
     ],
   },
   {
@@ -186,11 +187,13 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const showCreateToolbar = !createControl;
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("support");
   const [newPermissions, setNewPermissions] = useState<Permission[]>(
     roleDefaultPermissions("support"),
   );
   const [newTarget, setNewTarget] = useState(0);
+  const [creating, setCreating] = useState(false);
 
   async function load() {
     const res = await fetch("/api/users", {
@@ -224,13 +227,19 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
 
   async function createUser() {
     setErr(null);
+    if (!newName.trim() || !newEmail.trim() || newPassword.length < 6) {
+      setErr("Enter name, email, and a password of at least 6 characters.");
+      return;
+    }
+    setCreating(true);
     try {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
         body: JSON.stringify({
-          name: newName,
-          email: newEmail || undefined,
+          name: newName.trim(),
+          email: newEmail.trim(),
+          password: newPassword,
           role: newRole,
           permissions: buildPermissionOverrides(newRole, newPermissions),
           daily_target: newTarget,
@@ -241,11 +250,14 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
       setCreateOpen(false);
       setNewName("");
       setNewEmail("");
+      setNewPassword("");
       setNewPermissions(roleDefaultPermissions(newRole));
       setNewTarget(0);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error");
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -299,11 +311,21 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-[color:var(--color-text-secondary)]">Email (optional)</label>
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Email</label>
             <Input
               type="email"
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-[color:var(--color-text-secondary)]">Password</label>
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="At least 6 characters"
             />
           </div>
           <div className="space-y-1">
@@ -340,9 +362,14 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
           <Button
             type="button"
             onClick={createUser}
-            disabled={!newName.trim()}
+            disabled={
+              creating ||
+              !newName.trim() ||
+              !newEmail.trim() ||
+              newPassword.length < 6
+            }
           >
-            Create
+            {creating ? "Creating…" : "Create"}
           </Button>
         </div>
       </Modal>

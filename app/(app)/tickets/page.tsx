@@ -20,6 +20,8 @@ import { TicketTypeBadge } from "@/lib/ui/order-badges";
 import { cn } from "@/lib/ui/cn";
 
 type ColumnId = "new" | "in_progress" | "pending_response";
+type TicketOrderSummary = Pick<Order, "id" | "wooCommerceOrderId" | "customer">;
+type TicketListItem = Ticket & { order?: TicketOrderSummary | null };
 
 const COLUMNS: KanbanColumn<ColumnId>[] = [
   {
@@ -58,7 +60,7 @@ const TYPE_TAG: Record<TicketType, string> = {
   complaint: "REFUND",
 };
 
-function displayOrderId(order: Order) {
+function displayOrderId(order: Pick<Order, "id" | "wooCommerceOrderId">) {
   return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
 }
 
@@ -215,7 +217,7 @@ export default function TicketsPage() {
   const openDrawer = useUiStore((s) => s.openDrawer);
   const closeDrawer = useUiStore((s) => s.closeDrawer);
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -227,12 +229,12 @@ export default function TicketsPage() {
     setErr(null);
     setListLoading(true);
     try {
-      const res = await fetch(`/api/tickets`, {
+      const res = await fetch(`/api/tickets?includeOrderSummary=1`, {
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      setTickets(json.data as Ticket[]);
+      setTickets(json.data as TicketListItem[]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error");
     } finally {
@@ -263,6 +265,11 @@ export default function TicketsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
+  const ordersById = useMemo(
+    () => new Map(orders.map((order) => [order.id, order])),
+    [orders],
+  );
+
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return tickets.filter((t) => {
@@ -270,10 +277,23 @@ export default function TicketsPage() {
       if (chip === "mine" && t.assigned_to !== userId) return false;
       if (chip === "urgent" && priorityForTicket(t) !== "high") return false;
       if (!needle) return true;
-      const hay = `${t.id} ${t.order_id} ${t.notes ?? ""}`.toLowerCase();
+      const order = t.order ?? ordersById.get(t.order_id);
+      const hay = [
+        t.id,
+        t.order_id,
+        t.notes,
+        order?.id,
+        order?.wooCommerceOrderId,
+        order?.customer.name,
+        order?.customer.phone,
+        order?.customer.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       return hay.includes(needle);
     });
-  }, [tickets, q, chip, userId]);
+  }, [tickets, q, chip, userId, ordersById]);
 
   const byColumn = (id: ColumnId) =>
     visible.filter((t) => columnForTicket(t) === id);
@@ -347,7 +367,7 @@ export default function TicketsPage() {
             <Search className="pointer-events-none absolute start-2 top-1/2 size-4 -translate-y-1/2 text-[color:var(--color-text-muted)]" />
             <Input
               className="h-10 ps-8"
-              placeholder="Search tickets, IDs, or agents…"
+              placeholder="Search by customer, phone, or order number…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -388,6 +408,7 @@ export default function TicketsPage() {
         renderColumnCards={(columnId) =>
           byColumn(columnId).map((t) => {
             const pr = priorityForTicket(t);
+            const order = t.order ?? ordersById.get(t.order_id);
             return (
               <Card key={t.id} className="shadow-[var(--shadow-neo-raised-sm)]">
                 <CardContent className="space-y-2 p-3">
@@ -416,8 +437,11 @@ export default function TicketsPage() {
                     </Link>
                   </p>
                   <p className="text-xs text-[color:var(--color-text-muted)] line-clamp-2">
-                    {t.type.replace("_", " ")} · Order{" "}
-                    <span className="font-mono">{t.order_id.slice(0, 8)}</span>
+                    {order?.customer.name ?? "Unknown customer"} · Order{" "}
+                    <span className="font-mono">
+                      {order ? displayOrderId(order) : t.order_id.slice(0, 8)}
+                    </span>
+                    {order?.customer.phone ? ` · ${order.customer.phone}` : ""}
                   </p>
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <span className="rounded-md bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">

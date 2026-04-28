@@ -3,6 +3,7 @@ import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
 import { jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
+import { getOrder } from "@/lib/services/orders.service";
 import { createTicket, listTickets } from "@/lib/services/tickets.service";
 import type { TicketStatus, TicketType } from "@/lib/types/models";
 
@@ -18,9 +19,28 @@ export async function GET(req: Request) {
     assertCan(ctx, "ticket:read");
     const url = new URL(req.url);
     const status = url.searchParams.get("status") as TicketStatus | null;
+    const includeOrderSummary = url.searchParams.get("includeOrderSummary") === "1";
     const tickets = await listTickets(ctx.tenantId, {
       status: status ?? undefined,
     });
+    if (includeOrderSummary) {
+      const enriched = await Promise.all(
+        tickets.map(async (ticket) => {
+          const order = await getOrder(ctx.tenantId, ticket.order_id);
+          return {
+            ...ticket,
+            order: order
+              ? {
+                  id: order.id,
+                  wooCommerceOrderId: order.wooCommerceOrderId,
+                  customer: order.customer,
+                }
+              : null,
+          };
+        }),
+      );
+      return jsonOk(enriched);
+    }
     return jsonOk(tickets);
   } catch (e) {
     return handleRouteError(e);
