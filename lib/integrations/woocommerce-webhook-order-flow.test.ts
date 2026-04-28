@@ -337,6 +337,37 @@ describe("WooCommerce webhook order flow", () => {
     });
   });
 
+  it("maps WooCommerce line item ids, links, and metadata for templates", () => {
+    const mapped = mapWooCommerceOrder({
+      ...wooPayload("woo-meta-1"),
+      line_items: [
+        {
+          id: 10,
+          product_id: 100,
+          variation_id: 101,
+          name: "T-Shirt",
+          sku: "TS-1",
+          quantity: 2,
+          price: "50.00",
+          total: "100.00",
+          permalink: "https://store.example.test/product/t-shirt",
+          meta_data: [
+            { key: "pa_size", display_key: "Size", display_value: "M" },
+            { key: "_internal", display_key: "_internal", value: "skip" },
+          ],
+        },
+      ],
+    });
+
+    expect(mapped.lineItems?.[0]).toMatchObject({
+      product_id: "100",
+      variation_id: "101",
+      product_url: "https://store.example.test/product/t-shirt",
+      attributes: { Size: "M" },
+      meta: { Size: "M" },
+    });
+  });
+
   it("updates the same WooCommerce order without moving an internal status backward", async () => {
     const payload = wooPayload("woo-7", "120.00");
     const mapped = mapWooCommerceOrder(payload);

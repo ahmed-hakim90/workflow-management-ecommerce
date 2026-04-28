@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { TableWrap, Td, Th, Tr } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -94,6 +95,8 @@ export default function TicketDetailPage() {
   const [resolutionAction, setResolutionAction] =
     useState<ResolutionAction>("resolved");
   const [resolutionDetails, setResolutionDetails] = useState("");
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedAssigneeUserId, setSelectedAssigneeUserId] = useState("");
   const [busy, setBusy] = useState(false);
 
   const headers = useMemo(
@@ -160,20 +163,20 @@ export default function TicketDetailPage() {
     }
   }
 
+  function openAssignModal() {
+    setSelectedAssigneeUserId(bundle?.ticket.assigned_to ?? "");
+    setAssignModalOpen(true);
+  }
+
   async function assignTicket() {
-    const assigneeUserId = window.prompt(
-      "معرّف المستخدم للتعيين (فارغ لإلغاء التعيين)",
-      userId,
-    );
-    if (assigneeUserId === null) return;
     setBusy(true);
     try {
       await postJson("/api/tickets/assign", {
         ticketId,
-        assigneeUserId:
-          assigneeUserId.trim() === "" ? null : assigneeUserId.trim(),
+        assigneeUserId: selectedAssigneeUserId || null,
       });
       setMsg("تم تحديث التعيين.");
+      setAssignModalOpen(false);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to assign ticket");
@@ -355,7 +358,7 @@ export default function TicketDetailPage() {
                     type="button"
                     variant="secondary"
                     disabled={!canAssignTicket}
-                    onClick={assignTicket}
+                    onClick={openAssignModal}
                   >
                     تعيين / تغيير المسؤول
                   </Button>
@@ -479,6 +482,55 @@ export default function TicketDetailPage() {
           </Card>
         </>
       ) : null}
+
+      <Modal
+        open={assignModalOpen}
+        title="اختيار مسؤول التذكرة"
+        onClose={() => {
+          if (!busy) setAssignModalOpen(false);
+        }}
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setAssignModalOpen(false)}
+            >
+              إلغاء
+            </Button>
+            <Button
+              type="button"
+              disabled={!canAssignTicket}
+              loading={busy}
+              onClick={assignTicket}
+            >
+              حفظ المسؤول
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <Select
+            label="المسؤول"
+            value={selectedAssigneeUserId}
+            onChange={(e) => setSelectedAssigneeUserId(e.target.value)}
+            disabled={busy}
+          >
+            <option value="">بدون مسؤول</option>
+            {(bundle?.users ?? []).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+                {u.role ? ` - ${u.role}` : ""}
+                {u.email ? ` - ${u.email}` : ""}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-[color:var(--color-text-muted)]">
+            اختر مستخدمًا من الفريق بدل إدخال معرف المستخدم يدويًا.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

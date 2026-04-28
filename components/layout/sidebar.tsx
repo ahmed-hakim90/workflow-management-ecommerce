@@ -281,7 +281,7 @@ export function Sidebar() {
           </div>
         ) : null}
         <a
-          href="mailto:support@Store.example"
+          href="https://wa.me/+201069005019"
           className={cn(
             "flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)]",
             isIconRail && "w-11 justify-center px-0",

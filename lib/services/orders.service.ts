@@ -34,6 +34,7 @@ import { incrementUserStat } from "@/lib/services/user-stats.service";
 import {
   recordNewOrderAnalytics,
   recordOrderConfirmedAnalytics,
+  recordOrderDeletedAnalytics,
 } from "@/lib/services/analytics-daily.service";
 import {
   cloneJsonForFirestore,
@@ -503,6 +504,7 @@ export async function deleteOrder(input: {
     to: null,
     orderValue: orderValueForStageRollup(order),
   });
+  await recordOrderDeletedAnalytics(order);
 
   return {
     orderId: input.orderId,

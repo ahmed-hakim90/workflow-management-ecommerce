@@ -25,6 +25,19 @@ function statusStyle(st: ShipmentStatus) {
   return "text-[color:var(--color-text-secondary)]";
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("en-US");
+}
+
+function formatCarrierFee(value?: number) {
+  if (value === undefined || value === null) return "—";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "EGP",
+  });
+}
+
 export default function ShipmentsPage() {
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
@@ -295,13 +308,8 @@ export default function ShipmentsPage() {
                       <p>{carrierLabel(selected)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[color:var(--color-text-muted)]">Fees</p>
-                      <p className="tabular-nums">
-                        {(selected.shipping_fees ?? 0).toLocaleString("en-US", {
-                          style: "currency",
-                          currency: "USD",
-                        })}
-                      </p>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Carrier fees</p>
+                      <p className="tabular-nums">{formatCarrierFee(selected.shipping_fees)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-[color:var(--color-text-muted)]">Bosta status</p>
@@ -310,10 +318,16 @@ export default function ShipmentsPage() {
                     <div>
                       <p className="text-xs text-[color:var(--color-text-muted)]">Last sync</p>
                       <p>
-                        {selected.lastTrackingSyncAt
-                          ? new Date(selected.lastTrackingSyncAt).toLocaleString("en-US")
-                          : "—"}
+                        {formatDateTime(selected.lastTrackingSyncAt)}
                       </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Created by</p>
+                      <p>{selected.createdByUserName ?? selected.createdByUserId ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Created at</p>
+                      <p>{formatDateTime(selected.createdAt)}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">

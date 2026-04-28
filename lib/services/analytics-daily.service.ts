@@ -95,6 +95,19 @@ export async function recordNewOrderAnalytics(order: Order) {
   });
 }
 
+/** Order deleted. Bucket: original order.createdAt (UTC day). */
+export async function recordOrderDeletedAnalytics(order: Order) {
+  const date = dateKeyFromIso(order.createdAt);
+  await applyIncrement({
+    tenantId: order.tenantId,
+    date,
+    deltas: {
+      orders_count: -1,
+      orders_value: -order.payment.total_amount,
+    },
+  });
+}
+
 /** Staff confirmed an order. Bucket: confirmation time (UTC day). */
 export async function recordOrderConfirmedAnalytics(input: {
   tenantId: string;

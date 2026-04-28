@@ -813,6 +813,14 @@ export function mockDeleteOrder(input: {
       deletedTicketIds,
     },
   });
+  mockAnalyticsDailyIncrement({
+    tenantId: input.tenantId,
+    date: order.createdAt.slice(0, 10),
+    deltas: {
+      orders_count: -1,
+      orders_value: -order.payment.total_amount,
+    },
+  });
 
   return {
     orderId: input.orderId,

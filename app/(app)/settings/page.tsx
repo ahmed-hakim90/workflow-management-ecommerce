@@ -64,6 +64,11 @@ type WooWebhookSyncResult = {
   deliveryUrl: string;
 };
 
+type BostaLocationOption = {
+  id: string;
+  name: string;
+};
+
 type SectionId =
   | "profile"
   | "team"
@@ -188,6 +193,10 @@ export default function SettingsPage() {
   const [bostaBaseDraft, setBostaBaseDraft] = useState("");
   const [bostaMsg, setBostaMsg] = useState<string | null>(null);
   const [bostaErr, setBostaErr] = useState<string | null>(null);
+  const [bostaCities, setBostaCities] = useState<BostaLocationOption[]>([]);
+  const [bostaZones, setBostaZones] = useState<BostaLocationOption[]>([]);
+  const [bostaCitiesLoading, setBostaCitiesLoading] = useState(false);
+  const [bostaZonesLoading, setBostaZonesLoading] = useState(false);
 
   const [wooRestConfigured, setWooRestConfigured] = useState(false);
   const [wooStoreDraft, setWooStoreDraft] = useState("");
@@ -597,6 +606,56 @@ export default function SettingsPage() {
       setWooErr(e instanceof Error ? e.message : "Diagnostic webhook failed");
     } finally {
       setWooWebhookTesting(false);
+    }
+  }
+
+  async function loadBostaCities() {
+    setBostaErr(null);
+    setBostaCitiesLoading(true);
+    try {
+      const res = await fetch("/api/settings/bosta/cities", {
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = (await res.json()) as {
+        data?: BostaLocationOption[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Could not load Bosta cities");
+      setBostaCities(json.data ?? []);
+      setBostaMsg("Bosta cities loaded. Choose the warehouse city.");
+    } catch (e) {
+      setBostaErr(e instanceof Error ? e.message : "Could not load Bosta cities");
+    } finally {
+      setBostaCitiesLoading(false);
+    }
+  }
+
+  async function loadBostaZones(cityId = bostaCityDraft) {
+    const id = cityId.trim();
+    setBostaErr(null);
+    if (!id) {
+      setBostaZones([]);
+      return;
+    }
+    setBostaZonesLoading(true);
+    try {
+      const res = await fetch(
+        `/api/settings/bosta/zones?cityId=${encodeURIComponent(id)}`,
+        {
+          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        },
+      );
+      const json = (await res.json()) as {
+        data?: BostaLocationOption[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Could not load Bosta zones");
+      setBostaZones(json.data ?? []);
+      setBostaMsg("Bosta zones loaded. Choose the warehouse zone if available.");
+    } catch (e) {
+      setBostaErr(e instanceof Error ? e.message : "Could not load Bosta zones");
+    } finally {
+      setBostaZonesLoading(false);
     }
   }
 
@@ -1822,7 +1881,9 @@ export default function SettingsPage() {
                                     ? "yes"
                                     : r.outcome === "duplicate_200"
                                       ? "replay"
-                                      : "no";
+                                      : r.outcome === "diagnostic_200"
+                                        ? "diagnostic"
+                                        : "no";
                                 return (
                                   <tr
                                     key={r.id}
@@ -1842,6 +1903,8 @@ export default function SettingsPage() {
                                           "text-[color:var(--color-success)]",
                                         saved === "replay" &&
                                           "text-[color:var(--color-text-muted)]",
+                                        saved === "diagnostic" &&
+                                          "text-[color:var(--color-success)]",
                                         saved === "no" && "text-[color:var(--color-error)]",
                                       )}
                                     >
@@ -1849,7 +1912,9 @@ export default function SettingsPage() {
                                         ? "Yes"
                                         : saved === "replay"
                                           ? "Replay"
-                                          : "No"}
+                                          : saved === "diagnostic"
+                                            ? "Diagnostic OK"
+                                            : "No"}
                                     </td>
                                     <td className="py-1.5 pe-2 font-mono text-[10px]">
                                       {r.outcome}
@@ -2040,7 +2105,7 @@ export default function SettingsPage() {
                       <code className="rounded bg-[color:var(--color-code-bg)] px-1">
                         https://stg-app.bosta.co
                       </code>
-                      ). The SDK calls{" "}
+                      ). The server calls{" "}
                       <code className="rounded bg-[color:var(--color-code-bg)] px-1">
                         /api/v0
                       </code>{" "}
@@ -2052,34 +2117,89 @@ export default function SettingsPage() {
                       Delivery address defaults (required for real AWBs)
                     </span>
                     <p className="text-xs text-[color:var(--color-text-muted)]">
-                      Bosta needs a city code (e.g.{" "}
-                      <code className="rounded bg-[color:var(--color-code-bg)] px-1">
-                        EG-01
-                      </code>
-                      ) and zone. Use the Bosta dashboard or cities API; customer
-                      street text from Woo fills{" "}
-                      <strong>first line</strong> when present.
+                      This is the warehouse / pickup address the shipment leaves
+                      from. Load cities from Bosta, choose{" "}
+                      <strong>10th of Ramadan</strong> (or the closest warehouse
+                      city), then choose a zone if Bosta returns one. Customer
+                      address still comes from the WooCommerce order.
                     </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={bostaCitiesLoading}
+                        onClick={() => void loadBostaCities()}
+                      >
+                        {bostaCitiesLoading ? "Loading cities…" : "Load Bosta cities"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={bostaZonesLoading || !bostaCityDraft.trim()}
+                        onClick={() => void loadBostaZones()}
+                      >
+                        {bostaZonesLoading ? "Loading zones…" : "Load zones"}
+                      </Button>
+                    </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
-                          Default city code
+                          Warehouse city
                         </label>
-                        <Input
-                          placeholder="EG-01"
+                        <Select
                           value={bostaCityDraft}
-                          onChange={(e) => setBostaCityDraft(e.target.value)}
-                        />
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setBostaCityDraft(next);
+                            setBostaZoneDraft("");
+                            setBostaZones([]);
+                            if (next) void loadBostaZones(next);
+                          }}
+                        >
+                          <option value="">
+                            {bostaCities.length
+                              ? "Choose city"
+                              : bostaCityDraft || "Load cities first"}
+                          </option>
+                          {bostaCityDraft &&
+                          !bostaCities.some((c) => c.id === bostaCityDraft) ? (
+                            <option value={bostaCityDraft}>
+                              Current saved city ({bostaCityDraft})
+                            </option>
+                          ) : null}
+                          {bostaCities.map((city) => (
+                            <option key={city.id} value={city.id}>
+                              {city.name}
+                            </option>
+                          ))}
+                        </Select>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
-                          Default zone
+                          Warehouse zone
                         </label>
-                        <Input
-                          placeholder="District or zone name"
+                        <Select
                           value={bostaZoneDraft}
+                          disabled={!bostaCityDraft.trim()}
                           onChange={(e) => setBostaZoneDraft(e.target.value)}
-                        />
+                        >
+                          <option value="">
+                            {bostaZones.length ? "No zone / choose zone" : "Load zones"}
+                          </option>
+                          {bostaZoneDraft &&
+                          !bostaZones.some((z) => z.id === bostaZoneDraft) ? (
+                            <option value={bostaZoneDraft}>
+                              Current saved zone ({bostaZoneDraft})
+                            </option>
+                          ) : null}
+                          {bostaZones.map((zone) => (
+                            <option key={zone.id} value={zone.id}>
+                              {zone.name}
+                            </option>
+                          ))}
+                        </Select>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
@@ -2327,9 +2447,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="space-y-1">
                       <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
-                        رسالة واتساب الافتراضية (فريق التأكيد) — {`{name}`}،{" "}
-                        {`{orderId}`}، {`{wooOrderId}`}، {`{awb}`}،{" "}
-                        {`{orderLink}`}
+                        رسالة واتساب الافتراضية (فريق التأكيد)
                       </span>
                       <textarea
                         className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
@@ -2338,11 +2456,24 @@ export default function SettingsPage() {
                         placeholder="مثال: مرحباً {name} — طلب {orderId}"
                         spellCheck={false}
                       />
+                      <div className="space-y-2 rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-xs text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+                        <p>
+                          متغيرات سريعة: {`{name}`}، {`{orderId}`}،{" "}
+                          {`{wooOrderId}`}، {`{awb}`}، {`{orderLink}`}،{" "}
+                          {`{customer.address}`}، {`{customer.phone}`}،{" "}
+                          {`{payment.total}`}، {`{shipping.method}`}.
+                        </p>
+                        <p>
+                          المنتجات: استخدم {`{items.summary}`} لكل المنتجات كسطور،
+                          أو {`{items:name,quantity,lineTotal,sku,link}`} لتحديد
+                          شكل كل سطر. ويمكن قراءة مسار آمن من الأوردر مثل{" "}
+                          {`{order.customer.email}`} أو {`{order.payment.total_amount}`}.
+                        </p>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
-                        قالب لينك الطلب/التتبع لكل شركة — {`{orderId}`}،{" "}
-                        {`{wooOrderId}`}
+                        قالب لينك الطلب/التتبع لكل شركة
                       </span>
                       <Input
                         value={orderLinkTemplateDraft}
@@ -2353,7 +2484,9 @@ export default function SettingsPage() {
                       />
                       <p className="text-xs text-[color:var(--color-text-muted)]">
                         استخدم {`{orderLink}`} داخل رسالة واتساب لإظهار هذا
-                        الرابط. لو الحقل فارغ، {`{orderLink}`} يتحول لنص فارغ.
+                        الرابط. قالب اللينك يدعم نفس متغيرات الأوردر مثل{" "}
+                        {`{orderId}`}، {`{wooOrderId}`}، {`{customer.phone}`}.
+                        لو الحقل فارغ، {`{orderLink}`} يتحول لنص فارغ.
                       </p>
                     </div>
                     <Button type="button" onClick={() => void saveAutomation()}>

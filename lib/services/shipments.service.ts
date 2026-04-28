@@ -87,18 +87,19 @@ export async function createShipmentForOrder(input: {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const type: ShipmentType = input.type ?? "delivery";
+  const actor = await getUser(input.tenantId, input.actorUserId);
+  const createdByUserName = actor?.name ?? input.actorUserId;
 
   const bosta = await createBostaShipment({
     tenantId: input.tenantId,
     order,
     type,
     shipmentId: id,
+    actorUserId: input.actorUserId,
+    actorUserName: createdByUserName,
   });
 
   const shipping_fees = bosta.shippingFee ?? order.shipping?.cost ?? 0;
-
-  const actor = await getUser(input.tenantId, input.actorUserId);
-  const createdByUserName = actor?.name ?? input.actorUserId;
 
   const shipment: Shipment = {
     id,
@@ -172,6 +173,11 @@ export async function syncShipmentTracking(input: {
   const next: Shipment = {
     ...shipment,
     carrierTrackingStatus: tracking.status,
+    shipping_fees:
+      tracking.shippingFee !== undefined &&
+      ((shipment.shipping_fees ?? 0) <= 0)
+        ? tracking.shippingFee
+        : shipment.shipping_fees,
     lastTrackingSyncAt: now,
     trackingHistory: [...(shipment.trackingHistory ?? []), event].slice(-25),
     updatedAt: now,

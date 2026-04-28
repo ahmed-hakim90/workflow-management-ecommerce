@@ -358,16 +358,17 @@ export default function OrderDetailPage() {
     if (!o?.customer.phone) return;
     const deliveryAwb =
       shipments?.find((s) => s.type === "delivery")?.awb?.trim() ?? "—";
-    const displayOrderId = o.wooCommerceOrderId?.trim() || o.id;
-    const wooOrderId = o.wooCommerceOrderId?.trim() || "";
     const orderLink = orderLinkTemplate
-      .replaceAll("{wooOrderId}", wooOrderId || displayOrderId)
-      .replaceAll("{orderId}", displayOrderId)
-      .trim();
+      ? formatConfirmationWhatsAppMessage(orderLinkTemplate, {
+          order: o,
+          shipments: shipments ?? [],
+          awb: deliveryAwb,
+          orderLink: "",
+        }).trim()
+      : "";
     const body = formatConfirmationWhatsAppMessage(whatsappTemplate, {
-      name: o.customer.name,
-      orderId: displayOrderId,
-      wooOrderId: wooOrderId || undefined,
+      order: o,
+      shipments: shipments ?? [],
       orderLink,
       awb: deliveryAwb,
     });

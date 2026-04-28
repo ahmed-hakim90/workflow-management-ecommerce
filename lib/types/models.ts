@@ -47,11 +47,16 @@ export interface OrderInvoice {
 /** Single line on an order (WooCommerce / manual). */
 export interface OrderLineItem {
   id?: string;
+  product_id?: string;
+  variation_id?: string;
   name: string;
   sku?: string;
   quantity: number;
   unit_price: number;
   line_total: number;
+  product_url?: string;
+  attributes?: Record<string, string>;
+  meta?: Record<string, string>;
 }
 
 export interface OrderShipping {
@@ -312,7 +317,9 @@ export interface TenantAutomationSettings {
   create_shipment_stage: AutomationShipmentStage;
   /**
    * رسالة واتساب الافتراضية لفريق التأكيد عند التواصل مع العميل.
-   * Placeholders: `{name}`, `{orderId}`, `{wooOrderId}`, `{awb}`, `{orderLink}`.
+   * Placeholders include legacy `{name}`, `{orderId}`, `{wooOrderId}`, `{awb}`,
+   * `{orderLink}` plus dot-paths like `{customer.address}`, `{payment.total}`,
+   * `{order.shipping.method}` and product summaries via `{items.summary}`.
    */
   whatsappMessageTemplate?: string;
   /** Optional per-tenant order/tracking URL template. Placeholders: `{orderId}`, `{wooOrderId}`. */

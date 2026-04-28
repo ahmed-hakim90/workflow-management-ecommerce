@@ -21,11 +21,29 @@ const toNum = (v: unknown, fallback = 0): number => {
 const wcLineItemSchema = z
   .object({
     id: z.union([z.number(), z.string()]).optional(),
+    product_id: z.union([z.number(), z.string()]).optional().nullable(),
+    variation_id: z.union([z.number(), z.string()]).optional().nullable(),
     name: wcStringOrNumber,
     sku: z.union([z.string(), z.number()]).optional().nullable(),
     quantity: wcStringOrNumber,
     price: wcStringOrNumber,
     total: wcStringOrNumber,
+    permalink: z.string().optional().nullable(),
+    product_url: z.string().optional().nullable(),
+    product_permalink: z.string().optional().nullable(),
+    meta_data: z
+      .array(
+        z
+          .object({
+            key: z.string().optional().nullable(),
+            value: z.unknown().optional().nullable(),
+            display_key: z.string().optional().nullable(),
+            display_value: z.unknown().optional().nullable(),
+          })
+          .loose(),
+      )
+      .optional()
+      .nullable(),
   })
   .loose();
 
@@ -69,6 +87,44 @@ function lineItemName(n: unknown): string {
   if (n == null) return "Item";
   const s = String(n).trim();
   return s || "Item";
+}
+
+function stringifyMetaValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function lineItemMetaRecords(
+  metaData: z.infer<typeof wcLineItemSchema>["meta_data"],
+): {
+  attributes?: Record<string, string>;
+  meta?: Record<string, string>;
+} {
+  if (!metaData?.length) return {};
+  const attributes: Record<string, string> = {};
+  const meta: Record<string, string> = {};
+
+  for (const entry of metaData) {
+    const rawKey = entry.display_key?.trim() || entry.key?.trim();
+    if (!rawKey || rawKey.startsWith("_")) continue;
+    const rawValue = entry.display_value ?? entry.value;
+    const value = stringifyMetaValue(rawValue);
+    if (!value) continue;
+
+    meta[rawKey] = value;
+    attributes[rawKey] = value;
+  }
+
+  return {
+    attributes: Object.keys(attributes).length ? attributes : undefined,
+    meta: Object.keys(meta).length ? meta : undefined,
+  };
 }
 
 export function mapWooCommerceOrder(body: unknown): {
@@ -136,13 +192,30 @@ export function mapWooCommerceOrder(body: unknown): {
         const qty = toNum(li.quantity, 1) || 1;
         const unit = toNum(li.price, 0);
         const lineTotal = toNum(li.total, unit * qty);
+        const productUrl =
+          li.permalink?.trim() ||
+          li.product_url?.trim() ||
+          li.product_permalink?.trim() ||
+          undefined;
+        const metaRecords = lineItemMetaRecords(li.meta_data);
         return {
           id: li.id !== undefined ? String(li.id) : undefined,
+          product_id:
+            li.product_id !== undefined && li.product_id !== null
+              ? String(li.product_id)
+              : undefined,
+          variation_id:
+            li.variation_id !== undefined && li.variation_id !== null
+              ? String(li.variation_id)
+              : undefined,
           name: lineItemName(li.name),
           sku: li.sku != null && li.sku !== "" ? String(li.sku) : undefined,
           quantity: qty,
           unit_price: unit,
           line_total: lineTotal,
+          product_url: productUrl,
+          attributes: metaRecords.attributes,
+          meta: metaRecords.meta,
         };
       })
     : undefined;
