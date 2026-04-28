@@ -18,7 +18,7 @@ const querySchema = z.object({
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "order:read");
+    assertCan(ctx, "order:read");
     const url = new URL(req.url);
     const q = querySchema.parse({
       status: url.searchParams.get("status") ?? undefined,

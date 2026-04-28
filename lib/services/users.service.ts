@@ -90,6 +90,7 @@ export async function updateUser(input: {
   targetUserId: string;
   name?: string;
   role?: UserRole;
+  permissions?: string[];
   daily_target?: number;
   actorUserId: string;
 }): Promise<User> {
@@ -106,6 +107,8 @@ export async function updateUser(input: {
     ...prev,
     name: input.name ?? prev.name,
     role: input.role ?? prev.role,
+    permissions:
+      input.permissions !== undefined ? input.permissions : prev.permissions,
     daily_target:
       input.daily_target !== undefined ? input.daily_target : prev.daily_target,
     updatedAt: now,
@@ -117,7 +120,11 @@ export async function updateUser(input: {
     entityType: "user",
     entityId: input.targetUserId,
     userId: input.actorUserId,
-    metadata: { role: next.role, daily_target: next.daily_target },
+    metadata: {
+      role: next.role,
+      daily_target: next.daily_target,
+      permissions: next.permissions,
+    },
   });
   return next;
 }

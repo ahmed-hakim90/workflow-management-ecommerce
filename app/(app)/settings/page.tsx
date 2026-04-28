@@ -80,17 +80,23 @@ export default function SettingsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const setSession = useSessionStore((s) => s.setSession);
   const themePreference = useThemeStore((s) => s.themePreference);
   const setThemePreference = useThemeStore((s) => s.setThemePreference);
 
+  const permissionSubject = useMemo(
+    () => ({ role, permissions }),
+    [role, permissions],
+  );
+
   const advTabs = useMemo(
     () =>
       ADV_TAB_DEFS.filter(
-        (t) => t.id !== "users" || can(role, "user:read"),
+        (t) => t.id !== "users" || can(permissionSubject, "user:read"),
       ),
-    [role],
+    [permissionSubject],
   );
 
   const [section, setSection] = useState<SectionId>("profile");
@@ -737,15 +743,15 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (advTab === "users" && !can(role, "user:read")) {
+    if (advTab === "users" && !can(permissionSubject, "user:read")) {
       setAdvTab("general");
     }
-  }, [role, advTab]);
+  }, [permissionSubject, advTab]);
 
   useEffect(() => {
     if (!authReady) return;
     if (section !== "advanced" || advTab !== "shipment") return;
-    if (!can(role, "user:manage")) return;
+    if (!can(permissionSubject, "user:manage")) return;
     let cancelled = false;
     (async () => {
       setSettingsErr(null);
@@ -794,12 +800,12 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role, permissionSubject]);
 
   useEffect(() => {
     if (!authReady) return;
     if (section !== "advanced" || advTab !== "webhooks") return;
-    if (!can(role, "user:manage")) return;
+    if (!can(permissionSubject, "user:manage")) return;
     let cancelled = false;
     (async () => {
       setOutboundWebhookErr(null);
@@ -836,7 +842,7 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, section, advTab, apiSecret, idToken, tenantId, userId, role, permissionSubject]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -1557,7 +1563,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              {can(role, "user:manage") ? (
+              {can(permissionSubject, "user:manage") ? (
                 <Card>
                   <CardHeader>
                     <CardTitle>Webhook health (server)</CardTitle>
@@ -2144,7 +2150,7 @@ export default function SettingsPage() {
                 </Card>
               )}
 
-              {advTab === "shipment" && can(role, "user:manage") && (
+              {advTab === "shipment" && can(permissionSubject, "user:manage") && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Shipment &amp; confirmation (WhatsApp)</CardTitle>
@@ -2213,7 +2219,7 @@ export default function SettingsPage() {
                 </Card>
               )}
 
-              {advTab === "shipment" && can(role, "user:manage") && (
+              {advTab === "shipment" && can(permissionSubject, "user:manage") && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Warehouse scan (AWB)</CardTitle>
@@ -2253,7 +2259,7 @@ export default function SettingsPage() {
                 </Card>
               )}
 
-              {advTab === "webhooks" && can(role, "user:manage") && (
+              {advTab === "webhooks" && can(permissionSubject, "user:manage") && (
                 <div className="space-y-4">
                   <Card>
                     <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
@@ -2499,7 +2505,7 @@ export default function SettingsPage() {
                 </Card>
               )}
 
-              {advTab === "users" && can(role, "user:read") ? (
+              {advTab === "users" && can(permissionSubject, "user:read") ? (
                 <Card>
                   <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                     <CardTitle>Users</CardTitle>

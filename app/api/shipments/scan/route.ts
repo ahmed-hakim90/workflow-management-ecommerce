@@ -12,7 +12,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "shipment:scan");
+    assertCan(ctx, "shipment:scan");
     const json = await req.json();
     const { awb } = bodySchema.parse(json);
     const result = await scanAwb({

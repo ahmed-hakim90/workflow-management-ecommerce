@@ -75,7 +75,8 @@ function mergeSecrets(
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "user:manage");
     const automation = await getTenantAutomation(ctx.tenantId);
     const logs = await listOutboundWebhookDeliveryLogs(ctx.tenantId, 25);
     return jsonOk({
@@ -90,7 +91,8 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "user:manage");
     const json = await req.json();
     const body = patchSchema.parse(json);
     const current = await getTenantAutomation(ctx.tenantId);

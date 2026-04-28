@@ -14,7 +14,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "order:revert");
+    assertCan(ctx, "order:revert");
     const json = await req.json();
     const body = bodySchema.parse(json);
     const order = await revertOrderStage({

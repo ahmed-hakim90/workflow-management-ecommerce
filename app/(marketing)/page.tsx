@@ -303,7 +303,7 @@ export default function LandingPage() {
           </div>
           <div className="relative flex flex-wrap gap-3">
             <Link href="/login">
-              <Button>Schedule Demo</Button>
+              <Button>Schedule Demo/ Login</Button>
             </Link>
             <Link href="mailto:sales@Store.example">
               <Button

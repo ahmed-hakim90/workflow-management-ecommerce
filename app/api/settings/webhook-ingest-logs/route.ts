@@ -14,7 +14,8 @@ const querySchema = z.object({
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "user:manage");
     const url = new URL(req.url);
     const q = querySchema.parse({
       limit: url.searchParams.get("limit") ?? undefined,

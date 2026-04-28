@@ -24,6 +24,7 @@ import type { Order, PaymentStatus } from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
 import { cn } from "@/lib/ui/cn";
 import { OrdersViewSwitch } from "@/components/orders/orders-view-switch";
+import { can } from "@/lib/auth/rbac";
 
 const PAGE_SIZE = 10;
 const PAYMENTS: (PaymentStatus | "")[] = ["", "paid", "partial", "cod"];
@@ -68,6 +69,7 @@ export default function OrdersPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
@@ -87,6 +89,7 @@ export default function OrdersPage() {
     new Date().toISOString().slice(0, 10),
   );
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
+  const canViewFinance = can({ role, permissions }, "finance:view");
 
   useEffect(() => {
     if (!authReady) return;
@@ -216,7 +219,7 @@ export default function OrdersPage() {
       status: o.status,
       customer: o.customer.name,
       phone: o.customer.phone ?? "",
-      total: o.payment.total_amount,
+      ...(canViewFinance ? { total: o.payment.total_amount } : {}),
       payment: o.payment.payment_status,
     }));
     const header = Object.keys(rows[0] ?? { id: "", status: "" }).join(",");
@@ -439,7 +442,7 @@ export default function OrdersPage() {
                 <Th>Order ID</Th>
                 <Th>Customer</Th>
                 <Th>Date</Th>
-                <Th>Total</Th>
+                {canViewFinance ? <Th>Total</Th> : null}
                 <Th>Payment</Th>
                 <Th>Fulfillment</Th>
                 <Th className="w-12">Actions</Th>
@@ -449,7 +452,7 @@ export default function OrdersPage() {
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <Tr key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: canViewFinance ? 7 : 6 }).map((__, j) => (
                       <Td key={j}>
                         <Skeleton className="h-4 w-full max-w-[10rem]" />
                       </Td>
@@ -459,7 +462,7 @@ export default function OrdersPage() {
               ) : pageRows.length === 0 ? (
                 <Tr>
                   <Td
-                    colSpan={7}
+                    colSpan={canViewFinance ? 7 : 6}
                     className="text-center text-[color:var(--color-text-muted)]"
                   >
                     No orders match your filters.
@@ -534,12 +537,14 @@ export default function OrdersPage() {
                     <Td className="whitespace-nowrap text-sm text-[color:var(--color-text-secondary)]">
                       {formatWhen(o.createdAt)}
                     </Td>
-                    <Td className="font-semibold tabular-nums">
-                      {o.payment.total_amount.toLocaleString("en-US", {
-                        style: "currency",
-                        currency: "USD",
-                      })}
-                    </Td>
+                    {canViewFinance ? (
+                      <Td className="font-semibold tabular-nums">
+                        {o.payment.total_amount.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                        })}
+                      </Td>
+                    ) : null}
                     <Td>
                       <PaymentBadge status={o.payment.payment_status} />
                     </Td>
@@ -626,12 +631,14 @@ export default function OrdersPage() {
                         {formatWhen(whatsappSentAt)}
                       </div>
                     ) : null}
-                    <div className="text-lg font-semibold tabular-nums">
-                      {o.payment.total_amount.toLocaleString("en-US", {
-                        style: "currency",
-                        currency: "USD",
-                      })}
-                    </div>
+                    {canViewFinance ? (
+                      <div className="text-lg font-semibold tabular-nums">
+                        {o.payment.total_amount.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                        })}
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       <OrderStatusBadge status={o.status} />
                       <PaymentBadge status={o.payment.payment_status} />
@@ -704,22 +711,24 @@ export default function OrdersPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="space-y-1 p-4">
-            <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
-              Revenue (MTD)
-            </p>
-            <p className="text-2xl font-bold tabular-nums">
-              {revenueMtd.toLocaleString("en-US", {
-                style: "currency",
-                currency: "USD",
-              })}
-            </p>
-            <p className="text-xs font-medium text-[color:var(--color-success)]">
-              +8.2% vs prior period (demo)
-            </p>
-          </CardContent>
-        </Card>
+        {canViewFinance ? (
+          <Card>
+            <CardContent className="space-y-1 p-4">
+              <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                Revenue (MTD)
+              </p>
+              <p className="text-2xl font-bold tabular-nums">
+                {revenueMtd.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                })}
+              </p>
+              <p className="text-xs font-medium text-[color:var(--color-success)]">
+                +8.2% vs prior period (demo)
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
         <Card>
           <CardContent className="space-y-1 p-4">
             <p className="text-xs font-medium text-[color:var(--color-text-muted)]">

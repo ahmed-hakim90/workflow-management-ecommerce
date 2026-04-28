@@ -25,18 +25,13 @@ function nextToastId() {
   return `order-toast-${++toastKey}`;
 }
 
-function fmtMoney(n: number) {
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
 export const useOrderAlertsStore = create<OrderAlertsState>((set) => ({
   unreadCount: 0,
   toasts: [],
   addNewOrder: (o) =>
     set((s) => {
       const line1 = o.customer?.name?.trim() || o.id;
-      const line2 = `طلب جديد — ${fmtMoney(o.payment?.total_amount ?? 0)}`;
+      const line2 = "طلب جديد";
       const t: OrderAlertToast = {
         toastId: nextToastId(),
         orderId: o.id,

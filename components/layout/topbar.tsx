@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { buildAuthHeaders, useSessionStore } from "@/store/zustand/session-store";
 import { cn } from "@/lib/ui/cn";
+import { canAccessPage } from "@/lib/auth/rbac";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
@@ -26,6 +27,7 @@ export function Topbar() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const displayName = useSessionStore((s) => s.displayName);
   const tenantName = useSessionStore((s) => s.tenantName);
@@ -59,7 +61,7 @@ export function Topbar() {
   }, [isMdUp]);
 
   useEffect(() => {
-    if (!authReady || (role !== "admin" && role !== "moderator")) {
+    if (!authReady || !canAccessPage({ role, permissions }, "page:admin")) {
       setManagerAlertCount(0);
       return;
     }
@@ -85,7 +87,7 @@ export function Topbar() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role, permissions]);
 
   const searchPlaceholder = useMemo(() => {
     if (pathname.startsWith("/tickets")) {

@@ -7,7 +7,7 @@ import { listShipmentsForTenant } from "@/lib/services/shipments.service";
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "shipment:read");
+    assertCan(ctx, "shipment:read");
     const shipments = await listShipmentsForTenant(ctx.tenantId);
     shipments.sort(
       (a, b) =>

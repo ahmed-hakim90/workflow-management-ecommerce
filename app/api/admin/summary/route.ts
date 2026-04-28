@@ -1,5 +1,5 @@
 import { requireTenant } from "@/lib/auth/context";
-import { assertCan } from "@/lib/auth/rbac";
+import { assertCan, can } from "@/lib/auth/rbac";
 import { jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import { computeOrderOverdueAlerts } from "@/lib/logic/order-overdue-alerts";
@@ -11,17 +11,16 @@ import { getUserStatsForToday } from "@/lib/services/analytics.service";
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:read");
-    if (ctx.role !== "admin" && ctx.role !== "moderator") {
-      const err = new Error("Forbidden");
-      (err as Error & { status: number }).status = 403;
-      throw err;
-    }
+    assertCan(ctx, "page:admin");
+    assertCan(ctx, "user:read");
     const [perStage, orders] = await Promise.all([
       getOrdersPerStage(ctx.tenantId),
       listOrders(ctx.tenantId),
     ]);
-    const { stageValues, ...stages } = perStage;
+    const { stageValues: rawStageValues, ...stages } = perStage;
+    const stageValues = can(ctx, "finance:view")
+      ? rawStageValues
+      : Object.fromEntries(Object.keys(rawStageValues).map((key) => [key, 0]));
     const users = await listUsers(ctx.tenantId);
     const team = await Promise.all(
       users.map(async (u) => {

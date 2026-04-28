@@ -138,6 +138,7 @@ export default function OrderDetailPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
 
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -370,6 +371,8 @@ export default function OrderDetailPage() {
   const deliveryAwb = bundle ? latestAwb(bundle.shipments) : "—";
   const whatsappUser =
     o?.whatsappSentByUserName?.trim() || o?.whatsappSentByUserId?.trim();
+  const permissionSubject = { role, permissions };
+  const canViewFinance = can(permissionSubject, "finance:view");
 
   return (
     <div className="space-y-6">
@@ -441,24 +444,24 @@ export default function OrderDetailPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {can(role, "order:confirm") &&
+                {can(permissionSubject, "order:confirm") &&
                 o.status === "pending_confirmation" ? (
                   <Button type="button" onClick={onConfirm}>
                     تأكيد الطلب
                   </Button>
                 ) : null}
-                {can(role, "order:cancel") && o.status !== "cancelled" ? (
+                {can(permissionSubject, "order:cancel") && o.status !== "cancelled" ? (
                   <Button type="button" variant="danger" onClick={onCancel}>
                     إلغاء
                   </Button>
                 ) : null}
-                {can(role, "order:invoice") &&
+                {can(permissionSubject, "order:invoice") &&
                 (o.status === "confirmed" || o.status === "invoicing") ? (
                   <Button type="button" variant="secondary" onClick={onInvoice}>
                     فوترة / جاهز للمخزن
                   </Button>
                 ) : null}
-                {can(role, "order:assign") ? (
+                {can(permissionSubject, "order:assign") ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -468,12 +471,12 @@ export default function OrderDetailPage() {
                     تعيين
                   </Button>
                 ) : null}
-                {can(role, "order:confirm") && o.customer.phone ? (
+                {can(permissionSubject, "order:confirm") && o.customer.phone ? (
                   <Button type="button" variant="secondary" onClick={onWhatsApp}>
                     واتساب + تسجيل
                   </Button>
                 ) : null}
-                {can(role, "order:delete") ? (
+                {can(permissionSubject, "order:delete") ? (
                   <Button
                     type="button"
                     variant="danger"
@@ -498,8 +501,12 @@ export default function OrderDetailPage() {
             />
             <SummaryCard
               label="Order total"
-              value={formatMoney(o.payment.total_amount)}
-              detail={`متبقي ${formatMoney(o.payment.remaining_amount)}`}
+              value={canViewFinance ? formatMoney(o.payment.total_amount) : "Hidden"}
+              detail={
+                canViewFinance
+                  ? `متبقي ${formatMoney(o.payment.remaining_amount)}`
+                  : "Financial permission required"
+              }
               icon={<WalletCards className="size-5" aria-hidden />}
             />
             <SummaryCard
@@ -549,28 +556,34 @@ export default function OrderDetailPage() {
                   <OrderStatusBadge status={o.status} />
                   <PaymentBadge status={o.payment.payment_status} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <DetailItem label="الإجمالي">
-                    <span className="font-semibold tabular-nums">
-                      {formatMoney(o.payment.total_amount)}
-                    </span>
-                  </DetailItem>
-                  <DetailItem label="المدفوع">
-                    <span className="tabular-nums">
-                      {formatMoney(o.payment.paid_amount)}
-                    </span>
-                  </DetailItem>
-                  <DetailItem label="المتبقي">
-                    <span className="tabular-nums">
-                      {formatMoney(o.payment.remaining_amount)}
-                    </span>
-                  </DetailItem>
-                  <DetailItem label="التحصيل عند الاستلام">
-                    <span className="tabular-nums">
-                      {formatMoney(o.payment.cod_amount)}
-                    </span>
-                  </DetailItem>
-                </div>
+                {canViewFinance ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <DetailItem label="الإجمالي">
+                      <span className="font-semibold tabular-nums">
+                        {formatMoney(o.payment.total_amount)}
+                      </span>
+                    </DetailItem>
+                    <DetailItem label="المدفوع">
+                      <span className="tabular-nums">
+                        {formatMoney(o.payment.paid_amount)}
+                      </span>
+                    </DetailItem>
+                    <DetailItem label="المتبقي">
+                      <span className="tabular-nums">
+                        {formatMoney(o.payment.remaining_amount)}
+                      </span>
+                    </DetailItem>
+                    <DetailItem label="التحصيل عند الاستلام">
+                      <span className="tabular-nums">
+                        {formatMoney(o.payment.cod_amount)}
+                      </span>
+                    </DetailItem>
+                  </div>
+                ) : (
+                  <p className="rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-xs text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+                    تفاصيل المبالغ مخفية حسب صلاحيات المستخدم.
+                  </p>
+                )}
                 {o.invoice ? (
                   <DetailItem label="فاتورة">
                     <span className="font-mono text-xs">

@@ -23,6 +23,7 @@ export async function loadSessionFromIdToken(
         name?: string;
         email?: string;
         role: string;
+        permissions?: string[];
       };
       tenant: { id: string; name: string; slug: string } | null;
     };
@@ -45,6 +46,7 @@ export async function loadSessionFromIdToken(
     displayName,
     tenantName,
     role: u.role as UserRole,
+    permissions: u.permissions ?? [],
   });
   const { firstName, lastName } = splitDisplayName(displayName);
   useProfileStore.getState().setProfile({ firstName, lastName });
@@ -65,7 +67,7 @@ export async function syncSessionFromMe(): Promise<void> {
   const json = (await res.json()) as {
     ok?: boolean;
     data?: {
-      user?: { tenantId: string };
+      user?: { tenantId: string; permissions?: string[] };
       tenant: { id: string; name: string; slug: string } | null;
     };
   };
@@ -74,5 +76,6 @@ export async function syncSessionFromMe(): Promise<void> {
   setSession({
     tenantName,
     tenantId: json.data.user.tenantId ?? tenantId,
+    permissions: json.data.user.permissions ?? [],
   });
 }

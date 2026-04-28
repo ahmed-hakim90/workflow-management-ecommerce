@@ -61,7 +61,8 @@ function last4(raw: string | undefined): string | null {
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "user:manage");
     const [int, tenant, wooSecret, storefrontOrderWebhook] = await Promise.all([
       getTenantIntegrations(ctx.tenantId),
       getTenant(ctx.tenantId),
@@ -151,7 +152,8 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "user:manage");
     const json = await req.json();
     const body = patchSchema.parse(json);
 

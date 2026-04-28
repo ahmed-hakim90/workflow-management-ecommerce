@@ -24,38 +24,37 @@ import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
 import { firebaseClientSignOut } from "@/lib/firebase/client-sign-out";
 import { useSessionStore } from "@/store/zustand/session-store";
-import { can } from "@/lib/auth/rbac";
-import type { UserRole } from "@/lib/types/models";
+import { canAccessPage, type PagePermission } from "@/lib/auth/rbac";
 
 const navItems: {
   href: string;
   label: string;
   icon: LucideIcon;
-  show: (role: UserRole) => boolean;
+  permission: PagePermission;
 }[] = [
-  { href: "/analytics", label: "Analytics", icon: BarChart3, show: () => true },
-  { href: "/orders", label: "Orders", icon: Package, show: () => true },
-  { href: "/shipments", label: "Shipments", icon: Truck, show: () => true },
-  { href: "/tickets", label: "Tickets", icon: Ticket, show: () => true },
+  { href: "/analytics", label: "Analytics", icon: BarChart3, permission: "page:analytics" },
+  { href: "/orders", label: "Orders", icon: Package, permission: "page:orders" },
+  { href: "/shipments", label: "Shipments", icon: Truck, permission: "page:shipments" },
+  { href: "/tickets", label: "Tickets", icon: Ticket, permission: "page:tickets" },
   {
     href: "/warehouse",
     label: "Warehouse",
     icon: Warehouse,
-    show: (r) => can(r, "shipment:scan"),
+    permission: "page:warehouse",
   },
   {
     href: "/admin",
     label: "Admin",
     icon: Shield,
-    show: (r) => r === "admin" || r === "moderator",
+    permission: "page:admin",
   },
   {
     href: "/users",
     label: "Users",
     icon: Users,
-    show: (r) => can(r, "user:read"),
+    permission: "page:users",
   },
-  { href: "/settings", label: "Settings", icon: Settings, show: () => true },
+  { href: "/settings", label: "Settings", icon: Settings, permission: "page:settings" },
 ];
 
 function navActive(href: string, pathname: string) {
@@ -79,6 +78,7 @@ export function Sidebar() {
   const tenantName = useSessionStore((s) => s.tenantName);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
   const sidebarTabletExpanded = useUiStore((s) => s.sidebarTabletExpanded);
@@ -94,7 +94,9 @@ export function Sidebar() {
   /** Name + title when there is width; on mobile (`<md`) sidebar is overlay with room for the full user row. */
   const showSidebarUserFull = isLgUp || sidebarTabletExpanded || !isMdUp;
 
-  const primaryNav = navItems.filter((item) => item.show(role));
+  const primaryNav = navItems.filter((item) =>
+    canAccessPage({ role, permissions }, item.permission),
+  );
 
   useEffect(() => {
     setMobileNavOpen(false);

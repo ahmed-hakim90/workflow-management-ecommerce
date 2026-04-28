@@ -32,6 +32,7 @@ export default function WarehousePage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const isLgUp = useMediaQuery("(min-width: 1024px)");
   const isMdUp = useMediaQuery("(min-width: 768px)");
@@ -135,7 +136,8 @@ export default function WarehousePage() {
   const revertTo = revertFor
     ? warehouseRevertTo(revertFor.status)
     : null;
-  const canRevert = can(role, "order:revert") && !!revertTo;
+  const permissionSubject = { role, permissions };
+  const canRevert = can(permissionSubject, "order:revert") && !!revertTo;
 
   async function onRevert() {
     if (!revertFor || !revertTo || !revertReason.trim() || !canRevert) return;
@@ -198,7 +200,7 @@ export default function WarehousePage() {
                         <Th>Order</Th>
                         <Th>Customer</Th>
                         <Th>Status</Th>
-                        {can(role, "order:revert") ? <Th>Revert</Th> : null}
+                        {can(permissionSubject, "order:revert") ? <Th>Revert</Th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -206,7 +208,7 @@ export default function WarehousePage() {
                         Array.from({ length: 6 }).map((_, i) => (
                           <Tr key={i}>
                             {Array.from({
-                              length: can(role, "order:revert") ? 4 : 3,
+                              length: can(permissionSubject, "order:revert") ? 4 : 3,
                             }).map((__, j) => (
                               <Td key={j}>
                                 <Skeleton className="h-4 w-full max-w-[10rem]" />
@@ -217,7 +219,7 @@ export default function WarehousePage() {
                       ) : orders.length === 0 ? (
                         <Tr>
                           <Td
-                            colSpan={can(role, "order:revert") ? 4 : 3}
+                            colSpan={can(permissionSubject, "order:revert") ? 4 : 3}
                             className="text-center text-[color:var(--color-text-muted)]"
                           >
                             No warehouse orders
@@ -233,7 +235,7 @@ export default function WarehousePage() {
                             <Td>
                               <OrderStatusBadge status={o.status} />
                             </Td>
-                            {can(role, "order:revert") ? (
+                            {can(permissionSubject, "order:revert") ? (
                               <Td>
                                 {warehouseRevertTo(o.status) ? (
                                   <Button
@@ -275,7 +277,7 @@ export default function WarehousePage() {
                             </div>
                             <div className="font-medium">{o.customer.name}</div>
                             <OrderStatusBadge status={o.status} />
-                            {can(role, "order:revert") && warehouseRevertTo(o.status) ? (
+                            {can(permissionSubject, "order:revert") && warehouseRevertTo(o.status) ? (
                               <Button
                                 type="button"
                                 variant="secondary"

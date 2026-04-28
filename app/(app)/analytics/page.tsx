@@ -13,6 +13,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Select } from "@/components/ui/input";
 import { MiniSparkline } from "@/components/charts/mini-sparkline";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
+import { can } from "@/lib/auth/rbac";
 
 const StageBarChart = dynamic(
   () =>
@@ -133,6 +134,7 @@ export default function AnalyticsPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
 
   const [tab, setTab] = useState<"dashboard" | "ops">("dashboard");
@@ -154,6 +156,13 @@ export default function AnalyticsPage() {
   const [financialLoading, setFinancialLoading] = useState(true);
   const [rebuildBusy, setRebuildBusy] = useState(false);
   const [granularity, setGranularity] = useState<"daily" | "weekly">("daily");
+  const canViewFinance = can({ role, permissions }, "finance:view");
+
+  useEffect(() => {
+    if (!canViewFinance && tab === "dashboard") {
+      setTab("ops");
+    }
+  }, [canViewFinance, tab]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -181,7 +190,11 @@ export default function AnalyticsPage() {
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const loadFinancial = useCallback(async () => {
-    if (!authReady) return;
+    if (!authReady || !canViewFinance) {
+      setFinancial(null);
+      setFinancialLoading(false);
+      return;
+    }
     setFinancialLoading(true);
     setFinancialErr(null);
     try {
@@ -198,7 +211,7 @@ export default function AnalyticsPage() {
     } finally {
       setFinancialLoading(false);
     }
-  }, [authReady, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
+  }, [authReady, canViewFinance, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -270,6 +283,7 @@ export default function AnalyticsPage() {
     setRebuildBusy(true);
     setFinancialErr(null);
     try {
+      if (!canViewFinance) throw new Error("Forbidden");
       const res = await fetch("/api/admin/rebuild-analytics", {
         method: "POST",
         headers: {
@@ -298,7 +312,9 @@ export default function AnalyticsPage() {
             <Tabs
               className="w-full lg:w-auto"
               items={[
-                { id: "dashboard", label: "Dashboard" },
+                ...(canViewFinance
+                  ? [{ id: "dashboard", label: "Dashboard" }]
+                  : []),
                 { id: "ops", label: "Operations" },
               ]}
               value={tab}
@@ -308,7 +324,7 @@ export default function AnalyticsPage() {
         }
       />
 
-      {tab === "dashboard" ? (
+      {tab === "dashboard" && canViewFinance ? (
         <div className="flex flex-col gap-4 rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)] md:flex-row md:flex-wrap md:items-end">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1">
@@ -375,13 +391,13 @@ export default function AnalyticsPage() {
         </p>
       ) : null}
 
-      {tab === "dashboard" && !financialLoading && financialErr ? (
+      {tab === "dashboard" && canViewFinance && !financialLoading && financialErr ? (
         <p className="rounded-xl border-0 bg-[color:var(--color-callout-warning-bg)] p-3 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-neo-raised-sm)]">
           {financialErr}
         </p>
       ) : null}
 
-      {tab === "dashboard" ? (
+      {tab === "dashboard" && canViewFinance ? (
         <>
           {financialLoading && !financial ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

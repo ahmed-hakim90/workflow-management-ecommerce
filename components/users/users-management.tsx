@@ -13,6 +13,12 @@ import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { User, UserRole } from "@/lib/types/models";
 import { Badge } from "@/components/ui/badge";
+import {
+  ALL_PERMISSIONS,
+  effectivePermissions,
+  roleDefaultPermissions,
+  type Permission,
+} from "@/lib/auth/rbac";
 
 export type UsersManagementProps = {
   /** When set, the create dialog is controlled by the parent (e.g. header action). */
@@ -27,6 +33,138 @@ const ROLES: UserRole[] = [
   "warehouse",
   "support",
 ];
+
+const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] = [
+  {
+    title: "Pages",
+    permissions: [
+      "page:analytics",
+      "page:orders",
+      "page:shipments",
+      "page:tickets",
+      "page:warehouse",
+      "page:admin",
+      "page:users",
+      "page:settings",
+    ],
+  },
+  {
+    title: "Orders",
+    permissions: [
+      "order:read",
+      "order:confirm",
+      "order:invoice",
+      "order:cancel",
+      "order:assign",
+      "order:revert",
+      "order:delete",
+    ],
+  },
+  {
+    title: "Shipments",
+    permissions: ["shipment:create", "shipment:scan", "shipment:read"],
+  },
+  {
+    title: "Tickets",
+    permissions: [
+      "ticket:create",
+      "ticket:read",
+      "ticket:assign",
+      "ticket:resolve",
+    ],
+  },
+  {
+    title: "Users / Finance",
+    permissions: ["user:read", "user:manage", "finance:view"],
+  },
+];
+
+function permissionLabel(permission: Permission) {
+  return permission
+    .replace("page:", "Page: ")
+    .replace("order:", "Order: ")
+    .replace("shipment:", "Shipment: ")
+    .replace("ticket:", "Ticket: ")
+    .replace("user:", "User: ")
+    .replace("finance:", "Finance: ")
+    .replaceAll("_", " ");
+}
+
+function buildPermissionOverrides(
+  role: UserRole,
+  selectedPermissions: Permission[],
+) {
+  const defaults = new Set(roleDefaultPermissions(role));
+  const selected = new Set(selectedPermissions);
+  return ALL_PERMISSIONS.flatMap((permission) => {
+    const defaultOn = defaults.has(permission);
+    const selectedOn = selected.has(permission);
+    if (selectedOn && !defaultOn) return [permission];
+    if (!selectedOn && defaultOn) return [`-${permission}`];
+    return [];
+  });
+}
+
+function PermissionEditor({
+  role,
+  selected,
+  onChange,
+}: {
+  role: UserRole;
+  selected: Permission[];
+  onChange: (next: Permission[]) => void;
+}) {
+  const selectedSet = new Set(selected);
+  return (
+    <div className="space-y-3 rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+          Permissions
+        </p>
+        <p className="text-xs text-[color:var(--color-text-secondary)]">
+          Uncheck role defaults to hide pages/actions. Financial data is off
+          unless Finance: view is checked.
+        </p>
+      </div>
+      {PERMISSION_GROUPS.map((group) => (
+        <div key={group.title} className="space-y-2">
+          <p className="text-xs font-semibold text-[color:var(--color-text-primary)]">
+            {group.title}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {group.permissions.map((permission) => {
+              const checked = selectedSet.has(permission);
+              const defaultOn = roleDefaultPermissions(role).includes(permission);
+              return (
+                <label
+                  key={permission}
+                  className="flex items-center gap-2 rounded-lg bg-[color:var(--color-card)] px-2 py-1.5 text-xs shadow-[var(--shadow-neo-raised-sm)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      const next = new Set(selectedSet);
+                      if (e.target.checked) next.add(permission);
+                      else next.delete(permission);
+                      onChange([...next]);
+                    }}
+                  />
+                  <span className="flex-1">{permissionLabel(permission)}</span>
+                  {defaultOn ? (
+                    <span className="text-[10px] text-[color:var(--color-text-muted)]">
+                      role
+                    </span>
+                  ) : null}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const apiSecret = useSessionStore((s) => s.apiSecret);
@@ -49,6 +187,9 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("support");
+  const [newPermissions, setNewPermissions] = useState<Permission[]>(
+    roleDefaultPermissions("support"),
+  );
   const [newTarget, setNewTarget] = useState(0);
 
   async function load() {
@@ -91,6 +232,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
           name: newName,
           email: newEmail || undefined,
           role: newRole,
+          permissions: buildPermissionOverrides(newRole, newPermissions),
           daily_target: newTarget,
         }),
       });
@@ -99,6 +241,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
       setCreateOpen(false);
       setNewName("");
       setNewEmail("");
+      setNewPermissions(roleDefaultPermissions(newRole));
       setNewTarget(0);
       await load();
     } catch (e) {
@@ -167,7 +310,11 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
             <label className="text-xs text-[color:var(--color-text-secondary)]">Role</label>
             <Select
               value={newRole}
-              onChange={(e) => setNewRole(e.target.value as UserRole)}
+              onChange={(e) => {
+                const nextRole = e.target.value as UserRole;
+                setNewRole(nextRole);
+                setNewPermissions(roleDefaultPermissions(nextRole));
+              }}
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -185,6 +332,11 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
               onChange={(e) => setNewTarget(Number(e.target.value))}
             />
           </div>
+          <PermissionEditor
+            role={newRole}
+            selected={newPermissions}
+            onChange={setNewPermissions}
+          />
           <Button
             type="button"
             onClick={createUser}
@@ -309,10 +461,14 @@ function EditUserForm({
     name?: string;
     role?: UserRole;
     daily_target?: number;
+    permissions?: string[];
   }) => Promise<void>;
 }) {
   const [name, setName] = useState(user.name);
   const [r, setR] = useState(user.role);
+  const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>(
+    effectivePermissions({ role: user.role, permissions: user.permissions }),
+  );
   const [target, setTarget] = useState(user.daily_target);
   const [loading, setLoading] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -328,6 +484,7 @@ function EditUserForm({
           await onSave({
             name: name !== user.name ? name : undefined,
             role: r !== user.role ? r : undefined,
+            permissions: buildPermissionOverrides(r, selectedPermissions),
             daily_target:
               target !== user.daily_target ? target : undefined,
           });
@@ -347,7 +504,14 @@ function EditUserForm({
       </div>
       <div className="space-y-1">
         <label className="text-xs text-[color:var(--color-text-secondary)]">Role</label>
-        <Select value={r} onChange={(e) => setR(e.target.value as UserRole)}>
+        <Select
+          value={r}
+          onChange={(e) => {
+            const nextRole = e.target.value as UserRole;
+            setR(nextRole);
+            setSelectedPermissions(roleDefaultPermissions(nextRole));
+          }}
+        >
           {ROLES.map((x) => (
             <option key={x} value={x}>
               {x}
@@ -364,6 +528,11 @@ function EditUserForm({
           onChange={(e) => setTarget(Number(e.target.value))}
         />
       </div>
+      <PermissionEditor
+        role={r}
+        selected={selectedPermissions}
+        onChange={setSelectedPermissions}
+      />
       <Button type="submit" disabled={loading}>
         {loading ? "…" : "Save"}
       </Button>

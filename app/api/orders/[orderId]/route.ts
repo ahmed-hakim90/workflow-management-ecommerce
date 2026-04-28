@@ -14,7 +14,7 @@ export async function GET(
 ) {
   try {
     const ctx = await requireTenant(_req);
-    assertCan(ctx.role, "order:read");
+    assertCan(ctx, "order:read");
     const { orderId } = await context.params;
     if (!orderId?.trim()) return jsonError("Missing order id", 400);
     const bundle = await getOrderDetailBundle(ctx.tenantId, orderId);
@@ -53,7 +53,7 @@ export async function DELETE(
 ) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "order:delete");
+    assertCan(ctx, "order:delete");
     const { orderId } = await context.params;
     if (!orderId?.trim()) return jsonError("Missing order id", 400);
     const result = await deleteOrder({

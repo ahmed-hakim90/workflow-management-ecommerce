@@ -12,7 +12,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "order:cancel");
+    assertCan(ctx, "order:cancel");
     const json = await req.json();
     const { orderId } = bodySchema.parse(json);
     const order = await cancelOrder({

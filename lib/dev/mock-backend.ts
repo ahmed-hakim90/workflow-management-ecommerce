@@ -1082,6 +1082,7 @@ export function mockUpdateUser(input: {
   targetUserId: string;
   name?: string;
   role?: UserRole;
+  permissions?: string[];
   daily_target?: number;
   actorUserId: string;
 }): User {
@@ -1095,6 +1096,8 @@ export function mockUpdateUser(input: {
     ...prev,
     name: input.name ?? prev.name,
     role: input.role ?? prev.role,
+    permissions:
+      input.permissions !== undefined ? input.permissions : prev.permissions,
     daily_target:
       input.daily_target !== undefined ? input.daily_target : prev.daily_target,
     updatedAt: now,

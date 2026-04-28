@@ -13,12 +13,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export async function POST(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:read");
-    if (ctx.role !== "admin" && ctx.role !== "moderator") {
-      const err = new Error("Forbidden");
-      (err as Error & { status: number }).status = 403;
-      throw err;
-    }
+    assertCan(ctx, "finance:view");
 
     const body = (await req.json().catch(() => null)) as { date?: string } | null;
     const date = body?.date ?? "";

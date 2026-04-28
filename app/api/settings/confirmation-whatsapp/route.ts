@@ -11,7 +11,8 @@ import { getTenantAutomation } from "@/lib/services/tenant-settings.service";
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "order:read");
+    assertCan(ctx, "page:settings");
+    assertCan(ctx, "order:read");
     const a = await getTenantAutomation(ctx.tenantId);
     const t =
       a.whatsappMessageTemplate?.trim() ||

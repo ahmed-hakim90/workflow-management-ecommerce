@@ -13,6 +13,7 @@ import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { Order, OrderStatus } from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
+import { can } from "@/lib/auth/rbac";
 
 type ColumnId =
   | "pending_confirmation"
@@ -66,12 +67,14 @@ export default function KanbanPage() {
   const tenantId = useSessionStore((s) => s.tenantId);
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
+  const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const canViewFinance = can({ role, permissions }, "finance:view");
 
   useEffect(() => {
     if (!authReady) return;
@@ -177,9 +180,11 @@ export default function KanbanPage() {
                             {o.id}
                           </div>
                           <div>{o.customer.name}</div>
-                          <div className="text-lg font-semibold">
-                            {o.payment.total_amount}
-                          </div>
+                          {canViewFinance ? (
+                            <div className="text-lg font-semibold">
+                              {o.payment.total_amount}
+                            </div>
+                          ) : null}
                           <div className="flex flex-wrap gap-2">
                             <PaymentBadge
                               status={o.payment.payment_status}

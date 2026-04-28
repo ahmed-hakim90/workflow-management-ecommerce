@@ -14,7 +14,7 @@ import {
 import { KanbanSkeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
-import type { Ticket, TicketType } from "@/lib/types/models";
+import type { Order, Ticket, TicketType } from "@/lib/types/models";
 import { TicketTypeBadge } from "@/lib/ui/order-badges";
 import { cn } from "@/lib/ui/cn";
 
@@ -57,6 +57,141 @@ const TYPE_TAG: Record<TicketType, string> = {
   complaint: "REFUND",
 };
 
+function displayOrderId(order: Order) {
+  return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
+}
+
+function orderSearchText(order: Order) {
+  return [
+    order.id,
+    order.wooCommerceOrderId,
+    order.customer.name,
+    order.customer.phone,
+    order.customer.email,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function CreateTicketForm({
+  orders,
+  onCreate,
+}: {
+  orders: Order[];
+  onCreate: (input: { orderId: string; type: TicketType }) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [ticketType, setTicketType] = useState<TicketType>("complaint");
+  const [submitting, setSubmitting] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return orders.slice(0, 8);
+    return orders.filter((order) => orderSearchText(order).includes(needle)).slice(0, 8);
+  }, [orders, query]);
+
+  const selectedOrder = orders.find((order) => order.id === selectedOrderId);
+
+  async function submit() {
+    if (!selectedOrderId || submitting) return;
+    setSubmitting(true);
+    try {
+      await onCreate({ orderId: selectedOrderId, type: ticketType });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="space-y-1">
+        <label className="text-xs text-[color:var(--color-text-muted)]">
+          Order ID
+        </label>
+        <div className="relative">
+          <Input
+            value={query}
+            onFocus={() => setDropdownOpen(true)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedOrderId("");
+              setDropdownOpen(true);
+            }}
+            placeholder="Search by WooCommerce order ID, customer, or phone"
+          />
+          {dropdownOpen ? (
+            <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl bg-[color:var(--color-card)] p-1 shadow-[var(--shadow-neo-raised)] ring-1 ring-[color:var(--color-border)]">
+              {matches.length > 0 ? (
+                matches.map((order) => (
+                  <button
+                    key={order.id}
+                    type="button"
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-start hover:bg-[color:var(--color-hover-bg)]",
+                      selectedOrderId === order.id &&
+                        "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)]",
+                    )}
+                    onClick={() => {
+                      setSelectedOrderId(order.id);
+                      setQuery(`#${displayOrderId(order)} — ${order.customer.name}`);
+                      setDropdownOpen(false);
+                    }}
+                  >
+                    <div className="font-mono text-xs font-semibold">
+                      #{displayOrderId(order)}
+                    </div>
+                    <div className="truncate text-xs text-[color:var(--color-text-muted)]">
+                      {order.customer.name}
+                      {order.customer.phone ? ` · ${order.customer.phone}` : ""}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
+                  No orders found
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+        {selectedOrder ? (
+          <p className="text-xs text-[color:var(--color-success)]">
+            Selected: #{displayOrderId(selectedOrder)} · {selectedOrder.customer.name}
+          </p>
+        ) : (
+          <p className="text-xs text-[color:var(--color-text-muted)]">
+            Select an order from the dropdown.
+          </p>
+        )}
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-[color:var(--color-text-muted)]">
+          Type
+        </label>
+        <Select
+          value={ticketType}
+          onChange={(e) => setTicketType(e.target.value as TicketType)}
+        >
+          <option value="complaint">Complaint</option>
+          <option value="return">Return</option>
+          <option value="exchange">Exchange</option>
+        </Select>
+      </div>
+      <Button
+        type="button"
+        className="w-full"
+        disabled={!selectedOrderId || submitting}
+        onClick={() => void submit()}
+      >
+        {submitting ? "Submitting..." : "Submit"}
+      </Button>
+    </div>
+  );
+}
+
 export default function TicketsPage() {
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
@@ -65,10 +200,10 @@ export default function TicketsPage() {
   const role = useSessionStore((s) => s.role);
   const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
+  const closeDrawer = useUiStore((s) => s.closeDrawer);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [orderId, setOrderId] = useState("");
-  const [ticketType, setTicketType] = useState<TicketType>("complaint");
+  const [orders, setOrders] = useState<Order[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(true);
@@ -92,9 +227,26 @@ export default function TicketsPage() {
     }
   }
 
+  async function refreshOrders(): Promise<Order[]> {
+    try {
+      const res = await fetch("/api/orders", {
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const next = json.data as Order[];
+      setOrders(next);
+      return next;
+    } catch {
+      setOrders([]);
+      return [];
+    }
+  }
+
   useEffect(() => {
     if (!authReady) return;
     void refresh();
+    void refreshOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
@@ -113,7 +265,7 @@ export default function TicketsPage() {
   const byColumn = (id: ColumnId) =>
     visible.filter((t) => columnForTicket(t) === id);
 
-  async function createTicket() {
+  async function createTicket(input: { orderId: string; type: TicketType }) {
     setErr(null);
     setOk(null);
     try {
@@ -121,56 +273,28 @@ export default function TicketsPage() {
         method: "POST",
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
         body: JSON.stringify({
-          order_id: orderId,
-          type: ticketType,
+          order_id: input.orderId,
+          type: input.type,
           notes: "Created from board",
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      setOrderId("");
       setOk("Ticket created.");
+      closeDrawer();
       await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error");
     }
   }
 
-  function openCreateDrawer() {
+  async function openCreateDrawer() {
+    const latestOrders = await refreshOrders();
     openDrawer("Create ticket", () => (
-      <div className="space-y-3 text-sm">
-        <div className="space-y-1">
-          <label className="text-xs text-[color:var(--color-text-muted)]">
-            Order ID
-          </label>
-          <Input
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-            placeholder="order-uuid"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-[color:var(--color-text-muted)]">
-            Type
-          </label>
-          <Select
-            value={ticketType}
-            onChange={(e) => setTicketType(e.target.value as TicketType)}
-          >
-            <option value="complaint">Complaint</option>
-            <option value="return">Return</option>
-            <option value="exchange">Exchange</option>
-          </Select>
-        </div>
-        <Button
-          type="button"
-          className="w-full"
-          disabled={!orderId.trim()}
-          onClick={() => void createTicket()}
-        >
-          Submit
-        </Button>
-      </div>
+      <CreateTicketForm
+        orders={latestOrders.length > 0 ? latestOrders : orders}
+        onCreate={createTicket}
+      />
     ));
   }
 
@@ -224,7 +348,7 @@ export default function TicketsPage() {
             Recently updated
             <ChevronDown className="size-4 opacity-70" />
           </Button>
-          <Button type="button" onClick={openCreateDrawer}>
+          <Button type="button" onClick={() => void openCreateDrawer()}>
             <Plus className="size-4" aria-hidden />
             Create Ticket
           </Button>

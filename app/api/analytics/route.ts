@@ -24,12 +24,7 @@ function profitFromRow(row: {
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:read");
-    if (ctx.role !== "admin" && ctx.role !== "moderator") {
-      const err = new Error("Forbidden");
-      (err as Error & { status: number }).status = 403;
-      throw err;
-    }
+    assertCan(ctx, "finance:view");
 
     const url = new URL(req.url);
     const from = url.searchParams.get("from") ?? "";

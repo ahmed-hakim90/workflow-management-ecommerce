@@ -3,6 +3,7 @@ import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
 import { jsonOk, jsonError } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
+import { normalizePermissionOverrides } from "@/lib/auth/rbac";
 import { createUser, listUsers, updateUser } from "@/lib/services/users.service";
 import type { UserRole } from "@/lib/types/models";
 
@@ -17,6 +18,7 @@ const createSchema = z.object({
     "warehouse",
     "support",
   ]),
+  permissions: z.array(z.string()).optional(),
   daily_target: z.number().nonnegative().optional(),
 });
 
@@ -33,13 +35,15 @@ const patchSchema = z.object({
       "support",
     ])
     .optional(),
+  permissions: z.array(z.string()).optional(),
   daily_target: z.number().nonnegative().optional(),
 });
 
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:read");
+    assertCan(ctx, "page:users");
+    assertCan(ctx, "user:read");
     const users = await listUsers(ctx.tenantId);
     return jsonOk(users);
   } catch (e) {
@@ -50,7 +54,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "user:manage");
     const json = await req.json();
     const body = createSchema.parse(json);
     const user = await createUser({
@@ -58,6 +62,7 @@ export async function POST(req: Request) {
       name: body.name,
       email: body.email,
       role: body.role as UserRole,
+      permissions: normalizePermissionOverrides(body.permissions),
       daily_target: body.daily_target,
       actorUserId: ctx.userId,
     });
@@ -70,7 +75,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:manage");
+    assertCan(ctx, "user:manage");
     const json = await req.json();
     const body = patchSchema.parse(json);
     const user = await updateUser({
@@ -78,6 +83,10 @@ export async function PATCH(req: Request) {
       targetUserId: body.targetUserId,
       name: body.name,
       role: body.role as UserRole | undefined,
+      permissions:
+        body.permissions !== undefined
+          ? normalizePermissionOverrides(body.permissions)
+          : undefined,
       daily_target: body.daily_target,
       actorUserId: ctx.userId,
     });

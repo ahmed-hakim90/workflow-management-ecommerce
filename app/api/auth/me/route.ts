@@ -21,6 +21,7 @@ export async function GET(req: Request) {
         name: user.name,
         email: user.email,
         role: user.role,
+        permissions: user.permissions ?? [],
         daily_target: user.daily_target,
       },
       tenant: tenant

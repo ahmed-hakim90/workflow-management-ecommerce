@@ -8,7 +8,7 @@ import { getUserStatsForToday } from "@/lib/services/analytics.service";
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant(req);
-    assertCan(ctx.role, "user:read");
+    assertCan(ctx, "user:read");
     const profile = await getUser(ctx.tenantId, ctx.userId);
     const target = profile?.daily_target ?? 0;
     const stats = await getUserStatsForToday(ctx.tenantId, ctx.userId);

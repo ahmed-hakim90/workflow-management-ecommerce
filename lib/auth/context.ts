@@ -9,6 +9,7 @@ export interface RequestContext {
   tenantId: string;
   userId: string;
   role: UserRole;
+  permissions: string[];
   /** True when verified via Firebase ID token or tenant `staffApiKey` */
   authenticated: boolean;
 }
@@ -60,6 +61,7 @@ export async function requireStaffContext(req: Request): Promise<RequestContext>
         tenantId: user.tenantId,
         userId: user.id,
         role: user.role,
+        permissions: user.permissions ?? [],
         authenticated: true,
       };
     } catch (e) {
@@ -83,6 +85,7 @@ export async function requireStaffContext(req: Request): Promise<RequestContext>
         tenantId: tenant.id,
         userId,
         role,
+        permissions: [],
         authenticated: true,
       };
     }
