@@ -30,6 +30,7 @@ const PAGE_SIZE = 10;
 const PAYMENTS: (PaymentStatus | "")[] = ["", "paid", "partial", "cod"];
 
 type QuickTab = "all" | "pending" | "shipped" | "cancelled";
+type DatePreset = "today" | "yesterday" | "custom";
 
 function initials(name: string) {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -50,13 +51,6 @@ function formatWhen(iso: string) {
   } catch {
     return iso;
   }
-}
-
-function inDateRange(iso: string, from: string, to: string) {
-  const t = new Date(iso).getTime();
-  const a = new Date(from + "T00:00:00").getTime();
-  const b = new Date(to + "T23:59:59").getTime();
-  return t >= a && t <= b;
 }
 
 function displayOrderId(order: Order) {
@@ -80,6 +74,7 @@ export default function OrdersPage() {
   const [payment, setPayment] = useState<PaymentStatus | "">("");
   const [page, setPage] = useState(0);
   const [quickTab, setQuickTab] = useState<QuickTab>("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("custom");
   const [fromDate, setFromDate] = useState(() => {
     const t = new Date();
     t.setDate(t.getDate() - 30);
@@ -98,7 +93,10 @@ export default function OrdersPage() {
       setLoading(true);
       setErr(null);
       try {
-        const res = await fetch(`/api/orders`, {
+        const params = new URLSearchParams();
+        if (fromDate) params.set("from", fromDate);
+        if (toDate) params.set("to", toDate);
+        const res = await fetch(`/api/orders?${params.toString()}`, {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
         });
         const json = await res.json();
@@ -113,7 +111,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+  }, [authReady, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -137,7 +135,6 @@ export default function OrdersPage() {
 
   const tabFiltered = useMemo(() => {
     return orders.filter((o) => {
-      if (!inDateRange(o.createdAt, fromDate, toDate)) return false;
       if (quickTab === "pending") return o.status === "pending_confirmation";
       if (quickTab === "shipped")
         return (
@@ -148,22 +145,19 @@ export default function OrdersPage() {
       if (quickTab === "cancelled") return o.status === "cancelled";
       return true;
     });
-  }, [orders, quickTab, fromDate, toDate]);
+  }, [orders, quickTab]);
 
   const counts = useMemo(() => {
-    const inRange = orders.filter((o) =>
-      inDateRange(o.createdAt, fromDate, toDate),
-    );
     return {
-      all: inRange.length,
-      pending: inRange.filter((o) => o.status === "pending_confirmation")
+      all: orders.length,
+      pending: orders.filter((o) => o.status === "pending_confirmation")
         .length,
-      shipped: inRange.filter((o) =>
+      shipped: orders.filter((o) =>
         ["shipped", "delivered", "follow_up"].includes(o.status),
       ).length,
-      cancelled: inRange.filter((o) => o.status === "cancelled").length,
+      cancelled: orders.filter((o) => o.status === "cancelled").length,
     };
-  }, [orders, fromDate, toDate]);
+  }, [orders]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -205,6 +199,7 @@ export default function OrdersPage() {
     setQ("");
     setPayment("");
     setQuickTab("all");
+    setDatePreset("custom");
     const t = new Date();
     const f = new Date();
     f.setDate(f.getDate() - 30);
@@ -264,19 +259,30 @@ export default function OrdersPage() {
       orders.filter(
         (o) =>
           o.status !== "cancelled" &&
-          o.status !== "delivered" &&
-          inDateRange(o.createdAt, fromDate, toDate),
+          o.status !== "delivered",
       ).length,
-    [orders, fromDate, toDate],
+    [orders],
   );
 
   const revenueMtd = useMemo(
     () =>
       orders
-        .filter((o) => inDateRange(o.createdAt, fromDate, toDate))
         .reduce((s, o) => s + (o.payment.total_amount ?? 0), 0),
-    [orders, fromDate, toDate],
+    [orders],
   );
+
+  function applyPreset(preset: DatePreset) {
+    setDatePreset(preset);
+    const today = new Date();
+    const target = new Date(today);
+    if (preset === "yesterday") target.setDate(today.getDate() - 1);
+    if (preset === "today" || preset === "yesterday") {
+      const value = target.toISOString().slice(0, 10);
+      setFromDate(value);
+      setToDate(value);
+    }
+    setPage(0);
+  }
 
   const pageNumbers = useMemo(() => {
     const windowSize = 5;
@@ -343,6 +349,7 @@ export default function OrdersPage() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => {
+                  setDatePreset("custom");
                   setFromDate(e.target.value);
                   setPage(0);
                 }}
@@ -356,6 +363,7 @@ export default function OrdersPage() {
                 type="date"
                 value={toDate}
                 onChange={(e) => {
+                  setDatePreset("custom");
                   setToDate(e.target.value);
                   setPage(0);
                 }}
@@ -408,6 +416,30 @@ export default function OrdersPage() {
         <div className="mt-4 flex flex-wrap gap-1 border-t border-[color:var(--color-divider)] pt-3">
           {(
             [
+              ["today", "Today"],
+              ["yesterday", "Yesterday"],
+              ["custom", "Custom range"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => applyPreset(id)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                datePreset === id
+                  ? "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)]"
+                  : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-1 border-t border-[color:var(--color-divider)] pt-3">
+          {(
+            [
               ["all", `All Orders (${counts.all})`],
               ["pending", `Pending (${counts.pending})`],
               ["shipped", `Shipped (${counts.shipped})`],
@@ -445,6 +477,7 @@ export default function OrdersPage() {
                 {canViewFinance ? <Th>Total</Th> : null}
                 <Th>Payment</Th>
                 <Th>Fulfillment</Th>
+                <Th>Bosta</Th>
                 <Th className="w-12">Actions</Th>
               </tr>
             </thead>
@@ -452,7 +485,7 @@ export default function OrdersPage() {
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <Tr key={i}>
-                    {Array.from({ length: canViewFinance ? 7 : 6 }).map((__, j) => (
+                    {Array.from({ length: canViewFinance ? 8 : 7 }).map((__, j) => (
                       <Td key={j}>
                         <Skeleton className="h-4 w-full max-w-[10rem]" />
                       </Td>
@@ -462,7 +495,7 @@ export default function OrdersPage() {
               ) : pageRows.length === 0 ? (
                 <Tr>
                   <Td
-                    colSpan={canViewFinance ? 7 : 6}
+                    colSpan={canViewFinance ? 8 : 7}
                     className="text-center text-[color:var(--color-text-muted)]"
                   >
                     No orders match your filters.
@@ -550,6 +583,18 @@ export default function OrdersPage() {
                     </Td>
                     <Td>
                       <OrderStatusBadge status={o.status} />
+                    </Td>
+                    <Td>
+                      <div className="space-y-1 text-xs">
+                        <div className="font-mono">
+                          {o.latestShipmentAwb ?? "—"}
+                        </div>
+                        <div className="text-[color:var(--color-text-muted)]">
+                          {o.latestShipmentCarrierTrackingStatus ??
+                            o.latestShipmentStatus ??
+                            "No policy"}
+                        </div>
+                      </div>
                     </Td>
                     <Td>
                       <Button
@@ -642,6 +687,16 @@ export default function OrdersPage() {
                     <div className="flex flex-wrap gap-2">
                       <OrderStatusBadge status={o.status} />
                       <PaymentBadge status={o.payment.payment_status} />
+                    </div>
+                    <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-2 text-xs text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                      Bosta:{" "}
+                      <span className="font-mono">
+                        {o.latestShipmentAwb ?? "—"}
+                      </span>{" "}
+                      ·{" "}
+                      {o.latestShipmentCarrierTrackingStatus ??
+                        o.latestShipmentStatus ??
+                        "No policy"}
                     </div>
                     <Button
                       type="button"

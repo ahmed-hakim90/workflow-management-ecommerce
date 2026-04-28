@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ChevronDown, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -79,11 +80,12 @@ function CreateTicketForm({
   onCreate,
 }: {
   orders: Order[];
-  onCreate: (input: { orderId: string; type: TicketType }) => Promise<void>;
+  onCreate: (input: { orderId: string; type: TicketType; notes: string }) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [ticketType, setTicketType] = useState<TicketType>("complaint");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -99,7 +101,7 @@ function CreateTicketForm({
     if (!selectedOrderId || submitting) return;
     setSubmitting(true);
     try {
-      await onCreate({ orderId: selectedOrderId, type: ticketType });
+      await onCreate({ orderId: selectedOrderId, type: ticketType, notes });
     } finally {
       setSubmitting(false);
     }
@@ -179,6 +181,17 @@ function CreateTicketForm({
           <option value="return">Return</option>
           <option value="exchange">Exchange</option>
         </Select>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-[color:var(--color-text-muted)]">
+          Customer says
+        </label>
+        <textarea
+          className="min-h-24 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 py-2 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="اكتب كلام العميل أو سبب التذكرة..."
+        />
       </div>
       <Button
         type="button"
@@ -265,7 +278,7 @@ export default function TicketsPage() {
   const byColumn = (id: ColumnId) =>
     visible.filter((t) => columnForTicket(t) === id);
 
-  async function createTicket(input: { orderId: string; type: TicketType }) {
+  async function createTicket(input: { orderId: string; type: TicketType; notes: string }) {
     setErr(null);
     setOk(null);
     try {
@@ -275,7 +288,7 @@ export default function TicketsPage() {
         body: JSON.stringify({
           order_id: input.orderId,
           type: input.type,
-          notes: "Created from board",
+          notes: input.notes.trim() || "Created from board",
         }),
       });
       const json = await res.json();
@@ -379,9 +392,12 @@ export default function TicketsPage() {
               <Card key={t.id} className="shadow-[var(--shadow-neo-raised-sm)]">
                 <CardContent className="space-y-2 p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-xs text-[color:var(--color-text-muted)]">
+                    <Link
+                      href={`/tickets/${t.id}`}
+                      className="font-mono text-xs text-[color:var(--color-primary)] hover:underline"
+                    >
                       #{t.id.slice(0, 8).toUpperCase()}
-                    </span>
+                    </Link>
                     <Badge
                       tone={
                         pr === "high"
@@ -395,7 +411,9 @@ export default function TicketsPage() {
                     </Badge>
                   </div>
                   <p className="text-sm font-semibold leading-snug">
-                    {t.notes?.slice(0, 80) || `Ticket for order ${t.order_id.slice(0, 8)}…`}
+                    <Link href={`/tickets/${t.id}`} className="hover:underline">
+                      {t.notes?.slice(0, 80) || `Ticket for order ${t.order_id.slice(0, 8)}…`}
+                    </Link>
                   </p>
                   <p className="text-xs text-[color:var(--color-text-muted)] line-clamp-2">
                     {t.type.replace("_", " ")} · Order{" "}

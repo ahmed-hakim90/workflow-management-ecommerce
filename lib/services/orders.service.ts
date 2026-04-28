@@ -51,7 +51,7 @@ function omitWooSnapshotForList(o: Order): Order {
 
 export async function listOrders(
   tenantId: string,
-  opts?: { status?: OrderStatus; assignedTo?: string },
+  opts?: { status?: OrderStatus; assignedTo?: string; from?: string; to?: string },
 ): Promise<Order[]> {
   if (isDevMockDataEnabled()) return mockListOrders(tenantId, opts);
   const db = getDb();
@@ -67,6 +67,14 @@ export async function listOrders(
   }
   if (opts?.assignedTo) {
     rows = rows.filter((o) => o.assigned_to === opts.assignedTo);
+  }
+  if (opts?.from) {
+    const fromTime = new Date(`${opts.from}T00:00:00.000Z`).getTime();
+    rows = rows.filter((o) => new Date(o.createdAt).getTime() >= fromTime);
+  }
+  if (opts?.to) {
+    const toTime = new Date(`${opts.to}T23:59:59.999Z`).getTime();
+    rows = rows.filter((o) => new Date(o.createdAt).getTime() <= toTime);
   }
   return rows.slice(0, 200).map(omitWooSnapshotForList);
 }
@@ -187,6 +195,7 @@ async function transition(
   to: OrderStatus,
   actorUserId: string,
   extra?: Partial<Order>,
+  activityMetadata?: Record<string, unknown>,
 ) {
   const db = getDb();
   const ref = db.collection(COLLECTIONS.orders).doc(orderId);
@@ -212,7 +221,7 @@ async function transition(
     entityType: "order",
     entityId: orderId,
     userId: actorUserId,
-    metadata: { from: prevStatus },
+    metadata: { from: prevStatus, ...(activityMetadata ?? {}) },
   });
 
   const automation = await getTenantAutomation(tenantId);
@@ -394,6 +403,7 @@ export async function cancelOrder(input: {
   tenantId: string;
   orderId: string;
   actorUserId: string;
+  reason: string;
 }) {
   if (isDevMockDataEnabled()) {
     const prev = mockGetOrder(input.tenantId, input.orderId);
@@ -414,6 +424,12 @@ export async function cancelOrder(input: {
     input.orderId,
     "cancelled",
     input.actorUserId,
+    {
+      cancelReason: input.reason,
+      cancelledAt: new Date().toISOString(),
+      cancelledByUserId: input.actorUserId,
+    },
+    { reason: input.reason },
   );
   return order;
 }

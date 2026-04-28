@@ -12,6 +12,12 @@ declare module "bosta" {
         receiver: Record<string, unknown>,
         notes: string,
       ): Promise<{ _id?: string; trackingNumber?: string }>;
+      trackDelivery?(
+        trackingNumber: string,
+      ): Promise<Record<string, unknown>>;
+      cancelDelivery?(
+        trackingNumberOrId: string,
+      ): Promise<Record<string, unknown>>;
     };
   }
   export default Bosta;

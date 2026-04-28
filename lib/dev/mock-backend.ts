@@ -24,6 +24,7 @@ import {
   type ShipmentStatus,
   type ShipmentType,
   type Ticket,
+  type TicketResolutionKind,
   type TicketStatus,
   type User,
   type UserRole,
@@ -385,7 +386,7 @@ export function resetDevMockBackend() {
 
 export function mockListOrders(
   tenantId: string,
-  opts?: { status?: OrderStatus; assignedTo?: string },
+  opts?: { status?: OrderStatus; assignedTo?: string; from?: string; to?: string },
 ): Order[] {
   const s = ctx();
   let rows = s.orders.filter((o) => o.tenantId === tenantId);
@@ -395,6 +396,14 @@ export function mockListOrders(
   if (opts?.status) rows = rows.filter((o) => o.status === opts.status);
   if (opts?.assignedTo) {
     rows = rows.filter((o) => o.assigned_to === opts.assignedTo);
+  }
+  if (opts?.from) {
+    const fromTime = new Date(`${opts.from}T00:00:00.000Z`).getTime();
+    rows = rows.filter((o) => new Date(o.createdAt).getTime() >= fromTime);
+  }
+  if (opts?.to) {
+    const toTime = new Date(`${opts.to}T23:59:59.999Z`).getTime();
+    rows = rows.filter((o) => new Date(o.createdAt).getTime() <= toTime);
   }
   return rows.slice(0, 200);
 }
@@ -464,8 +473,20 @@ export function mockListShipmentsForOrder(
   );
 }
 
-export function mockListShipmentsForTenant(tenantId: string): Shipment[] {
-  return ctx().shipments.filter((s) => s.tenantId === tenantId);
+export function mockListShipmentsForTenant(
+  tenantId: string,
+  opts?: { from?: string; to?: string },
+): Shipment[] {
+  let rows = ctx().shipments.filter((s) => s.tenantId === tenantId);
+  if (opts?.from) {
+    const fromTime = new Date(`${opts.from}T00:00:00.000Z`).getTime();
+    rows = rows.filter((s) => new Date(s.createdAt).getTime() >= fromTime);
+  }
+  if (opts?.to) {
+    const toTime = new Date(`${opts.to}T23:59:59.999Z`).getTime();
+    rows = rows.filter((s) => new Date(s.createdAt).getTime() <= toTime);
+  }
+  return rows;
 }
 
 export function mockGetKanbanSettings(
@@ -521,6 +542,7 @@ async function mockTransition(
   to: OrderStatus,
   actorUserId: string,
   extra?: Partial<Order>,
+  activityMetadata?: Record<string, unknown>,
 ) {
   const s = ctx();
   const idx = findOrderIndex(orderId);
@@ -538,7 +560,7 @@ async function mockTransition(
     entityType: "order",
     entityId: orderId,
     userId: actorUserId,
-    metadata: { from: prevStatus },
+    metadata: { from: prevStatus, ...(activityMetadata ?? {}) },
   });
   await mockMaybeAutoShipment(
     tenantId,
@@ -729,12 +751,19 @@ export async function mockCancelOrder(input: {
   tenantId: string;
   orderId: string;
   actorUserId: string;
+  reason: string;
 }) {
   const { order } = await mockTransition(
     input.tenantId,
     input.orderId,
     "cancelled",
     input.actorUserId,
+    {
+      cancelReason: input.reason,
+      cancelledAt: iso(),
+      cancelledByUserId: input.actorUserId,
+    },
+    { reason: input.reason },
   );
   return order;
 }
@@ -847,6 +876,8 @@ export async function mockCreateShipmentForOrder(input: {
     shipping_fees: shipFee,
     createdByUserId: input.actorUserId,
     createdByUserName: byName,
+    carrierTrackingStatus: "created",
+    trackingHistory: [{ at: now, status: "created" }],
     createdAt: now,
     updatedAt: now,
   };
@@ -875,6 +906,77 @@ export async function mockCreateShipmentForOrder(input: {
     });
   }
   return shipment;
+}
+
+export function mockSyncShipmentTracking(input: {
+  tenantId: string;
+  shipmentId: string;
+  actorUserId: string;
+}): Shipment {
+  const s = ctx();
+  const idx = s.shipments.findIndex((sh) => sh.id === input.shipmentId);
+  if (idx < 0) throw new Error("Shipment not found");
+  const shipment = s.shipments[idx];
+  if (shipment.tenantId !== input.tenantId) throw new Error("Shipment not found");
+  const now = iso();
+  const carrierTrackingStatus =
+    shipment.status === "cancelled" ? "cancelled" : "mock_in_transit";
+  const next: Shipment = {
+    ...shipment,
+    carrierTrackingStatus,
+    lastTrackingSyncAt: now,
+    trackingHistory: [
+      ...(shipment.trackingHistory ?? []),
+      { at: now, status: carrierTrackingStatus, details: "Demo tracking update" },
+    ].slice(-25),
+    updatedAt: now,
+  };
+  s.shipments[idx] = next;
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "shipment.tracking_synced",
+    entityType: "shipment",
+    entityId: input.shipmentId,
+    userId: input.actorUserId,
+    metadata: { awb: shipment.awb, carrierTrackingStatus },
+  });
+  return next;
+}
+
+export function mockCancelShipment(input: {
+  tenantId: string;
+  shipmentId: string;
+  actorUserId: string;
+}): Shipment {
+  const s = ctx();
+  const idx = s.shipments.findIndex((sh) => sh.id === input.shipmentId);
+  if (idx < 0) throw new Error("Shipment not found");
+  const shipment = s.shipments[idx];
+  if (shipment.tenantId !== input.tenantId) throw new Error("Shipment not found");
+  const now = iso();
+  const next: Shipment = {
+    ...shipment,
+    status: "cancelled",
+    carrierTrackingStatus: "cancelled",
+    lastTrackingSyncAt: now,
+    cancelledAt: now,
+    cancelledByUserId: input.actorUserId,
+    trackingHistory: [
+      ...(shipment.trackingHistory ?? []),
+      { at: now, status: "cancelled", details: "Demo shipment cancelled" },
+    ].slice(-25),
+    updatedAt: now,
+  };
+  s.shipments[idx] = next;
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "shipment.cancelled",
+    entityType: "shipment",
+    entityId: input.shipmentId,
+    userId: input.actorUserId,
+    metadata: { awb: shipment.awb, carrierTrackingStatus: "cancelled" },
+  });
+  return next;
 }
 
 export async function mockScanAwb(input: {
@@ -1136,13 +1238,22 @@ export function mockCreateTicket(input: {
   const s = ctx();
   const id = crypto.randomUUID();
   const now = iso();
+  const firstNote = input.notes?.trim()
+    ? {
+        id: crypto.randomUUID(),
+        body: input.notes.trim(),
+        userId: input.actorUserId,
+        createdAt: now,
+      }
+    : undefined;
   const ticket: Ticket = {
     id,
     tenantId: input.tenantId,
     order_id: input.order_id,
     type: input.type,
     status: "open",
-    notes: input.notes,
+    notes: firstNote?.body,
+    notesHistory: firstNote ? [firstNote] : [],
     shipmentIds: [],
     createdAt: now,
     updatedAt: now,
@@ -1173,6 +1284,51 @@ export function mockCreateTicket(input: {
     });
   }
   return ticket;
+}
+
+export function mockGetTicket(
+  tenantId: string,
+  ticketId: string,
+): Ticket | null {
+  const t = ctx().tickets.find((x) => x.id === ticketId);
+  if (!t || t.tenantId !== tenantId) return null;
+  return t;
+}
+
+export function mockAddTicketNote(input: {
+  tenantId: string;
+  ticketId: string;
+  body: string;
+  actorUserId: string;
+}): Ticket {
+  const s = ctx();
+  const idx = s.tickets.findIndex((t) => t.id === input.ticketId);
+  if (idx < 0) throw new Error("Ticket not found");
+  const t = s.tickets[idx];
+  if (t.tenantId !== input.tenantId) throw new Error("Ticket not found");
+  const now = iso();
+  const note = {
+    id: crypto.randomUUID(),
+    body: input.body,
+    userId: input.actorUserId,
+    createdAt: now,
+  };
+  const next: Ticket = {
+    ...t,
+    notes: t.notes ?? input.body,
+    notesHistory: [...(t.notesHistory ?? []), note],
+    updatedAt: now,
+  };
+  s.tickets[idx] = next;
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "ticket.note_added",
+    entityType: "ticket",
+    entityId: input.ticketId,
+    userId: input.actorUserId,
+    metadata: { noteId: note.id },
+  });
+  return next;
 }
 
 export function mockAssignTicket(input: {
@@ -1209,6 +1365,10 @@ export async function mockResolveTicket(input: {
   tenantId: string;
   ticketId: string;
   createExchangeShipment?: boolean;
+  createShipmentType?: "return" | "exchange";
+  resolutionKind?: TicketResolutionKind;
+  resolutionDetails?: string;
+  refundAmount?: number;
   actorUserId: string;
 }): Promise<Ticket> {
   const s = ctx();
@@ -1218,20 +1378,40 @@ export async function mockResolveTicket(input: {
   if (t.tenantId !== input.tenantId) throw new Error("Ticket not found");
 
   const shipmentIds = [...(t.shipmentIds ?? [])];
-  if (input.createExchangeShipment && t.type === "exchange") {
+  const shipmentType =
+    input.createShipmentType ??
+    (input.createExchangeShipment && t.type === "exchange" ? "exchange" : undefined);
+  let createdShipmentId: string | undefined;
+  if (shipmentType) {
     const sh = await mockCreateShipmentForOrder({
       tenantId: input.tenantId,
       orderId: t.order_id,
-      type: "exchange",
+      type: shipmentType,
       actorUserId: input.actorUserId,
     });
     shipmentIds.push(sh.id);
+    createdShipmentId = sh.id;
   }
 
   const now = iso();
+  const kind =
+    input.resolutionKind ??
+    (shipmentType === "return"
+      ? "return"
+      : shipmentType === "exchange"
+        ? "exchange"
+        : "resolved");
   const next: Ticket = {
     ...t,
     shipmentIds,
+    resolution: {
+      kind,
+      details: input.resolutionDetails,
+      refundAmount: input.refundAmount,
+      shipmentId: createdShipmentId,
+      resolvedByUserId: input.actorUserId,
+      resolvedAt: now,
+    },
     status: "resolved",
     updatedAt: now,
   };
@@ -1242,7 +1422,12 @@ export async function mockResolveTicket(input: {
     entityType: "ticket",
     entityId: input.ticketId,
     userId: input.actorUserId,
-    metadata: { createExchangeShipment: input.createExchangeShipment ?? false },
+    metadata: {
+      kind,
+      ...(createdShipmentId ? { shipmentId: createdShipmentId } : {}),
+      ...(input.refundAmount != null ? { refundAmount: input.refundAmount } : {}),
+      createExchangeShipment: input.createExchangeShipment ?? false,
+    },
   });
   return next;
 }

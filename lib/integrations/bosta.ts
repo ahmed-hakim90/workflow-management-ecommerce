@@ -23,10 +23,22 @@ type BostaClientConstructor = new (
       receiver: Record<string, unknown>,
       notes: string,
     ) => Promise<{ _id?: string; trackingNumber?: string }>;
+    trackDelivery?: (
+      trackingNumber: string,
+    ) => Promise<Record<string, unknown>>;
+    cancelDelivery?: (
+      trackingNumberOrId: string,
+    ) => Promise<Record<string, unknown>>;
   };
 };
 
 type BostaClient = InstanceType<BostaClientConstructor>;
+
+type BostaTrackingResult = {
+  status: string;
+  details?: string;
+  raw?: Record<string, unknown>;
+};
 
 let bostaConstructorPromise:
   | Promise<BostaClientConstructor | null>
@@ -177,4 +189,107 @@ export async function createBostaShipment(input: {
     (err as Error & { status?: number }).status = 502;
     throw err;
   }
+}
+
+function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function normalizeBostaTracking(raw: Record<string, unknown>): BostaTrackingResult {
+  const status =
+    pickString(raw, ["state", "status", "currentStatus", "trackingStatus"]) ??
+    "unknown";
+  const details =
+    pickString(raw, ["message", "description", "reason"]) ??
+    (typeof raw?.data === "object" && raw.data
+      ? pickString(raw.data as Record<string, unknown>, [
+          "state",
+          "status",
+          "currentStatus",
+          "trackingStatus",
+        ])
+      : undefined);
+  return { status, details, raw };
+}
+
+async function bostaHttpRequest(input: {
+  tenantId: string;
+  path: string;
+  method?: "GET" | "POST" | "PUT" | "PATCH";
+}): Promise<Record<string, unknown>> {
+  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey || !baseUrl) {
+    throw new Error("Bosta credentials are not configured");
+  }
+  const base = baseUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}${input.path}`, {
+    method: input.method ?? "GET",
+    headers: {
+      Authorization: apiKey,
+      "Content-Type": "application/json",
+    },
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    const message =
+      pickString(data, ["message", "error"]) ??
+      `Bosta request failed with ${res.status}`;
+    const err = new Error(`Bosta: ${message}`);
+    (err as Error & { status?: number }).status = 502;
+    throw err;
+  }
+  return data;
+}
+
+export async function trackBostaShipment(input: {
+  tenantId: string;
+  awb: string;
+}): Promise<BostaTrackingResult> {
+  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
+  const BostaConstructor = await loadBostaConstructor();
+  if (!apiKey || !BostaConstructor) {
+    return { status: "mock_in_transit", details: "Demo tracking update" };
+  }
+
+  const client = new BostaConstructor(apiKey, baseUrl);
+  if (typeof client.delivery.trackDelivery === "function") {
+    const raw = await client.delivery.trackDelivery(input.awb);
+    return normalizeBostaTracking(raw);
+  }
+
+  const raw = await bostaHttpRequest({
+    tenantId: input.tenantId,
+    path: `/deliveries/track/${encodeURIComponent(input.awb)}`,
+  });
+  return normalizeBostaTracking(raw);
+}
+
+export async function cancelBostaShipment(input: {
+  tenantId: string;
+  awb: string;
+  externalId?: string;
+}): Promise<BostaTrackingResult> {
+  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
+  const BostaConstructor = await loadBostaConstructor();
+  if (!apiKey || !BostaConstructor) {
+    return { status: "cancelled", details: "Demo shipment cancelled" };
+  }
+
+  const client = new BostaConstructor(apiKey, baseUrl);
+  const target = input.externalId ?? input.awb;
+  if (typeof client.delivery.cancelDelivery === "function") {
+    const raw = await client.delivery.cancelDelivery(target);
+    return normalizeBostaTracking({ ...raw, status: "cancelled" });
+  }
+
+  const raw = await bostaHttpRequest({
+    tenantId: input.tenantId,
+    path: `/deliveries/${encodeURIComponent(target)}/cancel`,
+    method: "POST",
+  });
+  return normalizeBostaTracking({ ...raw, status: "cancelled" });
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableWrap, Th, Tr, Td } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import type { Shipment, ShipmentStatus } from "@/lib/types/models";
 import { cn } from "@/lib/ui/cn";
@@ -34,35 +37,52 @@ export default function ShipmentsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState(() => {
+    const t = new Date();
+    t.setDate(t.getDate() - 30);
+    return t.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
 
-  useEffect(() => {
-    if (!authReady) return;
-    let cancelled = false;
-    (async () => {
+  async function refresh(cancelled?: () => boolean) {
       setLoading(true);
       setErr(null);
+      setOk(null);
       try {
-        const res = await fetch("/api/shipments", {
+        const params = new URLSearchParams();
+        if (fromDate) params.set("from", fromDate);
+        if (toDate) params.set("to", toDate);
+        const res = await fetch(`/api/shipments?${params.toString()}`, {
           headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? res.statusText);
         const rows = json.data as Shipment[];
-        if (!cancelled) {
+        if (!cancelled?.()) {
           setList(rows);
           setSelectedId((id) => id ?? rows[0]?.id ?? null);
         }
       } catch (e) {
-        if (!cancelled)
+        if (!cancelled?.())
           setErr(e instanceof Error ? e.message : "Failed to load shipments");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled?.()) setLoading(false);
       }
-    })();
+  }
+
+  useEffect(() => {
+    if (!authReady) return;
+    let cancelled = false;
+    void refresh(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
 
   const selected = useMemo(
     () => list.find((s) => s.id === selectedId) ?? null,
@@ -78,8 +98,33 @@ export default function ShipmentsPage() {
     if (selected.shippedAt) items.push({ label: "Handed to carrier", at: selected.shippedAt });
     if (selected.status === "delivered")
       items.push({ label: "Delivered", at: selected.updatedAt });
+    for (const ev of selected.trackingHistory ?? []) {
+      items.push({ label: `Carrier: ${ev.status}`, at: ev.at });
+    }
     return items;
   }, [selected]);
+
+  async function postShipmentAction(shipmentId: string, action: "sync" | "cancel") {
+    if (action === "cancel" && !window.confirm("Cancel this Bosta waybill?")) return;
+    setBusyId(shipmentId);
+    setErr(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/shipments/${shipmentId}/${action}`, {
+        method: "POST",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const updated = json.data as Shipment;
+      setList((rows) => rows.map((s) => (s.id === updated.id ? updated : s)));
+      setOk(action === "sync" ? "Tracking updated." : "Shipment cancelled.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Shipment action failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -93,6 +138,56 @@ export default function ShipmentsPage() {
           {err}
         </p>
       ) : null}
+      {ok ? (
+        <p className="rounded-xl bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
+          {ok}
+        </p>
+      ) : null}
+
+      <div className="rounded-2xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input
+            label="From"
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+          <Input
+            label="To"
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+          <div className="flex items-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                const today = new Date().toISOString().slice(0, 10);
+                setFromDate(today);
+                setToDate(today);
+              }}
+            >
+              Today
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 1);
+                const yesterday = d.toISOString().slice(0, 10);
+                setFromDate(yesterday);
+                setToDate(yesterday);
+              }}
+            >
+              Yesterday
+            </Button>
+          </div>
+        </div>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-12">
         <Card className="lg:col-span-5">
@@ -106,6 +201,7 @@ export default function ShipmentsPage() {
                   <Th>AWB / ID</Th>
                   <Th>Carrier</Th>
                   <Th>Status</Th>
+                  <Th>Bosta</Th>
                 </tr>
               </thead>
               <tbody>
@@ -125,7 +221,7 @@ export default function ShipmentsPage() {
                   ))
                 ) : list.length === 0 ? (
                   <Tr>
-                    <Td colSpan={3} className="text-center text-[color:var(--color-text-muted)]">
+                    <Td colSpan={4} className="text-center text-[color:var(--color-text-muted)]">
                       No shipments yet
                     </Td>
                   </Tr>
@@ -149,6 +245,9 @@ export default function ShipmentsPage() {
                       <Td>{carrierLabel(s)}</Td>
                       <Td className={cn("font-medium capitalize", statusStyle(s.status))}>
                         {s.status.replace("_", " ")}
+                      </Td>
+                      <Td className="text-xs">
+                        {s.carrierTrackingStatus ?? "—"}
                       </Td>
                     </Tr>
                   ))
@@ -184,7 +283,12 @@ export default function ShipmentsPage() {
                     </div>
                     <div>
                       <p className="text-xs text-[color:var(--color-text-muted)]">Order</p>
-                      <p className="font-mono text-xs break-all">{selected.order_id}</p>
+                      <Link
+                        href={`/orders/${selected.order_id}`}
+                        className="font-mono text-xs text-[color:var(--color-primary)] hover:underline"
+                      >
+                        {selected.order_id}
+                      </Link>
                     </div>
                     <div>
                       <p className="text-xs text-[color:var(--color-text-muted)]">Carrier</p>
@@ -199,6 +303,37 @@ export default function ShipmentsPage() {
                         })}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Bosta status</p>
+                      <p>{selected.carrierTrackingStatus ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Last sync</p>
+                      <p>
+                        {selected.lastTrackingSyncAt
+                          ? new Date(selected.lastTrackingSyncAt).toLocaleString("en-US")
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      loading={busyId === selected.id}
+                      onClick={() => postShipmentAction(selected.id, "sync")}
+                    >
+                      Refresh Bosta status
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      loading={busyId === selected.id}
+                      disabled={selected.status === "cancelled"}
+                      onClick={() => postShipmentAction(selected.id, "cancel")}
+                    >
+                      Cancel Bosta waybill
+                    </Button>
                   </div>
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">

@@ -7,10 +7,16 @@ import {
   mockListShipmentsForTenant,
   mockGetOrder,
   mockScanAwb,
+  mockSyncShipmentTracking,
+  mockCancelShipment,
 } from "@/lib/dev/mock-backend";
 import type { Order, Shipment, ShipmentStatus, ShipmentType } from "@/lib/types/models";
 import { assertWarehouseScanTransition } from "@/lib/logic/order-state-machine-warehouse";
-import { createBostaShipment } from "@/lib/integrations/bosta";
+import {
+  cancelBostaShipment,
+  createBostaShipment,
+  trackBostaShipment,
+} from "@/lib/integrations/bosta";
 import { logActivity } from "@/lib/services/activity.service";
 import {
   applyOrderStageRollupDelta,
@@ -47,14 +53,24 @@ export async function listShipmentsForOrder(
 
 export async function listShipmentsForTenant(
   tenantId: string,
+  opts?: { from?: string; to?: string },
 ): Promise<Shipment[]> {
-  if (isDevMockDataEnabled()) return mockListShipmentsForTenant(tenantId);
+  if (isDevMockDataEnabled()) return mockListShipmentsForTenant(tenantId, opts);
   const db = getDb();
   const q = await db
     .collection(COLLECTIONS.shipments)
     .where("tenantId", "==", tenantId)
     .get();
-  return q.docs.map((d) => d.data() as Shipment);
+  let rows = q.docs.map((d) => d.data() as Shipment);
+  if (opts?.from) {
+    const fromTime = new Date(`${opts.from}T00:00:00.000Z`).getTime();
+    rows = rows.filter((s) => new Date(s.createdAt).getTime() >= fromTime);
+  }
+  if (opts?.to) {
+    const toTime = new Date(`${opts.to}T23:59:59.999Z`).getTime();
+    rows = rows.filter((s) => new Date(s.createdAt).getTime() <= toTime);
+  }
+  return rows;
 }
 
 export async function createShipmentForOrder(input: {
@@ -96,6 +112,8 @@ export async function createShipmentForOrder(input: {
     shipping_fees,
     createdByUserId: input.actorUserId,
     createdByUserName,
+    carrierTrackingStatus: "created",
+    trackingHistory: [{ at: now, status: "created" }],
     createdAt: now,
     updatedAt: now,
   };
@@ -126,6 +144,95 @@ export async function createShipmentForOrder(input: {
   });
 
   return shipment;
+}
+
+export async function syncShipmentTracking(input: {
+  tenantId: string;
+  shipmentId: string;
+  actorUserId: string;
+}): Promise<Shipment> {
+  if (isDevMockDataEnabled()) return mockSyncShipmentTracking(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.shipments).doc(input.shipmentId);
+  const snap = await ref.get();
+  const shipment = snap.data() as Shipment | undefined;
+  if (!shipment || shipment.tenantId !== input.tenantId) {
+    throw new Error("Shipment not found");
+  }
+  const tracking = await trackBostaShipment({
+    tenantId: input.tenantId,
+    awb: shipment.awb,
+  });
+  const now = new Date().toISOString();
+  const event = {
+    at: now,
+    status: tracking.status,
+    ...(tracking.details ? { details: tracking.details } : {}),
+  };
+  const next: Shipment = {
+    ...shipment,
+    carrierTrackingStatus: tracking.status,
+    lastTrackingSyncAt: now,
+    trackingHistory: [...(shipment.trackingHistory ?? []), event].slice(-25),
+    updatedAt: now,
+  };
+  await ref.set(next);
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "shipment.tracking_synced",
+    entityType: "shipment",
+    entityId: input.shipmentId,
+    userId: input.actorUserId,
+    metadata: { awb: shipment.awb, carrierTrackingStatus: tracking.status },
+  });
+  return next;
+}
+
+export async function cancelShipment(input: {
+  tenantId: string;
+  shipmentId: string;
+  actorUserId: string;
+}): Promise<Shipment> {
+  if (isDevMockDataEnabled()) return mockCancelShipment(input);
+  const db = getDb();
+  const ref = db.collection(COLLECTIONS.shipments).doc(input.shipmentId);
+  const snap = await ref.get();
+  const shipment = snap.data() as Shipment | undefined;
+  if (!shipment || shipment.tenantId !== input.tenantId) {
+    throw new Error("Shipment not found");
+  }
+  if (shipment.status === "cancelled") return shipment;
+  const tracking = await cancelBostaShipment({
+    tenantId: input.tenantId,
+    awb: shipment.awb,
+    externalId: shipment.externalId,
+  });
+  const now = new Date().toISOString();
+  const event = {
+    at: now,
+    status: tracking.status,
+    ...(tracking.details ? { details: tracking.details } : {}),
+  };
+  const next: Shipment = {
+    ...shipment,
+    status: "cancelled",
+    carrierTrackingStatus: tracking.status,
+    lastTrackingSyncAt: now,
+    cancelledAt: now,
+    cancelledByUserId: input.actorUserId,
+    trackingHistory: [...(shipment.trackingHistory ?? []), event].slice(-25),
+    updatedAt: now,
+  };
+  await ref.set(next);
+  await logActivity({
+    tenantId: input.tenantId,
+    action: "shipment.cancelled",
+    entityType: "shipment",
+    entityId: input.shipmentId,
+    userId: input.actorUserId,
+    metadata: { awb: shipment.awb, carrierTrackingStatus: tracking.status },
+  });
+  return next;
 }
 
 function err400(msg: string) {

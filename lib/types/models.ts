@@ -80,9 +80,16 @@ export interface Order {
   invoice?: OrderInvoice;
   shipmentIds: string[];
   assigned_to?: string | null;
+  cancelReason?: string;
+  cancelledAt?: string;
+  cancelledByUserId?: string;
   wooCommerceOrderId?: string;
   /** Computed API field for opening the source order in WooCommerce admin. */
   wooCommerceOrderAdminUrl?: string;
+  /** Computed API fields from latest shipment for list views. */
+  latestShipmentAwb?: string;
+  latestShipmentCarrierTrackingStatus?: string;
+  latestShipmentStatus?: ShipmentStatus;
   /** Computed API fields from the latest `order.whatsapp_sent` activity. */
   whatsappSentAt?: string;
   whatsappSentByUserId?: string;
@@ -126,15 +133,49 @@ export interface Shipment {
   /** Staff who created the shipment (Bosta / policy). */
   createdByUserId?: string;
   createdByUserName?: string;
+  /** Carrier-facing label/status from Bosta tracking, separate from internal warehouse status. */
+  carrierTrackingStatus?: string;
+  lastTrackingSyncAt?: string;
+  trackingHistory?: ShipmentTrackingEvent[];
+  cancelledAt?: string;
+  cancelledByUserId?: string;
   packedAt?: string;
   shippedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface ShipmentTrackingEvent {
+  at: string;
+  status: string;
+  details?: string;
+}
+
 export type TicketType = "return" | "exchange" | "complaint";
 
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
+
+export interface TicketNote {
+  id: string;
+  body: string;
+  userId: string;
+  createdAt: string;
+}
+
+export type TicketResolutionKind =
+  | "resolved"
+  | "return"
+  | "exchange"
+  | "refund_without_shipment";
+
+export interface TicketResolution {
+  kind: TicketResolutionKind;
+  details?: string;
+  refundAmount?: number;
+  shipmentId?: string;
+  resolvedByUserId: string;
+  resolvedAt: string;
+}
 
 export interface Ticket {
   id: string;
@@ -144,6 +185,8 @@ export interface Ticket {
   status: TicketStatus;
   assigned_to?: string | null;
   notes?: string;
+  notesHistory?: TicketNote[];
+  resolution?: TicketResolution;
   shipmentIds: string[];
   createdAt: string;
   updatedAt: string;

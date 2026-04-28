@@ -28,6 +28,7 @@ import type {
   ActivityLog,
   Order,
   Shipment,
+  ShipmentType,
   User,
 } from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
@@ -263,13 +264,35 @@ export default function OrderDetailPage() {
   }
 
   async function onCancel() {
+    const reason = window.prompt("سبب إلغاء الطلب؟");
+    if (!reason?.trim()) return;
     if (!window.confirm("تأكيد إلغاء الطلب؟")) return;
     try {
-      await postJson("/api/orders/cancel", { orderId });
+      await postJson("/api/orders/cancel", { orderId, reason: reason.trim() });
       setMsg("تم إلغاء الطلب.");
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "فشل");
+    }
+  }
+
+  async function onCreateShipment() {
+    const raw = window.prompt(
+      "نوع البوليصة؟ اكتب delivery أو return أو exchange",
+      "delivery",
+    );
+    if (!raw) return;
+    const type = raw.trim().toLowerCase() as ShipmentType;
+    if (!["delivery", "return", "exchange"].includes(type)) {
+      setErr("نوع البوليصة غير صحيح.");
+      return;
+    }
+    try {
+      await postJson("/api/shipments/create", { orderId, type });
+      setMsg("تم إنشاء البوليصة.");
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "فشل إنشاء البوليصة");
     }
   }
 
@@ -455,6 +478,12 @@ export default function OrderDetailPage() {
                     إلغاء
                   </Button>
                 ) : null}
+                {can(permissionSubject, "shipment:create") &&
+                o.status !== "cancelled" ? (
+                  <Button type="button" variant="secondary" onClick={onCreateShipment}>
+                    إنشاء بوليصة
+                  </Button>
+                ) : null}
                 {can(permissionSubject, "order:invoice") &&
                 (o.status === "confirmed" || o.status === "invoicing") ? (
                   <Button type="button" variant="secondary" onClick={onInvoice}>
@@ -627,6 +656,14 @@ export default function OrderDetailPage() {
                     </span>
                   </DetailItem>
                 ) : null}
+                {o.cancelReason ? (
+                  <DetailItem label="سبب الإلغاء">
+                    <span className="block rounded-xl bg-[color:var(--color-error)]/10 p-3 text-[color:var(--color-error)]">
+                      {o.cancelReason}
+                      {o.cancelledAt ? ` · ${formatWhen(o.cancelledAt)}` : ""}
+                    </span>
+                  </DetailItem>
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -748,6 +785,7 @@ export default function OrderDetailPage() {
                           <Th>تتبع (رقم البوليصة / AWB)</Th>
                           <Th>النوع</Th>
                           <Th>الحالة</Th>
+                          <Th>حالة بوسطة</Th>
                           <Th>أنشأها</Th>
                         </tr>
                       </thead>
@@ -761,6 +799,7 @@ export default function OrderDetailPage() {
                                 {s.status}
                               </span>
                             </Td>
+                            <Td>{s.carrierTrackingStatus ?? "—"}</Td>
                             <Td>
                               {s.createdByUserName ?? "—"}
                               {s.createdByUserId ? (
@@ -804,6 +843,12 @@ export default function OrderDetailPage() {
                                     {s.status}
                                   </span>
                                 </div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-[color:var(--color-text-muted)]">
+                                  حالة بوسطة
+                                </div>
+                                <div>{s.carrierTrackingStatus ?? "—"}</div>
                               </div>
                             </div>
                             <div>

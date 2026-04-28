@@ -126,6 +126,8 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "order:read",
     "order:confirm",
     "order:assign",
+    "shipment:create",
+    "shipment:read",
   ],
   invoicing: [
     "page:orders",
