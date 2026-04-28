@@ -32,6 +32,7 @@ export async function POST(req: Request) {
   const env = getServerEnv();
   const url = new URL(req.url);
   const tenantKey = url.searchParams.get("tenant")?.trim() || "default";
+  const isDiagnostic = url.searchParams.get("diagnostic") === "1";
   const tenant = await resolveTenantByIdOrSlug(tenantKey);
   if (!tenant) {
     return jsonError("Unknown tenant in webhook URL", 404, { tenant: tenantKey });
@@ -133,6 +134,18 @@ export async function POST(req: Request) {
 
   try {
     const mapped = mapWooCommerceOrder(body);
+    if (isDiagnostic) {
+      await appendWebhookIngestLog({
+        tenantId,
+        source: "woocommerce",
+        deliveryId,
+        outcome: "diagnostic_200",
+        httpStatus: 200,
+        wooOrderId: mapped.wooOrderId,
+        requestBodyBytes,
+      });
+      return jsonOk({ diagnostic: true, wooOrderId: mapped.wooOrderId });
+    }
     const order = await upsertOrderFromWooCommerce({
       tenantId,
       wooOrderId: mapped.wooOrderId,

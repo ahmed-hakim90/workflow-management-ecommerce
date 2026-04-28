@@ -57,6 +57,13 @@ type OutboundWebhookDraft = {
   includeOrderSnapshot: boolean;
 };
 
+type WooWebhookSyncResult = {
+  topic: string;
+  action: "created" | "updated" | "already_active";
+  webhookId: number;
+  deliveryUrl: string;
+};
+
 type SectionId =
   | "profile"
   | "team"
@@ -188,6 +195,12 @@ export default function SettingsPage() {
   const [wooCsDraft, setWooCsDraft] = useState("");
   const [wooCkLast4, setWooCkLast4] = useState<string | null>(null);
   const [wooCsLast4, setWooCsLast4] = useState<string | null>(null);
+  const [wooWebhookSyncing, setWooWebhookSyncing] = useState(false);
+  const [wooWebhookTesting, setWooWebhookTesting] = useState(false);
+  const [wooWebhookSyncResults, setWooWebhookSyncResults] = useState<
+    WooWebhookSyncResult[]
+  >([]);
+  const [wooWebhookTestMsg, setWooWebhookTestMsg] = useState<string | null>(null);
 
   const [bostaCityDraft, setBostaCityDraft] = useState("");
   const [bostaZoneDraft, setBostaZoneDraft] = useState("");
@@ -513,6 +526,77 @@ export default function SettingsPage() {
       setWooMsg("WooCommerce REST keys removed.");
     } catch (e) {
       setWooErr(e instanceof Error ? e.message : "Remove failed");
+    }
+  }
+
+  async function refreshWooIngestLogs() {
+    const res = await fetch("/api/settings/webhook-ingest-logs?limit=50", {
+      headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+    });
+    const json = (await res.json()) as {
+      data?: WebhookIngestLog[];
+      error?: string;
+    };
+    if (!res.ok) throw new Error(json.error ?? "Could not load webhook log");
+    setWooIngestLogs(json.data ?? []);
+    setWooIngestLoadErr(null);
+  }
+
+  async function syncWooWebhooks() {
+    setWooMsg(null);
+    setWooErr(null);
+    setWooWebhookSyncResults([]);
+    setWooWebhookSyncing(true);
+    try {
+      const res = await fetch("/api/settings/woocommerce/webhooks/sync", {
+        method: "POST",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = (await res.json()) as {
+        data?: { results?: WooWebhookSyncResult[]; deliveryUrl?: string };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const results = json.data?.results ?? [];
+      setWooWebhookSyncResults(results);
+      setWooMsg(
+        results.length
+          ? `WooCommerce webhooks synced: ${results
+              .map((r) => `${r.topic} ${r.action}`)
+              .join(", ")}.`
+          : "WooCommerce webhooks sync completed.",
+      );
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Webhook sync failed");
+    } finally {
+      setWooWebhookSyncing(false);
+    }
+  }
+
+  async function sendWooDiagnosticWebhook() {
+    setWooErr(null);
+    setWooWebhookTestMsg(null);
+    setWooWebhookTesting(true);
+    try {
+      const res = await fetch("/api/settings/woocommerce/webhooks/test", {
+        method: "POST",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = (await res.json()) as {
+        data?: { deliveryId?: string; status?: number };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setWooWebhookTestMsg(
+        `Diagnostic webhook accepted (${json.data?.status ?? 200}); delivery ${
+          json.data?.deliveryId ?? "logged"
+        }.`,
+      );
+      await refreshWooIngestLogs();
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Diagnostic webhook failed");
+    } finally {
+      setWooWebhookTesting(false);
     }
   }
 
@@ -1435,8 +1519,43 @@ export default function SettingsPage() {
                             Remove REST keys
                           </Button>
                         ) : null}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={
+                            wooWebhookSyncing ||
+                            !wooRestConfigured ||
+                            !wooSecretConfigured
+                          }
+                          onClick={() => void syncWooWebhooks()}
+                        >
+                          {wooWebhookSyncing
+                            ? "Syncing webhooks…"
+                            : "Sync WooCommerce webhooks"}
+                        </Button>
                       </div>
                     </div>
+                    <p className="text-xs text-[color:var(--color-text-muted)]">
+                      Sync creates or reactivates WooCommerce order webhooks using
+                      this company&apos;s REST keys, delivery URL, and per-company
+                      secret.
+                    </p>
+                    {wooWebhookSyncResults.length ? (
+                      <ul className="space-y-1 rounded-lg border border-[color:var(--color-border)] p-3 text-xs">
+                        {wooWebhookSyncResults.map((r) => (
+                          <li
+                            key={`${r.topic}-${r.webhookId}`}
+                            className="flex flex-wrap items-center justify-between gap-2"
+                          >
+                            <span className="font-mono">{r.topic}</span>
+                            <span className="text-[color:var(--color-text-secondary)]">
+                              #{r.webhookId} {r.action}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
@@ -1574,6 +1693,31 @@ export default function SettingsPage() {
                       <strong>deployed</strong> server: set env vars in Vercel, not
                       only <code className="rounded bg-[color:var(--color-code-bg)] px-1 text-xs">.env.local</code>.
                     </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={wooWebhookTesting || !wooSecretConfigured}
+                        onClick={() => void sendWooDiagnosticWebhook()}
+                      >
+                        {wooWebhookTesting
+                          ? "Sending diagnostic…"
+                          : "Send diagnostic webhook"}
+                      </Button>
+                      <span className="text-xs text-[color:var(--color-text-muted)]">
+                        Uses this company&apos;s secret and logs{" "}
+                        <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                          diagnostic_200
+                        </code>{" "}
+                        without saving an order.
+                      </span>
+                    </div>
+                    {wooWebhookTestMsg ? (
+                      <p className="text-xs font-medium text-[color:var(--color-success)]">
+                        {wooWebhookTestMsg}
+                      </p>
+                    ) : null}
                     {wooDiagnostic ? (
                       <ul className="space-y-1.5 text-xs">
                         {[
