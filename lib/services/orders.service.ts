@@ -107,6 +107,25 @@ export async function listOrders(
   return rows.slice(0, 200).map(omitWooSnapshotForList);
 }
 
+export async function listRecentOrders(
+  tenantId: string,
+  limitCount = 10,
+): Promise<Order[]> {
+  const numericLimit = Number.isFinite(limitCount) ? limitCount : 10;
+  const safeLimit = Math.min(Math.max(Math.floor(numericLimit), 1), 20);
+  if (isDevMockDataEnabled()) {
+    return mockListOrders(tenantId).slice(0, safeLimit).map(omitWooSnapshotForList);
+  }
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.orders)
+    .where("tenantId", "==", tenantId)
+    .orderBy("updatedAt", "desc")
+    .limit(safeLimit)
+    .get();
+  return snap.docs.map((d) => omitWooSnapshotForList(d.data() as Order));
+}
+
 export async function getOrder(
   tenantId: string,
   orderId: string,

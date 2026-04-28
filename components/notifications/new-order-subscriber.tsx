@@ -56,7 +56,7 @@ function maybeDesktopNotify(o: Order) {
 
 /**
  * Watches for new orders via Firestore (if Firebase Auth is active) or
- * `GET /api/orders` polling, then chimes, shows in-app toasts, and (when permitted)
+ * lightweight recent-order polling, then chimes, shows in-app toasts, and (when permitted)
  * a system notification for background tabs.
  */
 export function NewOrderSubscriber() {
@@ -98,7 +98,7 @@ export function NewOrderSubscriber() {
       const tick = async () => {
         if (dead) return;
         try {
-          const res = await fetch("/api/orders", {
+          const res = await fetch("/api/orders/recent?limit=10", {
             headers: buildAuthHeaders({
               ...useSessionStore.getState(),
             }),
@@ -143,7 +143,7 @@ export function NewOrderSubscriber() {
         isFirebaseClientConfigured() && !!idToken?.trim() && !mock;
 
       if (!canFs) {
-        startPolling(8000);
+        startPolling(30000);
         return;
       }
 
@@ -166,7 +166,7 @@ export function NewOrderSubscriber() {
             pollT = undefined;
           }
         } else {
-          if (!pollT) startPolling(8000);
+          if (!pollT) startPolling(30000);
           return;
         }
         if (dead) return;
@@ -193,11 +193,11 @@ export function NewOrderSubscriber() {
             },
             () => {
               unsubFs = undefined;
-              if (!dead && !pollT) startPolling(8000);
+              if (!dead && !pollT) startPolling(30000);
             },
           );
         } catch {
-          if (!dead && !pollT) startPolling(8000);
+          if (!dead && !pollT) startPolling(30000);
         }
       });
     })();
