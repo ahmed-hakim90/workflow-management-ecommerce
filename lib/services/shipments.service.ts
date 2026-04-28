@@ -28,6 +28,15 @@ import { getUser } from "@/lib/services/users.service";
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 import { getWarehouseSettings } from "@/lib/services/tenant-settings.service";
 import { dispatchOrderStatusWebhooks } from "@/lib/services/outbound-webhooks.service";
+import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
+
+function latestShipmentOrderFields(shipment: Shipment) {
+  return omitUndefinedForFirestore({
+    latestShipmentAwb: shipment.awb,
+    latestShipmentCarrierTrackingStatus: shipment.carrierTrackingStatus,
+    latestShipmentStatus: shipment.status,
+  });
+}
 
 async function getOrder(tenantId: string, orderId: string): Promise<Order | null> {
   const db = getDb();
@@ -127,7 +136,11 @@ export async function createShipmentForOrder(input: {
     const osnap = await tx.get(oref);
     const current = osnap.data() as Order;
     const shipmentIds = [...(current.shipmentIds ?? []), id];
-    tx.update(oref, { shipmentIds, updatedAt: now });
+    tx.update(oref, {
+      shipmentIds,
+      ...latestShipmentOrderFields(shipment),
+      updatedAt: now,
+    });
     tx.set(db.collection(COLLECTIONS.shipments).doc(id), shipment);
   });
 
@@ -187,6 +200,10 @@ export async function syncShipmentTracking(input: {
     updatedAt: now,
   };
   await ref.set(next);
+  await db
+    .collection(COLLECTIONS.orders)
+    .doc(shipment.order_id)
+    .update({ ...latestShipmentOrderFields(next), updatedAt: now });
   await logActivity({
     tenantId: input.tenantId,
     action: "shipment.tracking_synced",
@@ -234,6 +251,10 @@ export async function cancelShipment(input: {
     updatedAt: now,
   };
   await ref.set(next);
+  await db
+    .collection(COLLECTIONS.orders)
+    .doc(shipment.order_id)
+    .update({ ...latestShipmentOrderFields(next), updatedAt: now });
   await logActivity({
     tenantId: input.tenantId,
     action: "shipment.cancelled",
@@ -341,7 +362,19 @@ export async function scanAwb(input: {
       );
     }
 
-    tx.update(oref, { status: newOrderStatus, updatedAt: now });
+    const nextShipment = {
+      ...shipment,
+      status: newShipmentStatus,
+      packedAt,
+      shippedAt,
+      updatedAt: now,
+    };
+
+    tx.update(oref, {
+      status: newOrderStatus,
+      ...latestShipmentOrderFields(nextShipment),
+      updatedAt: now,
+    });
     tx.update(shipRef, {
       status: newShipmentStatus,
       packedAt: packedAt ?? null,
@@ -352,13 +385,7 @@ export async function scanAwb(input: {
     return {
       prevOrderStatus: order.status,
       order: { ...order, status: newOrderStatus, updatedAt: now },
-      shipment: {
-        ...shipment,
-        status: newShipmentStatus,
-        packedAt,
-        shippedAt,
-        updatedAt: now,
-      },
+      shipment: nextShipment,
     };
   });
 

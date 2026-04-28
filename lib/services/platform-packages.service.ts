@@ -9,7 +9,7 @@ import {
   mockListPlatformPackages,
   mockUpdatePlatformPackage,
 } from "@/lib/dev/mock-backend";
-import { listOrders } from "@/lib/services/orders.service";
+import { countOrders } from "@/lib/services/orders.service";
 import { listUsers } from "@/lib/services/users.service";
 import type {
   PlatformPackage,
@@ -246,8 +246,8 @@ export async function assertTenantCanIngestOrder(tenantId: string) {
   )
     .toISOString()
     .slice(0, 10);
-  const orders = await listOrders(tenantId, { from: monthStart });
-  if (orders.length >= maxOrders) {
+  const ordersThisMonth = await countOrders(tenantId, { from: monthStart });
+  if (ordersThisMonth >= maxOrders) {
     throw httpError(`Package monthly order limit reached (${maxOrders})`, 402);
   }
 }

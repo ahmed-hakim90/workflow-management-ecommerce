@@ -26,6 +26,9 @@ export async function GET(
     ]);
     const whatsapp = whatsappSends[bundle.order.id];
     const userNames = new Map(users.map((u) => [u.id, u.name]));
+    const latestShipment = [...bundle.shipments].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    )[bundle.shipments.length - 1];
     return jsonOk({
       ...bundle,
       order: {
@@ -40,6 +43,10 @@ export async function GET(
           ? userNames.get(whatsapp.sentByUserId)
           : undefined,
         whatsappSentPhone: whatsapp?.phone,
+        latestShipmentAwb: latestShipment?.awb,
+        latestShipmentCarrierTrackingStatus:
+          latestShipment?.carrierTrackingStatus,
+        latestShipmentStatus: latestShipment?.status,
       },
     });
   } catch (e) {

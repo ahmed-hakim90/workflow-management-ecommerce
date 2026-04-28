@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
 import {
   Download,
   ExternalLink,
@@ -25,6 +33,12 @@ import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
 import { cn } from "@/lib/ui/cn";
 import { OrdersViewSwitch } from "@/components/orders/orders-view-switch";
 import { can } from "@/lib/auth/rbac";
+import { COLLECTIONS } from "@/lib/db/collections";
+import {
+  getFirebaseClientAuth,
+  getFirebaseClientDb,
+  isFirebaseClientConfigured,
+} from "@/lib/firebase/client";
 
 const PAGE_SIZE = 10;
 const PAYMENTS: (PaymentStatus | "")[] = ["", "paid", "partial", "cod"];
@@ -57,6 +71,53 @@ function displayOrderId(order: Order) {
   return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
 }
 
+function statusesForQuickTab(tab: QuickTab) {
+  if (tab === "pending") return ["pending_confirmation"];
+  if (tab === "shipped") return ["shipped", "delivered", "follow_up"];
+  if (tab === "cancelled") return ["cancelled"];
+  return [];
+}
+
+function orderIsInsideDateRange(order: Order, fromDate: string, toDate: string) {
+  const createdTime = new Date(order.createdAt).getTime();
+  if (!Number.isFinite(createdTime)) return true;
+  if (fromDate) {
+    const fromTime = new Date(`${fromDate}T00:00:00.000Z`).getTime();
+    if (createdTime < fromTime) return false;
+  }
+  if (toDate) {
+    const toTime = new Date(`${toDate}T23:59:59.999Z`).getTime();
+    if (createdTime > toTime) return false;
+  }
+  return true;
+}
+
+function sortOrdersNewestFirst(rows: Order[]) {
+  return [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function upsertOrder(rows: Order[], order: Order) {
+  return sortOrdersNewestFirst([
+    order,
+    ...rows.filter((existing) => existing.id !== order.id),
+  ]);
+}
+
+async function fetchOrderForList(
+  orderId: string,
+  headers: Record<string, string>,
+) {
+  const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+    headers,
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    data?: { order?: Order };
+    error?: string;
+  };
+  if (!res.ok) throw new Error(json.error ?? res.statusText);
+  return json.data?.order ?? null;
+}
+
 export default function OrdersPage() {
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
@@ -73,6 +134,11 @@ export default function OrdersPage() {
   const [q, setQ] = useState("");
   const [payment, setPayment] = useState<PaymentStatus | "">("");
   const [page, setPage] = useState(0);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [pageInfo, setPageInfo] = useState<{
+    nextCursor: string | null;
+    hasMore: boolean;
+  }>({ nextCursor: null, hasMore: false });
   const [quickTab, setQuickTab] = useState<QuickTab>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("custom");
   const [fromDate, setFromDate] = useState(() => {
@@ -85,10 +151,101 @@ export default function OrdersPage() {
   );
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
   const canViewFinance = can({ role, permissions }, "finance:view");
+  const currentCursor = cursorStack[page] ?? null;
+
+  useEffect(() => {
+    setPage(0);
+    setCursorStack([null]);
+  }, [q, payment, quickTab, fromDate, toDate]);
 
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
+    let unsubAuth: (() => void) | undefined;
+    let unsubFs: (() => void) | undefined;
+    const headers = buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role });
+    const listenerSince = new Date().toISOString();
+    const activeStatuses = statusesForQuickTab(quickTab);
+
+    const orderMatchesCurrentFilters = (order: Order) => {
+      if (!orderIsInsideDateRange(order, fromDate, toDate)) return false;
+      if (activeStatuses.length > 0 && !activeStatuses.includes(order.status)) {
+        return false;
+      }
+      if (payment && order.payment.payment_status !== payment) return false;
+      const needle = q.trim().toLowerCase();
+      if (!needle) return true;
+      return [
+        order.id,
+        order.wooCommerceOrderId,
+        order.customer.phone,
+        order.customer.email,
+        order.customer.name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(needle);
+    };
+
+    const mergeChangedOrder = async (orderId: string, rawOrder?: Order) => {
+      if (rawOrder && !orderMatchesCurrentFilters(rawOrder)) {
+        setOrders((prev) => prev.filter((order) => order.id !== orderId));
+        return;
+      }
+      try {
+        const order = await fetchOrderForList(orderId, headers);
+        if (cancelled || !order) return;
+        setOrders((prev) =>
+          orderMatchesCurrentFilters(order)
+            ? upsertOrder(prev, order)
+            : prev.filter((existing) => existing.id !== order.id),
+        );
+      } catch {
+        /* Keep the current row; the next Firestore change can retry this one-order refresh. */
+      }
+    };
+
+    const startRealtimeUpdates = () => {
+      if (!idToken?.trim() || !isFirebaseClientConfigured()) return;
+      const auth = getFirebaseClientAuth();
+      const db = getFirebaseClientDb();
+      const qo = query(
+        collection(db, COLLECTIONS.orders),
+        where("tenantId", "==", tenantId),
+        where("updatedAt", ">", listenerSince),
+        orderBy("updatedAt", "desc"),
+      );
+
+      unsubAuth = onAuthStateChanged(auth, (user) => {
+        unsubFs?.();
+        unsubFs = undefined;
+        if (cancelled || !user) return;
+        try {
+          unsubFs = onSnapshot(qo, (snap) => {
+            if (cancelled) return;
+            for (const change of snap.docChanges()) {
+              if (change.type === "removed") {
+                setOrders((prev) =>
+                  prev.filter((order) => order.id !== change.doc.id),
+                );
+                continue;
+              }
+
+              const rawOrder = {
+                id: change.doc.id,
+                ...change.doc.data(),
+              } as Order;
+              if (rawOrder.tenantId !== tenantId) continue;
+              void mergeChangedOrder(rawOrder.id, rawOrder);
+            }
+          });
+        } catch {
+          /* Firestore listener unavailable; avoid falling back to repeated full-list fetches. */
+        }
+      });
+    };
+
     (async () => {
       setLoading(true);
       setErr(null);
@@ -96,12 +253,38 @@ export default function OrdersPage() {
         const params = new URLSearchParams();
         if (fromDate) params.set("from", fromDate);
         if (toDate) params.set("to", toDate);
+        if (activeStatuses.length > 0) params.set("status", activeStatuses.join(","));
+        if (payment) params.set("payment", payment);
+        if (q.trim()) params.set("q", q.trim());
+        if (currentCursor) params.set("cursor", currentCursor);
+        params.set("limit", String(PAGE_SIZE));
         const res = await fetch(`/api/orders?${params.toString()}`, {
-          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          headers,
         });
-        const json = await res.json();
+        const json = (await res.json()) as {
+          data?: {
+            orders?: Order[];
+            pageInfo?: { nextCursor: string | null; hasMore: boolean };
+          };
+          error?: string;
+        };
         if (!res.ok) throw new Error(json.error ?? res.statusText);
-        if (!cancelled) setOrders(json.data as Order[]);
+        if (!cancelled) {
+          const nextInfo = json.data?.pageInfo ?? {
+            nextCursor: null,
+            hasMore: false,
+          };
+          setOrders(json.data?.orders ?? []);
+          setPageInfo(nextInfo);
+          if (nextInfo.nextCursor) {
+            setCursorStack((prev) => {
+              const next = prev.slice(0, page + 1);
+              next[page + 1] = nextInfo.nextCursor;
+              return next;
+            });
+          }
+          startRealtimeUpdates();
+        }
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Error");
       } finally {
@@ -110,8 +293,24 @@ export default function OrdersPage() {
     })();
     return () => {
       cancelled = true;
+      unsubAuth?.();
+      unsubFs?.();
     };
-  }, [authReady, apiSecret, idToken, tenantId, userId, role, fromDate, toDate]);
+  }, [
+    authReady,
+    apiSecret,
+    idToken,
+    tenantId,
+    userId,
+    role,
+    fromDate,
+    toDate,
+    quickTab,
+    payment,
+    q,
+    page,
+    currentCursor,
+  ]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -133,20 +332,6 @@ export default function OrdersPage() {
     };
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
-  const tabFiltered = useMemo(() => {
-    return orders.filter((o) => {
-      if (quickTab === "pending") return o.status === "pending_confirmation";
-      if (quickTab === "shipped")
-        return (
-          o.status === "shipped" ||
-          o.status === "delivered" ||
-          o.status === "follow_up"
-        );
-      if (quickTab === "cancelled") return o.status === "cancelled";
-      return true;
-    });
-  }, [orders, quickTab]);
-
   const counts = useMemo(() => {
     return {
       all: orders.length,
@@ -159,41 +344,11 @@ export default function OrdersPage() {
     };
   }, [orders]);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return tabFiltered.filter((o) => {
-      if (payment && o.payment.payment_status !== payment) return false;
-      if (!needle) return true;
-      const id = o.id.toLowerCase();
-      const wooId = (o.wooCommerceOrderId ?? "").toLowerCase();
-      const phone = (o.customer.phone ?? "").toLowerCase();
-      const name = (o.customer.name ?? "").toLowerCase();
-      const email = (o.customer.email ?? "").toLowerCase();
-      return (
-        id.includes(needle) ||
-        wooId.includes(needle) ||
-        phone.includes(needle) ||
-        name.includes(needle) ||
-        email.includes(needle)
-      );
-    });
-  }, [tabFiltered, q, payment]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages - 1);
-  const pageRows = filtered.slice(
-    currentPage * PAGE_SIZE,
-    currentPage * PAGE_SIZE + PAGE_SIZE,
-  );
-  const showingFrom = filtered.length === 0 ? 0 : currentPage * PAGE_SIZE + 1;
-  const showingTo = Math.min(
-    (currentPage + 1) * PAGE_SIZE,
-    filtered.length,
-  );
-
-  useEffect(() => {
-    setPage((p) => Math.min(p, totalPages - 1));
-  }, [totalPages]);
+  const filtered = orders;
+  const currentPage = page;
+  const pageRows = orders;
+  const showingFrom = orders.length === 0 ? 0 : page * PAGE_SIZE + 1;
+  const showingTo = page * PAGE_SIZE + orders.length;
 
   function resetFilters() {
     setQ("");
@@ -283,18 +438,6 @@ export default function OrdersPage() {
     }
     setPage(0);
   }
-
-  const pageNumbers = useMemo(() => {
-    const windowSize = 5;
-    const start = Math.max(
-      0,
-      Math.min(currentPage - 2, totalPages - windowSize),
-    );
-    return Array.from(
-      { length: Math.min(windowSize, totalPages) },
-      (_, i) => start + i,
-    ).filter((n) => n < totalPages);
-  }, [currentPage, totalPages]);
 
   return (
     <div className="space-y-6">
@@ -718,7 +861,8 @@ export default function OrdersPage() {
 
       <div className="flex flex-col gap-3 text-sm text-[color:var(--color-text-secondary)] sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Showing {showingFrom} to {showingTo} of {filtered.length} entries
+          Showing {showingFrom} to {showingTo}
+          {pageInfo.hasMore ? " (more available)" : ""}
         </span>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -730,24 +874,17 @@ export default function OrdersPage() {
           >
             Previous
           </Button>
-          {pageNumbers.map((n) => (
-            <Button
-              key={n}
-              type="button"
-              variant={n === currentPage ? "primary" : "secondary"}
-              size="sm"
-              className="min-w-9 px-2"
-              onClick={() => setPage(n)}
-            >
-              {n + 1}
-            </Button>
-          ))}
+          <span className="rounded-xl bg-[color:var(--color-bg-subtle)] px-3 py-2 text-xs font-medium text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+            Page {currentPage + 1}
+          </span>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            disabled={currentPage >= totalPages - 1}
-            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={!pageInfo.hasMore}
+            onClick={() => {
+              if (pageInfo.hasMore) setPage((p) => p + 1);
+            }}
           >
             Next
           </Button>

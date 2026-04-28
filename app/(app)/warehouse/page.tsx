@@ -61,19 +61,19 @@ export default function WarehousePage() {
     if (!authReady) return;
     setLoadingList(true);
     try {
-      const res = await fetch("/api/orders", {
+      const params = new URLSearchParams({
+        status: "ready_for_warehouse,packed",
+        limit: "50",
+      });
+      const res = await fetch(`/api/orders?${params.toString()}`, {
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as {
+        data?: { orders?: Order[] };
+        error?: string;
+      };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      const all = json.data as Order[];
-      setOrders(
-        all.filter(
-          (o) =>
-            o.status === "ready_for_warehouse" ||
-            o.status === "packed",
-        ),
-      );
+      setOrders(json.data?.orders ?? []);
     } catch (e) {
       setMsg({
         type: "err",

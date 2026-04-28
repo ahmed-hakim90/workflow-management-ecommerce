@@ -83,12 +83,29 @@ export default function KanbanPage() {
       setErr(null);
       setLoading(true);
       try {
-        const res = await fetch("/api/orders", {
-          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? res.statusText);
-        if (!cancelled) setOrders(json.data as Order[]);
+        const headers = buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role });
+        const statuses = [
+          "pending_confirmation",
+          "confirmed",
+          "invoicing",
+          "ready_for_warehouse,packed",
+          "shipped,delivered,follow_up",
+        ];
+        const pages = await Promise.all(
+          statuses.map(async (status) => {
+            const params = new URLSearchParams({ status, limit: "25" });
+            const res = await fetch(`/api/orders?${params.toString()}`, {
+              headers,
+            });
+            const json = (await res.json()) as {
+              data?: { orders?: Order[] };
+              error?: string;
+            };
+            if (!res.ok) throw new Error(json.error ?? res.statusText);
+            return json.data?.orders ?? [];
+          }),
+        );
+        if (!cancelled) setOrders(pages.flat());
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Error");
       } finally {

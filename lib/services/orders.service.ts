@@ -1,6 +1,7 @@
+import { FieldPath } from "firebase-admin/firestore";
 import { getDb } from "@/lib/db/firebase-admin";
 import { COLLECTIONS } from "@/lib/db/collections";
-import type { Order, OrderStatus, Shipment } from "@/lib/types/models";
+import type { Order, OrderStatus, PaymentStatus, Shipment } from "@/lib/types/models";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockListOrders,
@@ -43,6 +44,33 @@ import {
 import { enqueueSyncOrderStatusToWooCommerce } from "@/lib/services/woocommerce-sync.service";
 import { buildPayment } from "@/lib/logic/payment";
 
+const DEFAULT_ORDER_PAGE_SIZE = 25;
+const MAX_ORDER_PAGE_SIZE = 50;
+
+type OrderCursor = {
+  createdAt: string;
+  id: string;
+};
+
+export type ListOrdersPageOptions = {
+  status?: OrderStatus | OrderStatus[];
+  payment?: PaymentStatus;
+  assignedTo?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+  limit?: number;
+  cursor?: string;
+};
+
+export type OrdersPageResult = {
+  data: Order[];
+  pageInfo: {
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+};
+
 /** List views should not load large Woo snapshot payloads. */
 function omitWooSnapshotForList(o: Order): Order {
   if (o.woocommerceOrderSnapshot === undefined) return o;
@@ -77,34 +105,262 @@ function paymentUpdateForConfirmation(
   };
 }
 
-export async function listOrders(
-  tenantId: string,
-  opts?: { status?: OrderStatus; assignedTo?: string; from?: string; to?: string },
-): Promise<Order[]> {
-  if (isDevMockDataEnabled()) return mockListOrders(tenantId, opts);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.orders)
-    .where("tenantId", "==", tenantId)
-    .orderBy("updatedAt", "desc")
-    .limit(500)
-    .get();
-  let rows = snap.docs.map((d) => d.data() as Order);
-  if (opts?.status) {
-    rows = rows.filter((o) => o.status === opts.status);
+function safeOrderPageSize(limit?: number) {
+  const numericLimit = Number.isFinite(limit ?? NaN)
+    ? Math.floor(limit as number)
+    : DEFAULT_ORDER_PAGE_SIZE;
+  return Math.min(Math.max(numericLimit, 1), MAX_ORDER_PAGE_SIZE);
+}
+
+function encodeOrderCursor(cursor: OrderCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeOrderCursor(cursor?: string): OrderCursor | null {
+  if (!cursor?.trim()) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as Partial<OrderCursor>;
+    if (typeof parsed.createdAt === "string" && typeof parsed.id === "string") {
+      return { createdAt: parsed.createdAt, id: parsed.id };
+    }
+  } catch {
+    return null;
   }
+  return null;
+}
+
+function dateStartIso(date: string) {
+  return `${date}T00:00:00.000Z`;
+}
+
+function dateEndIso(date: string) {
+  return `${date}T23:59:59.999Z`;
+}
+
+function orderMatchesPageFilters(order: Order, opts?: ListOrdersPageOptions) {
+  const statuses = Array.isArray(opts?.status)
+    ? opts.status.filter(Boolean)
+    : opts?.status
+      ? [opts.status]
+      : [];
+  if (statuses.length > 0 && !statuses.includes(order.status)) return false;
+  if (opts?.payment && order.payment.payment_status !== opts.payment) return false;
+  if (opts?.assignedTo && order.assigned_to !== opts.assignedTo) return false;
+  if (opts?.from && order.createdAt < dateStartIso(opts.from)) return false;
+  if (opts?.to && order.createdAt > dateEndIso(opts.to)) return false;
+  return true;
+}
+
+async function searchOrdersPage(
+  tenantId: string,
+  search: string,
+  opts: ListOrdersPageOptions | undefined,
+  limit: number,
+): Promise<OrdersPageResult> {
+  const needle = search.trim();
+  if (!needle) return listOrdersPage(tenantId, { ...opts, search: undefined, limit });
+
+  if (isDevMockDataEnabled()) {
+    const n = needle.toLowerCase();
+    const rows = mockListOrders(tenantId)
+      .filter((order) => orderMatchesPageFilters(order, opts))
+      .filter((order) =>
+        [
+          order.id,
+          order.wooCommerceOrderId,
+          order.customer.phone,
+          order.customer.email,
+          order.customer.name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(n),
+      )
+      .slice(0, limit);
+    return {
+      data: rows.map(omitWooSnapshotForList),
+      pageInfo: { nextCursor: null, hasMore: false },
+    };
+  }
+
+  const db = getDb();
+  const found = new Map<string, Order>();
+  const direct = await db.collection(COLLECTIONS.orders).doc(needle).get();
+  const directOrder = direct.data() as Order | undefined;
+  if (directOrder?.tenantId === tenantId) {
+    found.set(direct.id, { ...directOrder, id: directOrder.id || direct.id });
+  }
+
+  const equalityQueries = [
+    ["wooCommerceOrderId", needle],
+    ["customer.phone", needle],
+    ["customer.email", needle],
+  ] as const;
+  await Promise.all(
+    equalityQueries.map(async ([field, value]) => {
+      const snap = await db
+        .collection(COLLECTIONS.orders)
+        .where("tenantId", "==", tenantId)
+        .where(field, "==", value)
+        .limit(limit)
+        .get();
+      for (const doc of snap.docs) {
+        const order = doc.data() as Order;
+        found.set(doc.id, { ...order, id: order.id || doc.id });
+      }
+    }),
+  );
+
+  const rows = [...found.values()]
+    .filter((order) => orderMatchesPageFilters(order, opts))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    .slice(0, limit);
+  return {
+    data: rows.map(omitWooSnapshotForList),
+    pageInfo: { nextCursor: null, hasMore: false },
+  };
+}
+
+export async function listOrdersPage(
+  tenantId: string,
+  opts?: ListOrdersPageOptions,
+): Promise<OrdersPageResult> {
+  const safeLimit = safeOrderPageSize(opts?.limit);
+  if (opts?.search?.trim()) {
+    return searchOrdersPage(tenantId, opts.search, opts, safeLimit);
+  }
+  const statuses = Array.isArray(opts?.status)
+    ? opts.status.filter(Boolean)
+    : opts?.status
+      ? [opts.status]
+      : [];
+
+  if (isDevMockDataEnabled()) {
+    const all = mockListOrders(tenantId, {
+      status: statuses.length === 1 ? statuses[0] : undefined,
+      assignedTo: opts?.assignedTo,
+      from: opts?.from,
+      to: opts?.to,
+    })
+      .filter((order) => statuses.length === 0 || statuses.includes(order.status))
+      .filter((order) => !opts?.payment || order.payment.payment_status === opts.payment)
+      .sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+      );
+    const cursor = decodeOrderCursor(opts?.cursor);
+    const startIndex = cursor
+      ? all.findIndex(
+          (order) => order.createdAt === cursor.createdAt && order.id === cursor.id,
+        ) + 1
+      : 0;
+    const rows = all.slice(Math.max(startIndex, 0), Math.max(startIndex, 0) + safeLimit + 1);
+    const page = rows.slice(0, safeLimit);
+    const last = page.at(-1);
+    return {
+      data: page.map(omitWooSnapshotForList),
+      pageInfo: {
+        hasMore: rows.length > safeLimit,
+        nextCursor:
+          rows.length > safeLimit && last
+            ? encodeOrderCursor({ createdAt: last.createdAt, id: last.id })
+            : null,
+      },
+    };
+  }
+
+  const db = getDb();
+  let q = db
+    .collection(COLLECTIONS.orders)
+    .where("tenantId", "==", tenantId);
+
+  if (statuses.length === 1) {
+    q = q.where("status", "==", statuses[0]);
+  } else if (statuses.length > 1) {
+    q = q.where("status", "in", statuses.slice(0, 10));
+  }
+
   if (opts?.assignedTo) {
-    rows = rows.filter((o) => o.assigned_to === opts.assignedTo);
+    q = q.where("assigned_to", "==", opts.assignedTo);
+  }
+  if (opts?.payment) {
+    q = q.where("payment.payment_status", "==", opts.payment);
   }
   if (opts?.from) {
-    const fromTime = new Date(`${opts.from}T00:00:00.000Z`).getTime();
-    rows = rows.filter((o) => new Date(o.createdAt).getTime() >= fromTime);
+    q = q.where("createdAt", ">=", dateStartIso(opts.from));
   }
   if (opts?.to) {
-    const toTime = new Date(`${opts.to}T23:59:59.999Z`).getTime();
-    rows = rows.filter((o) => new Date(o.createdAt).getTime() <= toTime);
+    q = q.where("createdAt", "<=", dateEndIso(opts.to));
   }
-  return rows.slice(0, 200).map(omitWooSnapshotForList);
+
+  q = q.orderBy("createdAt", "desc").orderBy(FieldPath.documentId(), "desc");
+
+  const cursor = decodeOrderCursor(opts?.cursor);
+  if (cursor) {
+    q = q.startAfter(cursor.createdAt, cursor.id);
+  }
+
+  const snap = await q.limit(safeLimit + 1).get();
+  const rows = snap.docs.map((d) => {
+    const data = d.data() as Order;
+    return omitWooSnapshotForList({ ...data, id: data.id || d.id });
+  });
+  const page = rows.slice(0, safeLimit);
+  const last = page.at(-1);
+  return {
+    data: page,
+    pageInfo: {
+      hasMore: rows.length > safeLimit,
+      nextCursor:
+        rows.length > safeLimit && last
+          ? encodeOrderCursor({ createdAt: last.createdAt, id: last.id })
+          : null,
+    },
+  };
+}
+
+export async function listOrders(
+  tenantId: string,
+  opts?: ListOrdersPageOptions,
+): Promise<Order[]> {
+  const page = await listOrdersPage(tenantId, {
+    ...opts,
+    limit: opts?.limit ?? MAX_ORDER_PAGE_SIZE,
+  });
+  return page.data;
+}
+
+export async function countOrders(
+  tenantId: string,
+  opts?: Pick<ListOrdersPageOptions, "status" | "payment" | "assignedTo" | "from" | "to">,
+): Promise<number> {
+  if (isDevMockDataEnabled()) {
+    return mockListOrders(tenantId, {
+      status: Array.isArray(opts?.status) ? undefined : opts?.status,
+      assignedTo: opts?.assignedTo,
+      from: opts?.from,
+      to: opts?.to,
+    })
+      .filter((order) => orderMatchesPageFilters(order, opts))
+      .length;
+  }
+  const statuses = Array.isArray(opts?.status)
+    ? opts.status.filter(Boolean)
+    : opts?.status
+      ? [opts.status]
+      : [];
+  const db = getDb();
+  let q = db.collection(COLLECTIONS.orders).where("tenantId", "==", tenantId);
+  if (statuses.length === 1) q = q.where("status", "==", statuses[0]);
+  else if (statuses.length > 1) q = q.where("status", "in", statuses.slice(0, 10));
+  if (opts?.payment) q = q.where("payment.payment_status", "==", opts.payment);
+  if (opts?.assignedTo) q = q.where("assigned_to", "==", opts.assignedTo);
+  if (opts?.from) q = q.where("createdAt", ">=", dateStartIso(opts.from));
+  if (opts?.to) q = q.where("createdAt", "<=", dateEndIso(opts.to));
+  const snap = await q.count().get();
+  return snap.data().count;
 }
 
 export async function listRecentOrders(
@@ -657,6 +913,12 @@ export async function revertOrderStage(input: {
           shippedAt: null,
           updatedAt: now,
         } as unknown as { status: string; packedAt: null; shippedAt: null; updatedAt: string });
+        tx.update(oref, {
+          latestShipmentAwb: sh.awb,
+          latestShipmentCarrierTrackingStatus: sh.carrierTrackingStatus ?? null,
+          latestShipmentStatus: "created",
+          updatedAt: now,
+        });
         break;
       }
     }

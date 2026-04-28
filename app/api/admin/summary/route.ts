@@ -3,7 +3,7 @@ import { assertCan, can } from "@/lib/auth/rbac";
 import { jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import { computeOrderOverdueAlerts } from "@/lib/logic/order-overdue-alerts";
-import { listOrders } from "@/lib/services/orders.service";
+import { listOrdersPage } from "@/lib/services/orders.service";
 import { getOrdersPerStage } from "@/lib/services/analytics.service";
 import { listUsers } from "@/lib/services/users.service";
 import { getUserStatsForToday } from "@/lib/services/analytics.service";
@@ -13,9 +13,18 @@ export async function GET(req: Request) {
     const ctx = await requireTenant(req);
     assertCan(ctx, "page:admin");
     assertCan(ctx, "user:read");
-    const [perStage, orders] = await Promise.all([
+    const [perStage, alertOrdersPage] = await Promise.all([
       getOrdersPerStage(ctx.tenantId),
-      listOrders(ctx.tenantId),
+      listOrdersPage(ctx.tenantId, {
+        status: [
+          "pending_confirmation",
+          "confirmed",
+          "invoicing",
+          "ready_for_warehouse",
+          "packed",
+        ],
+        limit: 50,
+      }),
     ]);
     const { stageValues: rawStageValues, ...stages } = perStage;
     const stageValues = can(ctx, "finance:view")
@@ -43,7 +52,7 @@ export async function GET(req: Request) {
     const bottleneck = Object.entries(stages)
       .filter(([k]) => k !== "warehouse")
       .sort((a, b) => b[1] - a[1])[0]?.[0];
-    const overdueAlerts = computeOrderOverdueAlerts(orders).slice(0, 25);
+    const overdueAlerts = computeOrderOverdueAlerts(alertOrdersPage.data).slice(0, 25);
     return jsonOk({ stages, stageValues, team, bottleneck, overdueAlerts });
   } catch (e) {
     return handleRouteError(e);

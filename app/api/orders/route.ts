@@ -3,19 +3,20 @@ import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
 import { jsonOk, jsonError } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
-import { listOrders } from "@/lib/services/orders.service";
-import { listLatestOrderWhatsAppSends } from "@/lib/services/order-contact.service";
+import { listOrdersPage } from "@/lib/services/orders.service";
 import { getTenantIntegrations } from "@/lib/services/tenant-settings.service";
-import { listUsers } from "@/lib/services/users.service";
 import { buildWooCommerceOrderAdminUrl } from "@/lib/integrations/woocommerce-rest";
-import type { OrderStatus } from "@/lib/types/models";
-import { listShipmentsForTenant } from "@/lib/services/shipments.service";
+import type { OrderStatus, PaymentStatus } from "@/lib/types/models";
 
 const querySchema = z.object({
   status: z.string().optional(),
+  payment: z.string().optional(),
   assignedTo: z.string().optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  q: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(50).optional(),
+  cursor: z.string().optional(),
 });
 
 export async function GET(req: Request) {
@@ -25,54 +26,36 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const q = querySchema.parse({
       status: url.searchParams.get("status") ?? undefined,
+      payment: url.searchParams.get("payment") ?? undefined,
       assignedTo: url.searchParams.get("assignedTo") ?? undefined,
       from: url.searchParams.get("from") ?? undefined,
       to: url.searchParams.get("to") ?? undefined,
+      q: url.searchParams.get("q") ?? undefined,
+      limit: url.searchParams.get("limit") ?? undefined,
+      cursor: url.searchParams.get("cursor") ?? undefined,
     });
-    const orders = await listOrders(ctx.tenantId, {
-      status: q.status as OrderStatus | undefined,
+    const { data: orders, pageInfo } = await listOrdersPage(ctx.tenantId, {
+      status: q.status?.split(",").filter(Boolean) as OrderStatus[] | undefined,
+      payment: q.payment as PaymentStatus | undefined,
       assignedTo: q.assignedTo,
       from: q.from,
       to: q.to,
+      search: q.q,
+      limit: q.limit,
+      cursor: q.cursor,
     });
-    const [integrations, whatsappSends, users, shipments] = await Promise.all([
-      getTenantIntegrations(ctx.tenantId),
-      listLatestOrderWhatsAppSends(
-        ctx.tenantId,
-        orders.map((order) => order.id),
-      ),
-      listUsers(ctx.tenantId),
-      listShipmentsForTenant(ctx.tenantId),
-    ]);
+    const integrations = await getTenantIntegrations(ctx.tenantId);
     const storeUrl = integrations.woocommerce?.storeUrl;
-    const userNames = new Map(users.map((u) => [u.id, u.name]));
-    const latestShipmentByOrder = new Map(
-      shipments
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((shipment) => [shipment.order_id, shipment]),
-    );
-    return jsonOk(
-      orders.map((order) => {
-        const latestShipment = latestShipmentByOrder.get(order.id);
-        return {
+    return jsonOk({
+      orders: orders.map((order) => ({
           ...order,
           wooCommerceOrderAdminUrl: buildWooCommerceOrderAdminUrl({
             storeUrl,
             wooOrderId: order.wooCommerceOrderId,
           }),
-          latestShipmentAwb: latestShipment?.awb,
-          latestShipmentCarrierTrackingStatus:
-            latestShipment?.carrierTrackingStatus,
-          latestShipmentStatus: latestShipment?.status,
-          whatsappSentAt: whatsappSends[order.id]?.sentAt,
-          whatsappSentByUserId: whatsappSends[order.id]?.sentByUserId,
-          whatsappSentByUserName: whatsappSends[order.id]?.sentByUserId
-            ? userNames.get(whatsappSends[order.id].sentByUserId)
-            : undefined,
-          whatsappSentPhone: whatsappSends[order.id]?.phone,
-        };
-      }),
-    );
+        })),
+      pageInfo,
+    });
   } catch (e) {
     return handleRouteError(e);
   }

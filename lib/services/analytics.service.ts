@@ -7,7 +7,6 @@ import { listOrders } from "@/lib/services/orders.service";
 import {
   getTenantOrderStageRollup,
   orderValueForStageRollup,
-  rebuildTenantOrderStageRollup,
 } from "@/lib/services/order-stage-rollup.service";
 import { DASHBOARD_ORDER_STAGE_KEYS } from "@/lib/logic/dashboard-order-stages";
 
@@ -72,11 +71,7 @@ export async function getOrdersPerStage(
     };
   }
 
-  let rollup = await getTenantOrderStageRollup(tenantId);
-  if (!rollup) {
-    await rebuildTenantOrderStageRollup(tenantId);
-    rollup = await getTenantOrderStageRollup(tenantId);
-  }
+  const rollup = await getTenantOrderStageRollup(tenantId);
 
   if (!rollup?.stages) {
     return ZERO_STAGE;

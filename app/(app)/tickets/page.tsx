@@ -242,14 +242,23 @@ export default function TicketsPage() {
     }
   }
 
+  useEffect(() => {
+    if (!authReady) return;
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+
   async function refreshOrders(): Promise<Order[]> {
     try {
-      const res = await fetch("/api/orders", {
+      const res = await fetch("/api/orders?limit=8", {
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as {
+        data?: { orders?: Order[] };
+        error?: string;
+      };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      const next = json.data as Order[];
+      const next = json.data?.orders ?? [];
       setOrders(next);
       return next;
     } catch {
@@ -257,13 +266,6 @@ export default function TicketsPage() {
       return [];
     }
   }
-
-  useEffect(() => {
-    if (!authReady) return;
-    void refresh();
-    void refreshOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   const ordersById = useMemo(
     () => new Map(orders.map((order) => [order.id, order])),

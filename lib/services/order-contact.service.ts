@@ -4,6 +4,8 @@ import { logActivity } from "@/lib/services/activity.service";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import { mockListActivities } from "@/lib/dev/mock-backend";
 import type { ActivityLog } from "@/lib/types/models";
+import { getUser } from "@/lib/services/users.service";
+import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
 
 export type OrderWhatsAppSummary = {
   sentAt: string;
@@ -18,6 +20,10 @@ export async function logOrderWhatsAppSent(input: {
   actorUserId: string;
   phone?: string;
 }) {
+  const now = new Date().toISOString();
+  const actor = isDevMockDataEnabled()
+    ? null
+    : await getUser(input.tenantId, input.actorUserId);
   await logActivity({
     tenantId: input.tenantId,
     action: "order.whatsapp_sent",
@@ -26,6 +32,20 @@ export async function logOrderWhatsAppSent(input: {
     userId: input.actorUserId,
     metadata: { phone: input.phone },
   });
+  if (!isDevMockDataEnabled()) {
+    await getDb()
+      .collection(COLLECTIONS.orders)
+      .doc(input.orderId)
+      .update(
+        omitUndefinedForFirestore({
+          whatsappSentAt: now,
+          whatsappSentByUserId: input.actorUserId,
+          whatsappSentByUserName: actor?.name,
+          whatsappSentPhone: input.phone,
+          updatedAt: now,
+        }),
+      );
+  }
 }
 
 function activityToWhatsAppSummary(a: ActivityLog): OrderWhatsAppSummary {
