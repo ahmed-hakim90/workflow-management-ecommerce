@@ -4,54 +4,11 @@ import {
   resolveBostaCredentials,
 } from "@/lib/services/tenant-settings.service";
 
-type BostaClientConstructor = new (
-  apiKey: string,
-  baseUrl?: string,
-) => {
-  deliveryTypes: {
-    SEND: { code: number };
-    RTO: { code: number };
-    EXCHANGE: { code: number };
-  };
-  delivery: {
-    createDelivery: (
-      type: number,
-      specs: Record<string, unknown>,
-      cod: number,
-      dropOffAddress: Record<string, unknown>,
-      businessReference: string,
-      receiver: Record<string, unknown>,
-      notes: string,
-    ) => Promise<{ _id?: string; trackingNumber?: string }>;
-    trackDelivery?: (
-      trackingNumber: string,
-    ) => Promise<Record<string, unknown>>;
-    cancelDelivery?: (
-      trackingNumberOrId: string,
-    ) => Promise<Record<string, unknown>>;
-  };
-};
-
-type BostaClient = InstanceType<BostaClientConstructor>;
-
 type BostaTrackingResult = {
   status: string;
   details?: string;
   raw?: Record<string, unknown>;
 };
-
-let bostaConstructorPromise:
-  | Promise<BostaClientConstructor | null>
-  | undefined;
-
-async function loadBostaConstructor(): Promise<BostaClientConstructor | null> {
-  if (!bostaConstructorPromise) {
-    bostaConstructorPromise = import("bosta")
-      .then((mod) => (mod.default ?? mod) as BostaClientConstructor)
-      .catch(() => null);
-  }
-  return bostaConstructorPromise;
-}
 
 function splitCustomerName(name: string): { firstName: string; lastName: string } {
   const t = name.trim() || "Customer";
@@ -68,15 +25,14 @@ function codAmountFromOrder(order: Order): number {
   return 0;
 }
 
-function bostaTypeForShipment(client: BostaClient, type: ShipmentType): number {
-  const t = client.deliveryTypes;
+function bostaTypeForShipment(type: ShipmentType): number {
   switch (type) {
     case "return":
-      return t.RTO.code;
+      return 25;
     case "exchange":
-      return t.EXCHANGE.code;
+      return 30;
     default:
-      return t.SEND.code;
+      return 10;
   }
 }
 
@@ -92,9 +48,8 @@ export async function createBostaShipment(input: {
   shippingFee?: number;
 }> {
   const fallbackFee = input.order.shipping?.cost ?? 0;
-  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
-  const BostaConstructor = await loadBostaConstructor();
-  if (!apiKey || !BostaConstructor) {
+  const { apiKey } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey) {
     return {
       awb: `MOCK-${input.shipmentId.slice(0, 8).toUpperCase()}`,
       provider: "mock",
@@ -128,8 +83,7 @@ export async function createBostaShipment(input: {
     `Order ${input.order.wooCommerceOrderId ?? input.shipmentId.slice(0, 8)}`
   ).slice(0, 200);
 
-  const client = new BostaConstructor(apiKey, baseUrl);
-  const typeCode = bostaTypeForShipment(client, input.type);
+  const typeCode = bostaTypeForShipment(input.type);
   const specs = {
     packageType: "Parcel",
     size: "SMALL",
@@ -164,15 +118,20 @@ export async function createBostaShipment(input: {
   const notes = (input.order.notes ?? "").slice(0, 500);
 
   try {
-    const created = await client.delivery.createDelivery(
-      typeCode,
-      specs,
-      cod,
-      dropOffAddress,
-      businessReference,
-      receiver,
-      notes,
-    );
+    const created = await bostaHttpRequest({
+      tenantId: input.tenantId,
+      path: "/deliveries",
+      method: "POST",
+      body: {
+        type: typeCode,
+        specs,
+        cod,
+        dropOffAddress,
+        businessReference,
+        receiver,
+        notes: notes || undefined,
+      },
+    });
     const trackingNumber = created?.trackingNumber;
     if (!trackingNumber) {
       throw new Error("Bosta response missing trackingNumber");
@@ -220,18 +179,22 @@ async function bostaHttpRequest(input: {
   tenantId: string;
   path: string;
   method?: "GET" | "POST" | "PUT" | "PATCH";
+  body?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
   if (!apiKey || !baseUrl) {
     throw new Error("Bosta credentials are not configured");
   }
   const base = baseUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}${input.path}`, {
+  const path = input.path.startsWith("/") ? input.path.slice(1) : input.path;
+  const res = await fetch(`${base}/api/v0/${path}`, {
     method: input.method ?? "GET",
     headers: {
       Authorization: apiKey,
       "Content-Type": "application/json",
+      "X-Requested-By": "oms",
     },
+    body: input.body ? JSON.stringify(input.body) : undefined,
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
@@ -249,21 +212,14 @@ export async function trackBostaShipment(input: {
   tenantId: string;
   awb: string;
 }): Promise<BostaTrackingResult> {
-  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
-  const BostaConstructor = await loadBostaConstructor();
-  if (!apiKey || !BostaConstructor) {
+  const { apiKey } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey) {
     return { status: "mock_in_transit", details: "Demo tracking update" };
-  }
-
-  const client = new BostaConstructor(apiKey, baseUrl);
-  if (typeof client.delivery.trackDelivery === "function") {
-    const raw = await client.delivery.trackDelivery(input.awb);
-    return normalizeBostaTracking(raw);
   }
 
   const raw = await bostaHttpRequest({
     tenantId: input.tenantId,
-    path: `/deliveries/track/${encodeURIComponent(input.awb)}`,
+    path: `/deliveries/${encodeURIComponent(input.awb)}/tracking`,
   });
   return normalizeBostaTracking(raw);
 }
@@ -273,19 +229,12 @@ export async function cancelBostaShipment(input: {
   awb: string;
   externalId?: string;
 }): Promise<BostaTrackingResult> {
-  const { apiKey, baseUrl } = await resolveBostaCredentials(input.tenantId);
-  const BostaConstructor = await loadBostaConstructor();
-  if (!apiKey || !BostaConstructor) {
+  const { apiKey } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey) {
     return { status: "cancelled", details: "Demo shipment cancelled" };
   }
 
-  const client = new BostaConstructor(apiKey, baseUrl);
   const target = input.externalId ?? input.awb;
-  if (typeof client.delivery.cancelDelivery === "function") {
-    const raw = await client.delivery.cancelDelivery(target);
-    return normalizeBostaTracking({ ...raw, status: "cancelled" });
-  }
-
   const raw = await bostaHttpRequest({
     tenantId: input.tenantId,
     path: `/deliveries/${encodeURIComponent(target)}/cancel`,
