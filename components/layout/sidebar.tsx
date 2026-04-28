@@ -25,6 +25,7 @@ import { useUiStore } from "@/store/zustand/ui-store";
 import { firebaseClientSignOut } from "@/lib/firebase/client-sign-out";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { canAccessPage, type PagePermission } from "@/lib/auth/rbac";
+import { useLocale } from "@/components/i18n/LocaleProvider";
 
 const navItems: {
   href: string;
@@ -79,6 +80,7 @@ export function Sidebar() {
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
   const permissions = useSessionStore((s) => s.permissions);
+  const { t } = useLocale();
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
   const sidebarTabletExpanded = useUiStore((s) => s.sidebarTabletExpanded);
@@ -102,7 +104,7 @@ export function Sidebar() {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
 
-  const userNameLine = displayName?.trim() || userId || "User";
+  const userNameLine = displayName?.trim() || userId || t("User");
   const userInitials =
     (userNameLine || "?")
       .split(/\s+/)
@@ -133,7 +135,7 @@ export function Sidebar() {
           (sidebarTabletExpanded ? "w-[var(--app-sidebar-w)]" : "w-[72px]"),
         !isMdUp && mobileNavOpen && "w-[min(288px,88vw)]",
       )}
-      aria-label="Main navigation"
+      aria-label={t("Main navigation")}
       id="app-sidebar-nav"
     >
       <div
@@ -190,7 +192,7 @@ export function Sidebar() {
           "flex flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain px-[var(--app-sidebar-pad)] pb-5 pt-1",
           isIconRail && "items-center gap-3 px-2",
         )}
-        aria-label="Primary"
+        aria-label={t("Primary")}
       >
         {primaryNav.map((item) => {
           const active = navActive(item.href, pathname);
@@ -199,7 +201,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              title={item.label}
+              title={t(item.label)}
               className={cn(
                 "flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-200",
                 isIconRail && "w-11 justify-center px-0",
@@ -211,7 +213,7 @@ export function Sidebar() {
             >
               <Icon className="size-4 shrink-0 opacity-90" aria-hidden />
               <span className={cn(!showNavLabels && "sr-only")}>
-                {item.label}
+                    {t(item.label)}
               </span>
             </Link>
           );
@@ -235,7 +237,7 @@ export function Sidebar() {
             )}
             aria-expanded={sidebarTabletExpanded}
             aria-label={
-              sidebarTabletExpanded ? "Collapse sidebar" : "Expand sidebar"
+              sidebarTabletExpanded ? t("Collapse sidebar") : t("Expand sidebar")
             }
           >
             {sidebarTabletExpanded ? (
@@ -263,14 +265,14 @@ export function Sidebar() {
                 {userNameLine}
               </p>
               <p className="truncate text-[11px] text-[color:var(--color-text-muted)]">
-                {ROLE_TITLE[role] ?? role}
+                {t(ROLE_TITLE[role] ?? role)}
               </p>
             </div>
           </div>
         ) : isIconRail ? (
           <div
             className="flex w-11 justify-center"
-            title={`${userNameLine} — ${ROLE_TITLE[role] ?? role}`}
+            title={`${userNameLine} - ${t(ROLE_TITLE[role] ?? role)}`}
           >
             <span
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-[11px] font-semibold text-[color:var(--color-primary)]"
@@ -286,10 +288,10 @@ export function Sidebar() {
             "flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[color:var(--color-text-secondary)] transition-all hover:shadow-[var(--shadow-neo-raised-sm)]",
             isIconRail && "w-11 justify-center px-0",
           )}
-          title="Support"
+          title={t("Support")}
         >
           <HelpCircle className="size-4 shrink-0" aria-hidden />
-          <span className={cn(!showNavLabels && "sr-only")}>Support</span>
+          <span className={cn(!showNavLabels && "sr-only")}>{t("Support")}</span>
         </a>
         <button
           type="button"
@@ -300,7 +302,7 @@ export function Sidebar() {
           )}
         >
           <LogOut className="size-4 shrink-0" aria-hidden />
-          <span className={cn(!showNavLabels && "sr-only")}>Sign out</span>
+          <span className={cn(!showNavLabels && "sr-only")}>{t("Sign out")}</span>
         </button>
       </div>
     </aside>

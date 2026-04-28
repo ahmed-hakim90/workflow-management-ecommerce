@@ -13,8 +13,18 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { syncSessionFromMe } from "@/lib/auth/client-session";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
+import { LocaleProvider, useLocale } from "@/components/i18n/LocaleProvider";
+import { DomTranslator } from "@/components/i18n/DomTranslator";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <LocaleProvider>
+      <LocalizedAppShell>{children}</LocalizedAppShell>
+    </LocaleProvider>
+  );
+}
+
+function LocalizedAppShell({ children }: { children: React.ReactNode }) {
   const [sessionReady, setSessionReady] = useState(false);
   const authReady = useSessionStore((s) => s.authReady);
   const idToken = useSessionStore((s) => s.idToken);
@@ -26,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hasCredentials =
     Boolean(idToken?.trim()) || Boolean(apiSecret?.trim());
   const tenantName = useSessionStore((s) => s.tenantName);
+  const { locale, dir, t } = useLocale();
 
   useEffect(() => {
     void Promise.resolve(useSessionStore.persist.rehydrate())
@@ -39,13 +50,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [ready, hasCredentials, tenantName]);
 
   return (
-    <div className="flex min-h-[100dvh] min-h-screen bg-[color:var(--color-shell)] text-[color:var(--color-text-primary)]">
+    <div
+      lang={locale}
+      dir={dir}
+      className="flex min-h-[100dvh] min-h-screen bg-[color:var(--color-shell)] text-[color:var(--color-text-primary)]"
+    >
+      <DomTranslator locale={locale} />
       <FirebaseSessionSync />
       {mobileNavOpen ? (
         <button
           type="button"
           className="fixed inset-0 z-30 bg-[color:var(--color-overlay)] backdrop-blur-[1px] md:hidden"
-          aria-label="Close menu"
+          aria-label={t("Close menu")}
           onClick={() => setMobileNavOpen(false)}
         />
       ) : null}

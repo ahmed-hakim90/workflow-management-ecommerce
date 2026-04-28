@@ -3,12 +3,14 @@ import { requireTenant } from "@/lib/auth/context";
 import { jsonOk, jsonError } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import { updateUser } from "@/lib/services/users.service";
+import { SUPPORTED_LOCALES } from "@/lib/i18n/config";
 
 export const runtime = "nodejs";
 
 const patchSchema = z.object({
   firstName: z.string().optional().default(""),
   lastName: z.string().optional().default(""),
+  language: z.enum(SUPPORTED_LOCALES).optional(),
 });
 
 /** Current user can update their own display name (no `user:manage` required). */
@@ -27,9 +29,10 @@ export async function PATCH(req: Request) {
       tenantId: ctx.tenantId,
       targetUserId: ctx.userId,
       name,
+      language: body.language,
       actorUserId: ctx.userId,
     });
-    return jsonOk({ name: user.name });
+    return jsonOk({ name: user.name, language: user.language ?? "en" });
   } catch (e) {
     return handleRouteError(e);
   }

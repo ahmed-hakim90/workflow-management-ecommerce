@@ -5,6 +5,8 @@ import type { UserRole } from "@/lib/types/models";
 import type { SessionState } from "@/store/zustand/session-store";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { useProfileStore } from "@/store/zustand/profile-store";
+import { normalizeLocale } from "@/lib/i18n/config";
+import { writeLocaleCookie } from "@/lib/i18n/client";
 
 /** Loads `GET /api/auth/me` and syncs the session plus first/last name in `useProfileStore` (no `GET` on `/api/auth/profile` needed). */
 export async function loadSessionFromIdToken(
@@ -22,6 +24,7 @@ export async function loadSessionFromIdToken(
         id: string;
         name?: string;
         email?: string;
+        language?: string;
         role: string;
         permissions?: string[];
       };
@@ -38,6 +41,7 @@ export async function loadSessionFromIdToken(
     u.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
     "";
   const tenantName = json.data.tenant?.name?.trim() ?? "";
+  const language = normalizeLocale(u.language);
   setSession({
     idToken,
     apiSecret: "",
@@ -49,7 +53,8 @@ export async function loadSessionFromIdToken(
     permissions: u.permissions ?? [],
   });
   const { firstName, lastName } = splitDisplayName(displayName);
-  useProfileStore.getState().setProfile({ firstName, lastName });
+  useProfileStore.getState().setProfile({ firstName, lastName, language });
+  writeLocaleCookie(language);
 }
 
 /**
@@ -67,15 +72,18 @@ export async function syncSessionFromMe(): Promise<void> {
   const json = (await res.json()) as {
     ok?: boolean;
     data?: {
-      user?: { tenantId: string; permissions?: string[] };
+      user?: { tenantId: string; permissions?: string[]; language?: string };
       tenant: { id: string; name: string; slug: string } | null;
     };
   };
   if (!res.ok || !json.data?.user) return;
   const tenantName = json.data.tenant?.name?.trim() ?? "";
+  const language = normalizeLocale(json.data.user.language);
   setSession({
     tenantName,
     tenantId: json.data.user.tenantId ?? tenantId,
     permissions: json.data.user.permissions ?? [],
   });
+  useProfileStore.getState().setProfile({ language });
+  writeLocaleCookie(language);
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/dev/mock-backend";
 import type { User, UserRole } from "@/lib/types/models";
 import { logActivity } from "@/lib/services/activity.service";
+import type { Locale } from "@/lib/i18n/config";
 
 export async function listUsers(tenantId: string): Promise<User[]> {
   if (isDevMockDataEnabled()) return mockListUsers(tenantId);
@@ -26,6 +27,7 @@ export async function createUser(input: {
   name: string;
   email?: string;
   firebaseUid?: string;
+  language?: Locale;
   role: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -39,6 +41,7 @@ export async function createUser(input: {
     id,
     tenantId: input.tenantId,
     name: input.name,
+    language: input.language ?? "en",
     role: input.role,
     permissions: input.permissions ?? [],
     daily_target: input.daily_target ?? 0,
@@ -89,6 +92,7 @@ export async function updateUser(input: {
   tenantId: string;
   targetUserId: string;
   name?: string;
+  language?: Locale;
   role?: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -106,6 +110,7 @@ export async function updateUser(input: {
   const next: User = {
     ...prev,
     name: input.name ?? prev.name,
+    language: input.language ?? prev.language ?? "en",
     role: input.role ?? prev.role,
     permissions:
       input.permissions !== undefined ? input.permissions : prev.permissions,

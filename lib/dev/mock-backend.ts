@@ -78,6 +78,7 @@ function createSeed(): MockState {
       tenantId: DEMO_TENANT,
       name: "مدير النظام",
       email: "admin@Store.local",
+      language: "en",
       role: "admin",
       permissions: [],
       daily_target: 25,
@@ -89,6 +90,7 @@ function createSeed(): MockState {
       tenantId: DEMO_TENANT,
       name: "فريق التأكيد",
       email: "confirm@Store.local",
+      language: "en",
       role: "confirmation",
       permissions: [],
       daily_target: 15,
@@ -100,6 +102,7 @@ function createSeed(): MockState {
       tenantId: DEMO_TENANT,
       name: "مخزن القاهرة",
       email: "wh@Store.local",
+      language: "en",
       role: "warehouse",
       permissions: [],
       daily_target: 40,
@@ -1239,6 +1242,7 @@ export function mockCreateUser(input: {
   name: string;
   email?: string;
   firebaseUid?: string;
+  language?: User["language"];
   role: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -1253,6 +1257,7 @@ export function mockCreateUser(input: {
     name: input.name,
     email: input.email,
     firebaseUid: input.firebaseUid,
+    language: input.language ?? "en",
     role: input.role,
     permissions: input.permissions ?? [],
     daily_target: input.daily_target ?? 0,
@@ -1281,6 +1286,7 @@ export function mockUpdateUser(input: {
   tenantId: string;
   targetUserId: string;
   name?: string;
+  language?: User["language"];
   role?: UserRole;
   permissions?: string[];
   daily_target?: number;
@@ -1295,6 +1301,7 @@ export function mockUpdateUser(input: {
   const next: User = {
     ...prev,
     name: input.name ?? prev.name,
+    language: input.language ?? prev.language ?? "en",
     role: input.role ?? prev.role,
     permissions:
       input.permissions !== undefined ? input.permissions : prev.permissions,

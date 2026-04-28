@@ -212,6 +212,7 @@ export interface User {
   email?: string;
   /** Set when the account signs in with Firebase Auth (onboarding / login). */
   firebaseUid?: string;
+  language?: "en" | "ar";
   role: UserRole;
   permissions: string[];
   daily_target: number;

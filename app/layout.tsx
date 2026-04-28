@@ -1,8 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ThemeScript } from "@/components/theme/theme-script";
+import {
+  getLocaleDirection,
+  LOCALE_COOKIE,
+  normalizeLocale,
+} from "@/lib/i18n/config";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -45,17 +51,24 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const locale = normalizeLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+  const dir = getLocaleDirection(locale);
+
   return (
-    <html lang="en" dir="ltr" suppressHydrationWarning>
+    <html lang={locale} dir={dir} suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
-      <body className={`${inter.variable} ${geistMono.variable} antialiased font-sans`}>
+      <body
+        className={`${inter.variable} ${geistMono.variable} antialiased font-sans`}
+        dir={dir}
+      >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

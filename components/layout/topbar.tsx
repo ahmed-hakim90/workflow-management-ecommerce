@@ -18,6 +18,8 @@ import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
 import { useOrderAlertsStore } from "@/store/zustand/order-alerts-store";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 
 export function Topbar() {
   const router = useRouter();
@@ -31,6 +33,7 @@ export function Topbar() {
   const authReady = useSessionStore((s) => s.authReady);
   const displayName = useSessionStore((s) => s.displayName);
   const tenantName = useSessionStore((s) => s.tenantName);
+  const { t } = useLocale();
   const [mockOn, setMockOn] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [managerAlertCount, setManagerAlertCount] = useState(0);
@@ -91,13 +94,13 @@ export function Topbar() {
 
   const searchPlaceholder = useMemo(() => {
     if (pathname.startsWith("/tickets")) {
-      return "Search tickets, IDs, or agents…";
+      return t("Search tickets, IDs, or agents…");
     }
     if (pathname.startsWith("/settings")) {
-      return "Search orders, tickets…";
+      return t("Search orders, tickets…");
     }
-    return "Search orders, customers, or items…";
-  }, [pathname]);
+    return t("Search orders, customers, or items…");
+  }, [pathname, t]);
 
   const bellCount = orderUnread + managerAlertCount;
 
@@ -115,7 +118,7 @@ export function Topbar() {
         )}
         aria-expanded={mobileNavOpen}
         aria-controls="app-sidebar-nav"
-        aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+        aria-label={mobileNavOpen ? t("Close menu") : t("Open menu")}
         onClick={() => setMobileNavOpen(!mobileNavOpen)}
       >
         <Menu className="size-5" aria-hidden />
@@ -126,7 +129,7 @@ export function Topbar() {
           className="hidden shrink-0 rounded-xl border-0 bg-[color:var(--color-dev-badge-bg)] px-2 py-1 text-[11px] font-medium text-[color:var(--color-dev-badge-text)] shadow-[var(--shadow-neo-raised-sm)] sm:inline"
           title="DEV_MOCK_DATA=true"
         >
-          Mock data
+          {t("Mock data")}
         </span>
       ) : null}
 
@@ -141,7 +144,7 @@ export function Topbar() {
             placeholder={searchPlaceholder}
             className="h-9 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] py-1.5 ps-9 pe-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none placeholder:text-[color:var(--color-text-secondary)] focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]"
             readOnly
-            aria-label="Search (coming soon)"
+            aria-label={t("Search (coming soon)")}
           />
         </div>
       ) : (
@@ -158,14 +161,14 @@ export function Topbar() {
                   placeholder={searchPlaceholder}
                   className="h-11 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] py-2 ps-9 pe-10 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none placeholder:text-[color:var(--color-text-secondary)] focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]"
                   readOnly
-                  aria-label="Search (coming soon)"
+                  aria-label={t("Search (coming soon)")}
                   autoFocus
                 />
               </div>
               <button
                 type="button"
                 className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-                aria-label="Close search"
+                aria-label={t("Close search")}
                 onClick={() => setSearchOpen(false)}
               >
                 <X className="size-5" aria-hidden />
@@ -175,7 +178,7 @@ export function Topbar() {
             <button
               type="button"
               className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-              aria-label="Search"
+              aria-label={t("Search")}
               onClick={() => setSearchOpen(true)}
             >
               <Search className="size-5" aria-hidden />
@@ -189,14 +192,14 @@ export function Topbar() {
           <button
             type="button"
             className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-            aria-label="Calendar (coming soon)"
+            aria-label={t("Calendar (coming soon)")}
           >
             <Calendar className="size-4" aria-hidden />
           </button>
           <button
             type="button"
             className="flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
-            aria-label="Filters (coming soon)"
+            aria-label={t("Filters (coming soon)")}
           >
             <Filter className="size-4" aria-hidden />
           </button>
@@ -207,8 +210,8 @@ export function Topbar() {
           className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
           aria-label={
             bellCount > 0
-              ? `Order notifications, ${bellCount} alerts`
-              : "Order notifications"
+              ? `${t("Order notifications")}, ${bellCount} ${t("alerts")}`
+              : t("Order notifications")
           }
           onClick={() => {
             markNotificationsSeen();
@@ -222,6 +225,7 @@ export function Topbar() {
             </span>
           ) : null}
         </button>
+        <LanguageToggle className="hidden md:inline-flex" />
         <ThemeToggle />
         <div className="flex max-w-[40vw] min-w-0 items-center gap-2 rounded-xl bg-[color:var(--color-card)] py-1.5 ps-2.5 pe-2 shadow-[var(--shadow-neo-raised-sm)] min-[400px]:max-w-none min-[400px]:px-2.5 min-[400px]:pe-3 sm:pe-3.5">
           <UserCircle2
@@ -235,10 +239,10 @@ export function Topbar() {
               </div>
             ) : null}
             <div className="truncate font-medium text-[color:var(--color-text-primary)]">
-              {displayName?.trim() || userId || "Guest"}
+              {displayName?.trim() || userId || t("Guest")}
             </div>
             <div className="hidden truncate text-[color:var(--color-text-secondary)] sm:block">
-              {role}
+              {t(role)}
             </div>
           </div>
         </div>

@@ -4,7 +4,6 @@ import {
   BarChart3,
   CheckCircle2,
   Clock3,
-  Globe,
   MapPin,
   MessageSquareText,
   Network,
@@ -18,6 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 
 const trustLogos = ["WooCommerce", "Bosta", "WhatsApp", "Firebase", "Analytics"] as const;
 
@@ -126,6 +126,7 @@ export default function LandingPage() {
             </Link>
           </nav>
           <div className="flex items-center gap-2">
+            <LanguageToggle refreshOnChange className="hidden sm:inline-flex" />
             <Link
               href="/login"
               className="hidden text-sm font-medium text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-primary)] sm:inline"
@@ -604,9 +605,7 @@ export default function LandingPage() {
             >
               <XIcon className="size-4" />
             </a>
-            <span className="rounded-lg p-2" title="Language" aria-hidden>
-              <Globe className="size-4" />
-            </span>
+            <LanguageToggle refreshOnChange className="shadow-none" />
           </div>
         </div>
       </footer>

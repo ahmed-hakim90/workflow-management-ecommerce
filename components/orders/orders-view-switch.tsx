@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutGrid, List } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
+import { useLocale } from "@/components/i18n/LocaleProvider";
 
 export function OrdersViewSwitch({ className }: { className?: string }) {
   const pathname = usePathname();
   const isBoard = pathname === "/orders/kanban";
+  const { t } = useLocale();
 
   return (
     <div
@@ -16,7 +18,7 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
         className,
       )}
       role="group"
-      aria-label="Orders view"
+      aria-label={t("Orders view")}
     >
       <Link
         href="/orders"
@@ -28,7 +30,7 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
         )}
       >
         <List className="size-4 shrink-0" aria-hidden />
-        List
+        {t("List")}
       </Link>
       <Link
         href="/orders/kanban"
@@ -40,7 +42,7 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
         )}
       >
         <LayoutGrid className="size-4 shrink-0" aria-hidden />
-        Board
+        {t("Board")}
       </Link>
     </div>
   );

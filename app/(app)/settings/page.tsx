@@ -26,6 +26,8 @@ import {
   type WebhookIngestLog,
 } from "@/lib/types/models";
 import { UsersManagement } from "@/components/users/users-management";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import type { Locale } from "@/lib/i18n/config";
 
 type AdvTabId =
   | "general"
@@ -97,6 +99,7 @@ export default function SettingsPage() {
   const setSession = useSessionStore((s) => s.setSession);
   const themePreference = useThemeStore((s) => s.themePreference);
   const setThemePreference = useThemeStore((s) => s.setThemePreference);
+  const { setLocale, t } = useLocale();
 
   const permissionSubject = useMemo(
     () => ({ role, permissions }),
@@ -258,22 +261,29 @@ export default function SettingsPage() {
         body: JSON.stringify({
           firstName: p.firstName,
           lastName: p.lastName,
+          language: p.language,
         }),
       });
-      const json = (await res.json()) as { error?: string; data?: { name?: string } };
+      const json = (await res.json()) as {
+        error?: string;
+        data?: { name?: string; language?: Locale };
+      };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       if (json.data?.name) {
         setSession({ displayName: json.data.name });
       }
-      setProfileMsg("Profile saved.");
+      const savedLanguage = json.data?.language ?? p.language;
+      setProfile({ language: savedLanguage });
+      setLocale(savedLanguage);
+      setProfileMsg(t("Profile saved."));
     } catch (e) {
       setProfileErr(
-        e instanceof Error ? e.message : "Could not save profile. Try again.",
+        e instanceof Error ? e.message : t("Could not save profile. Try again."),
       );
     } finally {
       setProfileSaving(false);
     }
-  }, [apiSecret, idToken, tenantId, userId, role, setSession]);
+  }, [apiSecret, idToken, tenantId, userId, role, setSession, setProfile, setLocale, t]);
 
   useEffect(() => {
     setAppOrigin(
@@ -1264,7 +1274,9 @@ export default function SettingsPage() {
                   <Select
                     label="Preferred language"
                     value={language}
-                    onChange={(e) => setProfile({ language: e.target.value })}
+                    onChange={(e) =>
+                      setLocale(e.target.value as Locale)
+                    }
                   >
                     <option value="en">English (US)</option>
                     <option value="ar">Arabic</option>

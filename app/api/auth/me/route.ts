@@ -20,6 +20,7 @@ export async function GET(req: Request) {
         tenantId: user.tenantId,
         name: user.name,
         email: user.email,
+        language: user.language ?? "en",
         role: user.role,
         permissions: user.permissions ?? [],
         daily_target: user.daily_target,
