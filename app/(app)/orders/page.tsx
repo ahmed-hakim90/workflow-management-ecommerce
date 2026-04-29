@@ -229,24 +229,40 @@ export default function OrdersPage() {
         unsubFs = undefined;
         if (cancelled || !user) return;
         try {
-          unsubFs = onSnapshot(qo, (snap) => {
-            if (cancelled) return;
-            for (const change of snap.docChanges()) {
-              if (change.type === "removed") {
-                setOrders((prev) =>
-                  prev.filter((order) => order.id !== change.doc.id),
-                );
-                continue;
-              }
+          unsubFs = onSnapshot(
+            qo,
+            (snap) => {
+              if (cancelled) return;
+              for (const change of snap.docChanges()) {
+                if (change.type === "removed") {
+                  setOrders((prev) =>
+                    prev.filter((order) => order.id !== change.doc.id),
+                  );
+                  continue;
+                }
 
-              const rawOrder = {
-                id: change.doc.id,
-                ...change.doc.data(),
-              } as Order;
-              if (rawOrder.tenantId !== tenantId) continue;
-              void mergeChangedOrder(rawOrder.id, rawOrder);
-            }
-          });
+                const rawOrder = {
+                  id: change.doc.id,
+                  ...change.doc.data(),
+                } as Order;
+                if (rawOrder.tenantId !== tenantId) continue;
+                void mergeChangedOrder(rawOrder.id, rawOrder);
+              }
+            },
+            (listenerErr) => {
+              const code =
+                listenerErr && typeof listenerErr === "object" && "code" in listenerErr
+                  ? String((listenerErr as { code?: string }).code)
+                  : "";
+              if (code === "permission-denied") {
+                console.warn(
+                  "[orders] Firestore realtime: permission-denied — allow authenticated reads on `orders` for this tenant in Firestore rules (e.g. match tenant via custom claims), or rely on API refresh only.",
+                );
+              } else {
+                console.warn("[orders] Firestore listener:", listenerErr);
+              }
+            },
+          );
         } catch {
           /* Firestore listener unavailable; avoid falling back to repeated full-list fetches. */
         }

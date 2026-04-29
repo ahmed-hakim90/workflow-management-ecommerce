@@ -101,22 +101,38 @@ export function NewOrderSubscriber() {
       const knownIds = new Set<string>();
       let isFirst = true;
       try {
-        unsubFs = onSnapshot(qo, (snap) => {
-          if (dead) return;
-          if (isFirst) {
-            snap.docs.forEach((d) => knownIds.add(d.id));
-            isFirst = false;
-            return;
-          }
-          for (const ch of snap.docChanges()) {
-            if (ch.type !== "added") continue;
-            const data = { id: ch.doc.id, ...ch.doc.data() } as Order;
-            if (!isOrderRecord(data)) continue;
-            if (knownIds.has(data.id)) continue;
-            knownIds.add(data.id);
-            handleNew(data);
-          }
-        });
+        unsubFs = onSnapshot(
+          qo,
+          (snap) => {
+            if (dead) return;
+            if (isFirst) {
+              snap.docs.forEach((d) => knownIds.add(d.id));
+              isFirst = false;
+              return;
+            }
+            for (const ch of snap.docChanges()) {
+              if (ch.type !== "added") continue;
+              const data = { id: ch.doc.id, ...ch.doc.data() } as Order;
+              if (!isOrderRecord(data)) continue;
+              if (knownIds.has(data.id)) continue;
+              knownIds.add(data.id);
+              handleNew(data);
+            }
+          },
+          (listenerErr) => {
+            const code =
+              listenerErr && typeof listenerErr === "object" && "code" in listenerErr
+                ? String((listenerErr as { code?: string }).code)
+                : "";
+            if (code === "permission-denied") {
+              console.warn(
+                "[new-order] Firestore: permission-denied — fix Firestore rules for `orders` or disable client listeners.",
+              );
+            } else {
+              console.warn("[new-order] Firestore listener:", listenerErr);
+            }
+          },
+        );
       } catch {
         /* Firestore listener unavailable; do not fall back to polling full order data. */
       }
