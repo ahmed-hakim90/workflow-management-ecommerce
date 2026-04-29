@@ -22,6 +22,17 @@ export async function listUsers(tenantId: string): Promise<User[]> {
   return q.docs.map((d) => d.data() as User);
 }
 
+export async function countUsers(tenantId: string): Promise<number> {
+  if (isDevMockDataEnabled()) return mockListUsers(tenantId).length;
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.users)
+    .where("tenantId", "==", tenantId)
+    .count()
+    .get();
+  return snap.data().count;
+}
+
 export async function createUser(input: {
   tenantId: string;
   name: string;

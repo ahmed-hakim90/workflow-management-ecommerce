@@ -40,6 +40,17 @@ export async function listTickets(
   return rows.slice(0, 200);
 }
 
+export async function countTickets(tenantId: string): Promise<number> {
+  if (isDevMockDataEnabled()) return mockListTickets(tenantId).length;
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.tickets)
+    .where("tenantId", "==", tenantId)
+    .count()
+    .get();
+  return snap.data().count;
+}
+
 export async function createTicket(input: {
   tenantId: string;
   order_id: string;

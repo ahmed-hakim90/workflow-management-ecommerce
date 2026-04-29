@@ -82,6 +82,17 @@ export async function listShipmentsForTenant(
   return rows;
 }
 
+export async function countShipmentsForTenant(tenantId: string): Promise<number> {
+  if (isDevMockDataEnabled()) return mockListShipmentsForTenant(tenantId).length;
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.shipments)
+    .where("tenantId", "==", tenantId)
+    .count()
+    .get();
+  return snap.data().count;
+}
+
 export async function createShipmentForOrder(input: {
   tenantId: string;
   orderId: string;

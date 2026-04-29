@@ -164,6 +164,49 @@ export async function getTenantIntegrations(
   return { ...(data?.integrations ?? {}) };
 }
 
+/**
+ * Single read of `tenantSettings/{tenantId}` for flows that need both integrations
+ * and automation (avoids duplicate document reads from `getTenantIntegrations` +
+ * `getTenantAutomation` in parallel).
+ */
+export async function getTenantIntegrationsAndAutomationBundled(
+  tenantId: string,
+): Promise<{
+  integrations: TenantIntegrationsDoc;
+  automation: TenantAutomationSettings;
+}> {
+  if (isDevMockDataEnabled()) {
+    const [integrations, automation] = await Promise.all([
+      mockGetTenantIntegrations(tenantId),
+      getTenantAutomation(tenantId),
+    ]);
+    return { integrations, automation };
+  }
+  const db = getDb();
+  const snap = await db
+    .collection(COLLECTIONS.tenantSettings)
+    .doc(tenantId)
+    .get();
+  const data = snap.data() as
+    | {
+        integrations?: TenantIntegrationsDoc;
+        automation?: TenantAutomationSettings;
+      }
+    | undefined;
+  const integrations = { ...(data?.integrations ?? {}) };
+  let automation: TenantAutomationSettings = {
+    ...defaultTenantAutomation,
+    ...(data?.automation ?? {}),
+  };
+  if (!automation.whatsappMessageTemplate?.trim()) {
+    const legacy = integrations.warehouse?.whatsappMessageTemplate?.trim();
+    if (legacy) {
+      automation = { ...automation, whatsappMessageTemplate: legacy };
+    }
+  }
+  return { integrations, automation };
+}
+
 /** Returns trimmed secret or null if unset. */
 export async function getTenantWooCommerceWebhookSecret(
   tenantId: string,

@@ -1,12 +1,9 @@
 import { listTenants, getTenant } from "@/lib/services/tenants.service";
-import { listOrders } from "@/lib/services/orders.service";
-import { listUsers } from "@/lib/services/users.service";
-import { listTickets } from "@/lib/services/tickets.service";
-import { listShipmentsForTenant } from "@/lib/services/shipments.service";
-import {
-  getTenantAutomation,
-  getTenantIntegrations,
-} from "@/lib/services/tenant-settings.service";
+import { countOrders } from "@/lib/services/orders.service";
+import { countUsers } from "@/lib/services/users.service";
+import { countTickets } from "@/lib/services/tickets.service";
+import { countShipmentsForTenant } from "@/lib/services/shipments.service";
+import { getTenantIntegrationsAndAutomationBundled } from "@/lib/services/tenant-settings.service";
 import { listRecentWebhookIngestLogs } from "@/lib/services/webhook-ingest-logs.service";
 import {
   effectivePackageFromEntitlements,
@@ -64,36 +61,28 @@ function healthFromLogs(logs: WebhookIngestLog[]): {
   return { healthy: lastLog.httpStatus >= 200 && lastLog.httpStatus < 300, lastLog };
 }
 
-export async function getPlatformTenantOverview(
-  tenantId: string,
+async function buildPlatformTenantOverview(
+  tenant: Tenant,
 ): Promise<PlatformTenantOverview> {
-  const tenant = await getTenant(tenantId);
-  if (!tenant) {
-    const e = new Error("Tenant not found") as Error & { status: number };
-    e.status = 404;
-    throw e;
-  }
-
   const [
-    integrations,
+    bundled,
     orders,
     users,
     tickets,
     shipments,
     webhookLogs,
     entitlements,
-    automation,
   ] = await Promise.all([
-    getTenantIntegrations(tenant.id),
-    listOrders(tenant.id),
-    listUsers(tenant.id),
-    listTickets(tenant.id),
-    listShipmentsForTenant(tenant.id),
+    getTenantIntegrationsAndAutomationBundled(tenant.id),
+    countOrders(tenant.id),
+    countUsers(tenant.id),
+    countTickets(tenant.id),
+    countShipmentsForTenant(tenant.id),
     listRecentWebhookIngestLogs(tenant.id, 10),
     getTenantEntitlements(tenant.id),
-    getTenantAutomation(tenant.id),
   ]);
 
+  const { integrations, automation } = bundled;
   const woo = integrations.woocommerce ?? {};
   const bosta = integrations.bosta ?? {};
   const storefront = integrations.storefrontOrders ?? {};
@@ -131,17 +120,29 @@ export async function getPlatformTenantOverview(
       },
     },
     counts: {
-      orders: orders.length,
-      users: users.length,
-      tickets: tickets.length,
-      shipments: shipments.length,
+      orders,
+      users,
+      tickets,
+      shipments,
     },
   };
+}
+
+export async function getPlatformTenantOverview(
+  tenantId: string,
+): Promise<PlatformTenantOverview> {
+  const tenant = await getTenant(tenantId);
+  if (!tenant) {
+    const e = new Error("Tenant not found") as Error & { status: number };
+    e.status = 404;
+    throw e;
+  }
+  return buildPlatformTenantOverview(tenant);
 }
 
 export async function listPlatformTenantOverviews(): Promise<
   PlatformTenantOverview[]
 > {
   const tenants = await listTenants();
-  return Promise.all(tenants.map((tenant) => getPlatformTenantOverview(tenant.id)));
+  return Promise.all(tenants.map((t) => buildPlatformTenantOverview(t)));
 }
