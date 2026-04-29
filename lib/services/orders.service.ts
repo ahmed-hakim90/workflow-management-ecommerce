@@ -404,6 +404,57 @@ export async function getOrderDetailBundle(
   return { order, shipments };
 }
 
+/**
+ * Previous / next order ids within the same lifecycle status, ordered like the
+ * orders list (newest first by createdAt, then document id).
+ * prevId = newer order (السابق), nextId = older order (التالي).
+ */
+export async function getOrderNeighborsSameStatus(
+  tenantId: string,
+  orderId: string,
+): Promise<{ prevId: string | null; nextId: string | null } | null> {
+  const order = await getOrder(tenantId, orderId);
+  if (!order) return null;
+  const id = order.id?.trim() || orderId;
+
+  if (isDevMockDataEnabled()) {
+    const rows = mockListOrders(tenantId)
+      .filter((o) => o.status === order.status)
+      .sort(
+        (a, b) =>
+          b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+      );
+    const i = rows.findIndex((o) => o.id === id);
+    if (i < 0) return null;
+    return {
+      prevId: i > 0 ? rows[i - 1]!.id : null,
+      nextId: i < rows.length - 1 ? rows[i + 1]!.id : null,
+    };
+  }
+
+  const db = getDb();
+  const base = db
+    .collection(COLLECTIONS.orders)
+    .where("tenantId", "==", tenantId)
+    .where("status", "==", order.status)
+    .orderBy("createdAt", "desc")
+    .orderBy(FieldPath.documentId(), "desc");
+
+  const curRef = db.collection(COLLECTIONS.orders).doc(id);
+  const curSnap = await curRef.get();
+  if (!curSnap.exists) return null;
+
+  const [newerSnap, olderSnap] = await Promise.all([
+    base.endBefore(curSnap).limit(1).get(),
+    base.startAfter(curSnap).limit(1).get(),
+  ]);
+
+  return {
+    prevId: newerSnap.empty ? null : newerSnap.docs[0]!.id,
+    nextId: olderSnap.empty ? null : olderSnap.docs[0]!.id,
+  };
+}
+
 export async function upsertOrderFromWooCommerce(input: {
   tenantId: string;
   wooOrderId: string;

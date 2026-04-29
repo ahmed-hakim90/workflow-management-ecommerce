@@ -11,6 +11,7 @@ import { NewOrderSubscriber } from "@/components/notifications/new-order-subscri
 import { NewOrderToasts } from "@/components/notifications/new-order-toasts";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { syncSessionFromMe } from "@/lib/auth/client-session";
+import { primeOrderNotificationAudio } from "@/lib/ui/order-notification-sound";
 import { useSessionStore } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
 import { LocaleProvider, useLocale } from "@/components/i18n/LocaleProvider";
@@ -42,6 +43,10 @@ function LocalizedAppShell({ children }: { children: React.ReactNode }) {
     void Promise.resolve(useSessionStore.persist.rehydrate())
       .then(() => setSessionReady(true))
       .catch(() => setSessionReady(true));
+  }, []);
+
+  useEffect(() => {
+    primeOrderNotificationAudio();
   }, []);
 
   useEffect(() => {

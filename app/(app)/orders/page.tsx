@@ -30,6 +30,13 @@ import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store
 import { useUiStore } from "@/store/zustand/ui-store";
 import type { Order, PaymentStatus } from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
+import {
+  arrangeOrdersByDuplicatePhoneClusters,
+  duplicatePhoneCounts,
+  duplicatePhoneGroupSize,
+  isDuplicateCustomerPhone,
+} from "@/lib/ui/order-phone-grouping";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/ui/cn";
 import { OrdersViewSwitch } from "@/components/orders/orders-view-switch";
 import { can } from "@/lib/auth/rbac";
@@ -344,9 +351,15 @@ export default function OrdersPage() {
     };
   }, [orders]);
 
+  const phoneDupCounts = useMemo(() => duplicatePhoneCounts(orders), [orders]);
+  const displayRows = useMemo(
+    () => arrangeOrdersByDuplicatePhoneClusters(orders),
+    [orders],
+  );
+
   const filtered = orders;
   const currentPage = page;
-  const pageRows = orders;
+  const pageRows = displayRows;
   const showingFrom = orders.length === 0 ? 0 : page * PAGE_SIZE + 1;
   const showingTo = page * PAGE_SIZE + orders.length;
 
@@ -364,7 +377,7 @@ export default function OrdersPage() {
   }
 
   function exportCsv() {
-    const rows = filtered.map((o) => ({
+    const rows = arrangeOrdersByDuplicatePhoneClusters(filtered).map((o) => ({
       id: o.id,
       status: o.status,
       customer: o.customer.name,
@@ -653,35 +666,40 @@ export default function OrdersPage() {
                     o.whatsappSentByUserName?.trim() ||
                     o.whatsappSentByUserId?.trim();
 
+                  const dupPhone = isDuplicateCustomerPhone(o, phoneDupCounts);
+                  const dupSize = duplicatePhoneGroupSize(o, phoneDupCounts);
+
                   return (
-                  <Tr key={o.id}>
+                  <Tr
+                    key={o.id}
+                    className={cn(
+                      dupPhone &&
+                        "border-l-2 border-[color:var(--color-info)] bg-[color:var(--color-info)]/[0.06]",
+                    )}
+                  >
                     <Td>
-                      <div className="space-y-1">
-                        {wooOrderId && wooOrderUrl ? (
+                      <div className="inline-flex flex-wrap items-center gap-1">
+                        <Link
+                          href={`/orders/${o.id}`}
+                          className="font-mono text-sm font-semibold text-[color:var(--color-primary)] hover:underline"
+                        >
+                          #{displayOrderId(o)}
+                        </Link>
+                        {wooOrderUrl ? (
                           <a
                             href={wooOrderUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[color:var(--color-primary)] hover:underline"
+                            className="inline-flex shrink-0 text-[color:var(--color-primary)] hover:text-[color:var(--color-text-primary)]"
+                            title="Open in WooCommerce"
+                            aria-label={
+                              wooOrderId
+                                ? `Open WooCommerce order ${wooOrderId}`
+                                : "Open in WooCommerce"
+                            }
                           >
-                            #{wooOrderId}
                             <ExternalLink className="size-3.5" aria-hidden />
                           </a>
-                        ) : (
-                          <Link
-                            href={`/orders/${o.id}`}
-                            className="font-mono text-sm font-medium text-[color:var(--color-primary)] hover:underline"
-                          >
-                            #{displayOrderId(o)}
-                          </Link>
-                        )}
-                        {wooOrderId && wooOrderUrl ? (
-                          <Link
-                            href={`/orders/${o.id}`}
-                            className="block text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] hover:underline"
-                          >
-                            OMS details
-                          </Link>
                         ) : null}
                       </div>
                     </Td>
@@ -691,8 +709,19 @@ export default function OrdersPage() {
                           {initials(o.customer.name)}
                         </span>
                         <div className="min-w-0">
-                          <div className="truncate font-medium">
-                            {o.customer.name}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="truncate font-medium">
+                              {o.customer.name}
+                            </div>
+                            {dupPhone ? (
+                              <Badge
+                                tone="info"
+                                className="shrink-0"
+                                title="نفس رقم التليفون في أكثر من طلب ضمن الصفحة الحالية"
+                              >
+                                نفس العميل · {dupSize} طلبات
+                              </Badge>
+                            ) : null}
                           </div>
                           <div className="truncate text-xs text-[color:var(--color-text-muted)]">
                             {o.customer.email ?? o.customer.phone ?? "—"}
@@ -775,42 +804,56 @@ export default function OrdersPage() {
                   o.whatsappSentByUserName?.trim() ||
                   o.whatsappSentByUserId?.trim();
 
+                const dupPhoneM = isDuplicateCustomerPhone(o, phoneDupCounts);
+                const dupSizeM = duplicatePhoneGroupSize(o, phoneDupCounts);
+
                 return (
-                <ResponsiveCard key={o.id}>
+                <ResponsiveCard
+                  key={o.id}
+                  className={cn(
+                    dupPhoneM &&
+                      "border-l-2 border-[color:var(--color-info)] bg-[color:var(--color-info)]/[0.06]",
+                  )}
+                >
                   <div className="space-y-3">
-                    <div className="space-y-1">
-                      {wooOrderId && wooOrderUrl ? (
+                    <div className="inline-flex flex-wrap items-center gap-1">
+                      <Link
+                        href={`/orders/${o.id}`}
+                        className="font-mono text-sm font-semibold text-[color:var(--color-primary)]"
+                      >
+                        #{displayOrderId(o)}
+                      </Link>
+                      {wooOrderUrl ? (
                         <a
                           href={wooOrderUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[color:var(--color-primary)]"
+                          className="inline-flex shrink-0 text-[color:var(--color-primary)]"
+                          title="Open in WooCommerce"
+                          aria-label={
+                            wooOrderId
+                              ? `Open WooCommerce order ${wooOrderId}`
+                              : "Open in WooCommerce"
+                          }
                         >
-                          #{wooOrderId}
                           <ExternalLink className="size-3.5" aria-hidden />
                         </a>
-                      ) : (
-                        <Link
-                          href={`/orders/${o.id}`}
-                          className="font-mono text-sm font-medium text-[color:var(--color-primary)]"
-                        >
-                          #{displayOrderId(o)}
-                        </Link>
-                      )}
-                      {wooOrderId && wooOrderUrl ? (
-                        <Link
-                          href={`/orders/${o.id}`}
-                          className="block text-xs text-[color:var(--color-text-muted)]"
-                        >
-                          OMS details
-                        </Link>
                       ) : null}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="flex size-9 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold shadow-[var(--shadow-neo-inset)]">
                         {initials(o.customer.name)}
                       </span>
-                      <div className="font-medium">{o.customer.name}</div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium">{o.customer.name}</div>
+                          {dupPhoneM ? (
+                            <Badge tone="info" className="shrink-0 text-[11px]">
+                              نفس العميل · {dupSizeM} طلبات
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                     {whatsappSentAt ? (
                       <div className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-success)]/12 px-2 py-1 text-xs font-medium text-[color:var(--color-success)]">

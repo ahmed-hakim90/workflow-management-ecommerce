@@ -32,11 +32,6 @@ import type {
   User,
 } from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
-import {
-  navNeighbors,
-  readOrderNav,
-  setOrderNav,
-} from "@/lib/ui/order-nav-storage";
 import { buildWhatsAppUrl } from "@/lib/ui/whatsapp";
 import { formatConfirmationWhatsAppMessage } from "@/lib/logic/confirmation-whatsapp";
 import { defaultTenantAutomation } from "@/lib/types/models";
@@ -156,7 +151,10 @@ export default function OrderDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [nav, setNav] = useState(() => readOrderNav());
+  const [statusNeighbors, setStatusNeighbors] = useState<{
+    prevId: string | null;
+    nextId: string | null;
+  }>({ prevId: null, nextId: null });
   const [whatsappTemplate, setWhatsappTemplate] = useState(
     defaultTenantAutomation.whatsappMessageTemplate!,
   );
@@ -175,15 +173,19 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     setErr(null);
     setLoading(true);
+    setStatusNeighbors({ prevId: null, nextId: null });
     try {
-      const [bRes, aRes, uRes, wRes] = await Promise.all([
-        fetch(`/api/orders/${orderId}`, { headers }),
+      const [bRes, aRes, uRes, wRes, nRes] = await Promise.all([
+        fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers }),
         fetch(
           `/api/activity?entityType=order&entityId=${encodeURIComponent(orderId)}&limit=80`,
           { headers },
         ),
         fetch("/api/users", { headers }),
         fetch("/api/settings/confirmation-whatsapp", { headers }),
+        fetch(`/api/orders/${encodeURIComponent(orderId)}/neighbors`, {
+          headers,
+        }),
       ]);
       const bJson = await bRes.json();
       const aJson = await aRes.json();
@@ -192,6 +194,16 @@ export default function OrderDetailPage() {
       if (!aRes.ok) throw new Error(aJson.error ?? aRes.statusText);
       if (!uRes.ok) throw new Error(uJson.error ?? uRes.statusText);
       setBundle(bJson.data as Bundle);
+      if (nRes.ok) {
+        const nJson = (await nRes.json()) as {
+          data?: { prevId: string | null; nextId: string | null };
+        };
+        setStatusNeighbors(
+          nJson.data ?? { prevId: null, nextId: null },
+        );
+      } else {
+        setStatusNeighbors({ prevId: null, nextId: null });
+      }
       setActivities(aJson.data as ActivityLog[]);
       setUsers(uJson.data as User[]);
       if (wRes.ok) {
@@ -218,6 +230,7 @@ export default function OrderDetailPage() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "خطأ");
       setBundle(null);
+      setStatusNeighbors({ prevId: null, nextId: null });
     } finally {
       setLoading(false);
     }
@@ -228,22 +241,9 @@ export default function OrderDetailPage() {
     void load();
   }, [authReady, load]);
 
-  useEffect(() => {
-    setNav(readOrderNav());
-  }, [orderId]);
-
-  const { prevId, nextId } = useMemo(() => {
-    if (!nav?.ids?.length) return { prevId: null, nextId: null };
-    const { prevId: p, nextId: n } = navNeighbors(orderId, nav.ids);
-    return { prevId: p, nextId: n };
-  }, [nav, orderId]);
+  const { prevId, nextId } = statusNeighbors;
 
   function goOrder(targetId: string) {
-    if (!nav?.ids?.length) {
-      router.push(`/orders/${targetId}`);
-      return;
-    }
-    setOrderNav(nav.ids, targetId);
     router.push(`/orders/${targetId}`);
   }
 
@@ -374,7 +374,13 @@ export default function OrderDetailPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      router.push("/orders");
+      const navigateTo =
+        statusNeighbors.nextId ?? statusNeighbors.prevId ?? null;
+      if (navigateTo) {
+        router.push(`/orders/${navigateTo}`);
+      } else {
+        router.push("/orders");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "فشل حذف الطلب");
     } finally {
