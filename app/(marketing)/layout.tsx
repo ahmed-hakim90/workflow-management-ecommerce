@@ -8,5 +8,14 @@ export default async function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="min-h-screen bg-[color:var(--color-bg)]">{children}</div>;
+  const cookieStore = await cookies();
+  const locale = normalizeLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+
+  return (
+    <LocaleProvider initialLocale={locale} preferInitialLocale>
+      <LocalizedDom>
+        <div className="min-h-screen bg-[color:var(--color-bg)]">{children}</div>
+      </LocalizedDom>
+    </LocaleProvider>
+  );
 }

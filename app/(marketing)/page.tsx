@@ -126,7 +126,7 @@ export default function LandingPage() {
             </Link>
           </nav>
           <div className="flex items-center gap-2">
-            <LanguageToggle refreshOnChange className="hidden sm:inline-flex" />
+            <LanguageToggle className="hidden sm:inline-flex" />
             <Link
               href="/login"
               className="hidden text-sm font-medium text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-primary)] sm:inline"
@@ -605,7 +605,7 @@ export default function LandingPage() {
             >
               <XIcon className="size-4" />
             </a>
-            <LanguageToggle refreshOnChange className="shadow-none" />
+            <LanguageToggle className="shadow-none" />
           </div>
         </div>
       </footer>

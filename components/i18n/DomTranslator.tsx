@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { translateLiteral } from "@/lib/i18n/dictionaries";
 
@@ -14,10 +15,20 @@ function translateTextNode(node: Text, locale: Locale) {
   const trimmed = original.trim();
   if (!trimmed) return;
   const translated = locale === "en" ? original : translateLiteral(locale, trimmed);
-  node.nodeValue =
-    translated === trimmed
-      ? original
-      : `${original.match(/^\s*/)?.[0] ?? ""}${translated}${original.match(/\s*$/)?.[0] ?? ""}`;
+  /**
+   * When locale is Arabic, `translateLiteral("ar", arabicText)` returns the same string if there is
+   * no English key — then `translated === trimmed`. The old code restored `original` (English from
+   * the WeakMap), which re-triggered `characterData` and caused an infinite EN↔AR loop / freeze.
+   * Only restore `original` when switching back to English (`locale === "en"`).
+   */
+  if (translated === trimmed) {
+    if (locale !== "en") {
+      return;
+    }
+    node.nodeValue = original;
+    return;
+  }
+  node.nodeValue = `${original.match(/^\s*/)?.[0] ?? ""}${translated}${original.match(/\s*$/)?.[0] ?? ""}`;
 }
 
 function translateElementAttributes(element: Element, locale: Locale) {
@@ -35,7 +46,24 @@ function translateElementAttributes(element: Element, locale: Locale) {
 
 function shouldSkipElement(element: Element) {
   const tag = element.tagName.toLowerCase();
-  return tag === "script" || tag === "style" || tag === "noscript" || element.hasAttribute("data-no-translate");
+  return (
+    tag === "script" ||
+    tag === "style" ||
+    tag === "noscript" ||
+    tag === "textarea" ||
+    element.hasAttribute("data-no-translate") ||
+    (element as HTMLElement).isContentEditable
+  );
+}
+
+/** Avoid translating text inside editable fields — conflicts with React controlled inputs and user typing. */
+function shouldSkipTextNode(textNode: Text): boolean {
+  let el: HTMLElement | null = textNode.parentElement;
+  while (el) {
+    if (shouldSkipElement(el)) return true;
+    el = el.parentElement;
+  }
+  return false;
 }
 
 function translateTree(root: ParentNode, locale: Locale) {
@@ -49,37 +77,31 @@ function translateTree(root: ParentNode, locale: Locale) {
         continue;
       }
       translateElementAttributes(element, locale);
-    } else if (node.nodeType === Node.TEXT_NODE && node.parentElement && !shouldSkipElement(node.parentElement)) {
+    } else if (
+      node.nodeType === Node.TEXT_NODE &&
+      node.parentElement &&
+      !shouldSkipTextNode(node as Text)
+    ) {
       translateTextNode(node as Text, locale);
     }
     node = walker.nextNode();
   }
 }
 
+/**
+ * Translate visible DOM once when locale or route changes.
+ * A global MutationObserver on `document.body` was removed: it fired on almost every React update
+ * (clicks, hover, transitions) and ran heavy synchronous work, freezing the tab ("Page Unresponsive").
+ */
 export function DomTranslator({ locale }: { locale: Locale }) {
+  const pathname = usePathname();
+
   useEffect(() => {
-    translateTree(document.body, locale);
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of Array.from(mutation.addedNodes)) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            translateTextNode(node as Text, locale);
-          } else if (node.nodeType === Node.ELEMENT_NODE) {
-            translateTree(node as Element, locale);
-          }
-        }
-        if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
-          translateTextNode(mutation.target as Text, locale);
-        }
-      }
+    const frame = requestAnimationFrame(() => {
+      translateTree(document.body, locale);
     });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    return () => observer.disconnect();
-  }, [locale]);
+    return () => cancelAnimationFrame(frame);
+  }, [locale, pathname]);
 
   return null;
 }
