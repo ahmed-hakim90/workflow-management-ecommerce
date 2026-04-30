@@ -1,3 +1,4 @@
+import type { ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/ui/cn";
 
 const tones = {
@@ -12,15 +13,12 @@ const tones = {
   info: "bg-[color:var(--color-info)]/15 text-[color:var(--color-info)] ring-[color:var(--color-info)]/30",
 } as const;
 
-export function Badge({
-  children,
-  tone = "default",
-  className,
-}: {
+export type BadgeProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & {
   children: React.ReactNode;
   tone?: keyof typeof tones;
-  className?: string;
-}) {
+};
+
+export function Badge({ children, tone = "default", className, ...rest }: BadgeProps) {
   return (
     <span
       className={cn(
@@ -28,6 +26,7 @@ export function Badge({
         tones[tone],
         className,
       )}
+      {...rest}
     >
       {children}
     </span>
