@@ -5,15 +5,19 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  FileText,
   MessageCircle,
   PackageCheck,
   Trash2,
   Truck,
+  UserPlus,
   UserRound,
   WalletCards,
+  XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -434,6 +438,29 @@ export default function OrderDetailPage() {
   const permissionSubject = { role, permissions };
   const canViewFinance = can(permissionSubject, "finance:view");
 
+  const showConfirm =
+    !!o &&
+    can(permissionSubject, "order:confirm") &&
+    o.status === "pending_confirmation";
+  const showCancel =
+    !!o &&
+    can(permissionSubject, "order:cancel") &&
+    o.status !== "cancelled";
+  const showShipment =
+    !!o &&
+    can(permissionSubject, "shipment:create") &&
+    o.status !== "cancelled";
+  const showInvoice =
+    !!o &&
+    can(permissionSubject, "order:invoice") &&
+    (o.status === "confirmed" || o.status === "invoicing");
+  const showAssign = !!o && can(permissionSubject, "order:assign");
+  const showWhatsApp =
+    !!o &&
+    can(permissionSubject, "order:confirm") &&
+    !!o.customer.phone;
+  const showDelete = !!o && can(permissionSubject, "order:delete");
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -492,97 +519,155 @@ export default function OrderDetailPage() {
         <OrderDetailSkeleton />
       ) : o ? (
         <>
-          <div className="rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-2">
+                <CardTitle className="text-base font-semibold md:text-[18px]">
+                  إجراءات الطلب
+                </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <OrderStatusBadge status={o.status} />
                   <PaymentBadge status={o.payment.payment_status} />
                 </div>
-                <p className="text-sm text-[color:var(--color-text-secondary)]">
-                  إدارة سريعة للطلب مع الاحتفاظ بسجل كل إجراء يتم تنفيذه.
+                <p className="max-w-xl text-[13px] text-[color:var(--color-text-secondary)] md:text-sm">
+                  نفّذ خطوات سير العمل المناسبة؛ يُسجّل كل إجراء في سجل النشاط بالأسفل.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {can(permissionSubject, "order:confirm") &&
-                o.status === "pending_confirmation" ? (
-                  <Button type="button" onClick={onConfirm}>
-                    تأكيد الطلب
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "order:cancel") && o.status !== "cancelled" ? (
-                  <Button type="button" variant="danger" onClick={onCancel}>
-                    إلغاء
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "shipment:create") &&
-                o.status !== "cancelled" ? (
-                  <Button type="button" variant="secondary" onClick={onCreateShipment}>
-                    إنشاء بوليصة
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "order:invoice") &&
-                (o.status === "confirmed" || o.status === "invoicing") ? (
-                  <Button type="button" variant="secondary" onClick={onInvoice}>
-                    فوترة / جاهز للمخزن
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "order:assign") ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={onAssign}
-                  >
-                    تعيين
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "order:confirm") && o.customer.phone ? (
-                  <Button type="button" variant="secondary" onClick={onWhatsApp}>
-                    واتساب + تسجيل
-                  </Button>
-                ) : null}
-                {can(permissionSubject, "order:delete") ? (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    size="sm"
-                    loading={deleting}
-                    onClick={onDelete}
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                    حذف نهائي
-                  </Button>
-                ) : null}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                  سير العمل
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {showConfirm ? (
+                    <Button type="button" size="sm" onClick={onConfirm}>
+                      <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+                      تأكيد الطلب
+                    </Button>
+                  ) : null}
+                  {showInvoice ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={onInvoice}
+                    >
+                      <FileText className="size-4 shrink-0" aria-hidden />
+                      فوترة / جاهز للمخزن
+                    </Button>
+                  ) : null}
+                  {showShipment ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={onCreateShipment}
+                    >
+                      <Truck className="size-4 shrink-0" aria-hidden />
+                      إنشاء بوليصة
+                    </Button>
+                  ) : null}
+                  {!showConfirm && !showInvoice && !showShipment ? (
+                    <p className="text-sm text-[color:var(--color-text-muted)]">
+                      لا توجد إجراءات سير عمل متاحة لهذه الحالة أو صلاحياتك الحالية.
+                    </p>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </div>
+
+              {(showWhatsApp || showAssign) && (
+                <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    تواصل وتعيين
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {showWhatsApp ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={onWhatsApp}
+                      >
+                        <MessageCircle className="size-4 shrink-0" aria-hidden />
+                        واتساب وتسجيل الإرسال
+                      </Button>
+                    ) : null}
+                    {showAssign ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={onAssign}
+                      >
+                        <UserPlus className="size-4 shrink-0" aria-hidden />
+                        تعيين الطلب
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {(showCancel || showDelete) && (
+                <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-error)]">
+                    إجراءات حساسة
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {showCancel ? (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={onCancel}
+                      >
+                        <XCircle className="size-4 shrink-0" aria-hidden />
+                        إلغاء الطلب
+                      </Button>
+                    ) : null}
+                    {showDelete ? (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        loading={deleting}
+                        onClick={onDelete}
+                      >
+                        <Trash2 className="size-4 shrink-0" aria-hidden />
+                        حذف نهائي
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
-              label="Customer"
+              label="العميل"
               value={o.customer.name}
               detail={o.customer.phone ?? o.customer.email ?? "لا توجد وسيلة تواصل"}
               icon={<UserRound className="size-5" aria-hidden />}
             />
             <SummaryCard
-              label="Order total"
-              value={canViewFinance ? formatMoney(o.payment.total_amount) : "Hidden"}
+              label="إجمالي الطلب"
+              value={canViewFinance ? formatMoney(o.payment.total_amount) : "مخفي"}
               detail={
                 canViewFinance
                   ? `متبقي ${formatMoney(o.payment.remaining_amount)}`
-                  : "Financial permission required"
+                  : "يتطلب صلاحية عرض المالية"
               }
               icon={<WalletCards className="size-5" aria-hidden />}
             />
             <SummaryCard
-              label="Shipments"
+              label="الشحنات"
               value={`${bundle.shipments.length} بوليصة`}
               detail={`AWB: ${deliveryAwb}`}
               icon={<Truck className="size-5" aria-hidden />}
             />
             <SummaryCard
-              label="Items"
+              label="الأصناف"
               value={`${o.lineItems?.length ?? 0} صنف`}
               detail={`تم إنشاء الطلب ${formatWhen(o.createdAt)}`}
               icon={<PackageCheck className="size-5" aria-hidden />}

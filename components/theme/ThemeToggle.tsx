@@ -15,9 +15,9 @@ const labels: Record<ThemePreference, string> = {
 };
 
 function Icon({ pref }: { pref: ThemePreference }) {
-  if (pref === "light") return <Sun className="size-5" aria-hidden />;
-  if (pref === "system") return <Monitor className="size-5" aria-hidden />;
-  return <Moon className="size-5" aria-hidden />;
+  if (pref === "light") return <Sun className="size-6" aria-hidden />;
+  if (pref === "system") return <Monitor className="size-6" aria-hidden />;
+  return <Moon className="size-6" aria-hidden />;
 }
 
 export function ThemeToggle({ className }: { className?: string }) {
@@ -28,9 +28,9 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       className={cn(
-        "flex min-h-11 min-w-11 items-center justify-center rounded-xl p-2 text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] transition-all duration-200 md:min-h-0 md:min-w-0",
-        "hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg)]",
+        "flex size-11 shrink-0 items-center justify-center rounded-lg text-[color:var(--color-text-secondary)] transition-colors",
+        "hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
+        "focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
         className,
       )}
       aria-label={labels[themePreference]}

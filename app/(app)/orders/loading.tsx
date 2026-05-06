@@ -8,7 +8,7 @@ export default function OrdersLoading() {
   return (
     <div className="space-y-6" aria-busy aria-live="polite">
       <PageHeaderSkeleton />
-      <div className="rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+      <div className="rounded-xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)]">
         <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="space-y-2">

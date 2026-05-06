@@ -38,14 +38,14 @@ export function LanguageToggle({
     <button
       type="button"
       className={cn(
-        "inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-2.5 text-xs font-semibold text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] transition-all hover:text-[color:var(--color-primary)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]",
+        "inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
         className,
       )}
       aria-label={`Switch language to ${LOCALE_LABELS[nextLocale]}`}
       title={`Switch language to ${LOCALE_LABELS[nextLocale]}`}
       onClick={onClick}
     >
-      <Globe className="size-4" aria-hidden />
+      <Globe className="size-5" aria-hidden />
       <span>{nextLocale.toUpperCase()}</span>
     </button>
   );

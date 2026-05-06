@@ -152,7 +152,7 @@ export default function AdminPage() {
           </CardContent>
         </Card>
         {data?.bottleneck ? (
-          <div className="col-span-12 rounded-2xl border border-[color:var(--color-callout-warning-border)] bg-[color:var(--color-callout-warning-bg)] p-4 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-neo-raised)]">
+          <div className="col-span-12 rounded-xl border border-[color:var(--color-callout-warning-border)] bg-[color:var(--color-callout-warning-bg)] p-4 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-notion-subtle)]">
             <span className="text-[color:var(--color-text-primary)]/80">
               Potential bottleneck:
             </span>{" "}

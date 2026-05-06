@@ -20,8 +20,9 @@ export function Tabs({
 }) {
   return (
     <div
+      role="tablist"
       className={cn(
-        "inline-flex rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-1",
+        "flex h-12 border-b border-[color:var(--color-bg)] bg-[color:var(--color-card)]",
         className,
       )}
     >
@@ -31,12 +32,14 @@ export function Tabs({
           <button
             key={item.id}
             type="button"
+            role="tab"
+            aria-selected={active}
             onClick={() => onChange(item.id)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200",
+              "-mb-px border-b-2 px-4 py-3 text-sm transition-colors duration-200",
               active
-                ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)]"
-                : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
+                ? "border-[color:var(--color-primary)] font-semibold text-[color:var(--color-text-primary)]"
+                : "border-transparent font-medium text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]",
             )}
           >
             {item.label}

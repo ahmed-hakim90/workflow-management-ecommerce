@@ -28,7 +28,7 @@ export function Modal({
       />
       <div
         className={cn(
-          "relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-xl",
+          "relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-notion-subtle)]",
           "animate-in fade-in zoom-in-95 duration-200",
         )}
         role="dialog"

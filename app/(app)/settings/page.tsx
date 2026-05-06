@@ -1183,7 +1183,7 @@ export default function SettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="flex flex-col gap-1 rounded-2xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-neo-raised)] lg:sticky lg:top-4 lg:self-start">
+        <nav className="flex flex-col gap-1 rounded-xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-notion-subtle)] lg:sticky lg:top-4 lg:self-start">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -1228,7 +1228,7 @@ export default function SettingsPage() {
                 ) : null}
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2 flex items-center gap-4">
-                    <div className="flex size-16 items-center justify-center rounded-2xl bg-[color:var(--color-muted-bg)] text-lg font-bold text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)]">
+                    <div className="flex size-16 items-center justify-center rounded-xl bg-[color:var(--color-muted-bg)] text-lg font-bold text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-well)]">
                       {firstName[0] || "?"}
                       {lastName[0] || ""}
                     </div>
@@ -2339,7 +2339,7 @@ export default function SettingsPage() {
 
           {section === "advanced" && (
             <div className="space-y-4">
-              <div className="rounded-2xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-neo-well)]">
+              <div className="rounded-xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-neo-well)]">
                 <Tabs
                   items={advTabs}
                   value={advTab}

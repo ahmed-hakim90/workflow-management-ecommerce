@@ -199,7 +199,7 @@ export default function SuperAdminPage() {
                 <Th>Package</Th>
                 <Th>Integrations</Th>
                 <Th>Counts</Th>
-                <Th>Open</Th>
+                <Th>Details</Th>
               </tr>
             </thead>
             <tbody>

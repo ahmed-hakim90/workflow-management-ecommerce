@@ -157,7 +157,7 @@ export default function ShipmentsPage() {
         </p>
       ) : null}
 
-      <div className="rounded-2xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+      <div className="rounded-xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)]">
         <div className="grid gap-3 sm:grid-cols-3">
           <Input
             label="From"

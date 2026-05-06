@@ -32,7 +32,7 @@ export function AppDrawer() {
       />
       <div
         className={cn(
-          "absolute inset-y-0 end-0 flex w-full max-w-none flex-col border-s border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-xl motion-reduce:transition-none md:max-w-md",
+          "absolute inset-y-0 end-0 flex w-full max-w-none flex-col border-s border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-notion-subtle)] motion-reduce:transition-none md:max-w-md",
         )}
       >
         <div className="flex h-14 items-center justify-between gap-2 border-b border-[color:var(--color-border)] px-4">

@@ -40,6 +40,7 @@ function LocalizedAppShell({ children }: { children: React.ReactNode }) {
   const { locale, dir, t } = useLocale();
 
   useEffect(() => {
+    void Promise.resolve(useUiStore.persist.rehydrate()).catch(() => {});
     void Promise.resolve(useSessionStore.persist.rehydrate())
       .then(() => setSessionReady(true))
       .catch(() => setSessionReady(true));

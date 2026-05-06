@@ -510,7 +510,7 @@ export default function OrdersPage() {
         </p>
       ) : null}
 
-      <div className="rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+      <div className="rounded-xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1">

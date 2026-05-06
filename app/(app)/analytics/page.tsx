@@ -328,7 +328,7 @@ export default function AnalyticsPage() {
       />
 
       {tab === "dashboard" && canViewFinance ? (
-        <div className="flex flex-col gap-4 rounded-2xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)] md:flex-row md:flex-wrap md:items-end">
+        <div className="flex flex-col gap-4 rounded-xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)] md:flex-row md:flex-wrap md:items-end">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1">
               <label className="text-xs text-[color:var(--color-text-muted)]">
@@ -560,7 +560,7 @@ export default function AnalyticsPage() {
           </div>
 
           {financial?.kpi ? (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border-0 bg-[color:var(--color-card)] px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)]">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border-0 bg-[color:var(--color-card)] px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-notion-dropdown)]">
               <span>
                 <span className="text-[color:var(--color-text-muted)]">
                   Cost per order:{" "}
