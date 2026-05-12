@@ -47,7 +47,7 @@ function NewOrderToastRow({
     <div
       className={cn(
         "pointer-events-auto flex w-full min-w-0 max-w-md items-center gap-3 self-end",
-        "rounded-2xl border-0 bg-[color:var(--color-card)] p-3.5 pr-2 shadow-[var(--shadow-neo-raised)]",
+        "rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-3.5 pr-2 shadow-none",
         "animate-in fade-in-0 duration-200 md:slide-in-from-top-2",
       )}
     >
@@ -57,13 +57,13 @@ function NewOrderToastRow({
       </div>
       <Link
         href={`/orders/${t.orderId}`}
-        className="shrink-0 rounded-xl bg-[color:var(--color-primary)] px-3 py-2 text-xs font-medium text-[color:var(--color-primary-foreground)] shadow-[var(--shadow-neo-raised-sm)] hover:opacity-95"
+        className="shrink-0 rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)] px-3 py-2 text-xs font-medium text-[color:var(--color-primary-foreground)] shadow-none hover:opacity-95"
       >
         فتح
       </Link>
       <button
         type="button"
-        className="shrink-0 flex min-h-9 min-w-9 items-center justify-center rounded-xl text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-elevated)]"
+        className="shrink-0 flex min-h-9 min-w-9 items-center justify-center rounded-[var(--ds-radius-md)] text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-elevated)]"
         aria-label="Dismiss"
         onClick={() => onDismiss(t.toastId)}
       >

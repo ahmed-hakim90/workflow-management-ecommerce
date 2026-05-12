@@ -1,22 +1,20 @@
 import type { UserRole } from "@/lib/types/models";
-import { getServerEnv } from "@/lib/config/env";
-import { getFirebaseAuth } from "@/lib/db/firebase-admin";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { getTenant } from "@/lib/services/tenants.service";
-import { getUserByFirebaseUid } from "@/lib/services/users.service";
 import { assertStaffApiRateLimit } from "@/lib/http/api-rate-limit";
+import {
+  getBearerToken,
+  verifySupabaseRequestUser,
+} from "@/lib/supabase/session";
 
 export interface RequestContext {
   tenantId: string;
   userId: string;
+  authUserId?: string;
   role: UserRole;
   permissions: string[];
-  /** True when verified via Firebase ID token or tenant `staffApiKey` */
+  /** True when verified via Supabase session/JWT or tenant `staffApiKey` */
   authenticated: boolean;
-}
-
-function getBearerToken(req: Request): string | null {
-  const auth = req.headers.get("authorization");
-  return auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
 }
 
 function looksLikeJwt(token: string): boolean {
@@ -24,8 +22,8 @@ function looksLikeJwt(token: string): boolean {
 }
 
 /**
- * MVP staff auth (async):
- * 1) Firebase ID token → Firestore user by `firebaseUid`
+ * Staff auth:
+ * 1) Supabase access token/session → profile by `auth.users.id`
  * 2) Bearer tenant `staffApiKey` + matching X-Tenant-Id + X-User-Id + X-User-Role
  *
  * Webhook routes should NOT use this helper.
@@ -33,42 +31,37 @@ function looksLikeJwt(token: string): boolean {
 export async function requireStaffContext(req: Request): Promise<RequestContext> {
   await assertStaffApiRateLimit(req);
 
-  const env = getServerEnv();
   const token = getBearerToken(req);
   if (!token) throw new AuthError("Unauthorized", 401);
 
-  const hasFirebaseAdmin = Boolean(env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim());
-  const firebaseOnly =
-    env.STAFF_AUTH_MODE === "firebase" && hasFirebaseAdmin;
-
-  if (firebaseOnly && !looksLikeJwt(token)) {
-    throw new AuthError("Firebase ID token required", 401);
-  }
-
-  if (looksLikeJwt(token) && !hasFirebaseAdmin) {
-    throw new AuthError(
-      "Set FIREBASE_SERVICE_ACCOUNT_JSON in server env (same project as NEXT_PUBLIC_*). Restart dev server.",
-      401,
-    );
-  }
-
-  if (hasFirebaseAdmin && looksLikeJwt(token)) {
+  if (looksLikeJwt(token)) {
     try {
-      const decoded = await getFirebaseAuth().verifyIdToken(token);
-      const user = await getUserByFirebaseUid(decoded.uid);
-      if (!user) throw new AuthError("User not provisioned", 403);
+      const authUser = await verifySupabaseRequestUser(req);
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("id, tenant_id, role, permissions, status")
+        .eq("user_id", authUser.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!profile || profile.status !== "active") {
+        throw new AuthError("User not provisioned", 403);
+      }
+
       return {
-        tenantId: user.tenantId,
-        userId: user.id,
-        role: user.role,
-        permissions: user.permissions ?? [],
+        tenantId: profile.tenant_id,
+        userId: profile.id,
+        authUserId: authUser.id,
+        role: profile.role as UserRole,
+        permissions: Array.isArray(profile.permissions)
+          ? profile.permissions
+          : [],
         authenticated: true,
       };
     } catch (e) {
       if (e instanceof AuthError) throw e;
-      if (firebaseOnly) {
-        throw new AuthError("Invalid or expired token", 401);
-      }
+      throw new AuthError("Invalid or expired token", 401);
     }
   }
 

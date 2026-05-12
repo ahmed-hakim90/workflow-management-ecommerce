@@ -53,7 +53,7 @@ describe("platform packages", () => {
     const pkg = await createPlatformPackage({
       name: "Locked",
       limits: { maxUsers: 3 },
-      features: { outboundWebhooks: false },
+      features: { outboundWebhooks: false, whatsapp: false },
     });
     await assignTenantPackage({
       tenantId: "default",
@@ -66,6 +66,9 @@ describe("platform packages", () => {
     });
     await expect(
       assertTenantCanUseIntegration("default", "outboundWebhooks"),
+    ).rejects.toMatchObject({ status: 402 });
+    await expect(
+      assertTenantCanUseIntegration("default", "whatsapp"),
     ).rejects.toMatchObject({ status: 402 });
     await expect(
       assertTenantCanUseIntegration("default", "woocommerce"),

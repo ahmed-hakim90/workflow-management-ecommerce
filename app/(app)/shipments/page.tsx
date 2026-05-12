@@ -14,6 +14,8 @@ import { cn } from "@/lib/ui/cn";
 
 function carrierLabel(s: Shipment) {
   if (s.provider === "bosta") return "Bosta";
+  if (s.provider === "jnt_egypt") return "J&T Egypt";
+  if (s.provider === "fedex") return "FedEx";
   return "Demo carrier";
 }
 
@@ -118,7 +120,7 @@ export default function ShipmentsPage() {
   }, [selected]);
 
   async function postShipmentAction(shipmentId: string, action: "sync" | "cancel") {
-    if (action === "cancel" && !window.confirm("Cancel this Bosta waybill?")) return;
+    if (action === "cancel" && !window.confirm("Cancel this carrier waybill?")) return;
     setBusyId(shipmentId);
     setErr(null);
     setOk(null);
@@ -139,6 +141,36 @@ export default function ShipmentsPage() {
     }
   }
 
+  async function openShipmentLabel(shipmentId: string, format: "pdf" | "zpl") {
+    setBusyId(shipmentId);
+    setErr(null);
+    setOk(null);
+    try {
+      const res = await fetch(
+        `/api/shipments/${encodeURIComponent(shipmentId)}/label?format=${format}`,
+        {
+          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        },
+      );
+      if (res.redirected) {
+        window.open(res.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(json.error ?? res.statusText);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not open shipment label");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -147,17 +179,17 @@ export default function ShipmentsPage() {
       />
 
       {!loading && err ? (
-        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}
       {ok ? (
-        <p className="rounded-xl bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-none">
           {ok}
         </p>
       ) : null}
 
-      <div className="rounded-xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)]">
+      <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 shadow-none">
         <div className="grid gap-3 sm:grid-cols-3">
           <Input
             label="From"
@@ -214,7 +246,7 @@ export default function ShipmentsPage() {
                   <Th>AWB / ID</Th>
                   <Th>Carrier</Th>
                   <Th>Status</Th>
-                  <Th>Bosta</Th>
+                  <Th>Carrier status</Th>
                 </tr>
               </thead>
               <tbody>
@@ -281,7 +313,7 @@ export default function ShipmentsPage() {
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-full" />
                   <Skeleton className="h-4 w-[75%]" />
-                  <Skeleton className="h-24 w-full rounded-xl" />
+                  <Skeleton className="h-24 w-full rounded-[var(--ds-radius-md)]" />
                 </div>
               ) : !selected ? (
                 <p className="text-[color:var(--color-text-muted)]">
@@ -312,7 +344,7 @@ export default function ShipmentsPage() {
                       <p className="tabular-nums">{formatCarrierFee(selected.shipping_fees)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[color:var(--color-text-muted)]">Bosta status</p>
+                      <p className="text-xs text-[color:var(--color-text-muted)]">Carrier status</p>
                       <p>{selected.carrierTrackingStatus ?? "—"}</p>
                     </div>
                     <div>
@@ -337,7 +369,7 @@ export default function ShipmentsPage() {
                       loading={busyId === selected.id}
                       onClick={() => postShipmentAction(selected.id, "sync")}
                     >
-                      Refresh Bosta status
+                      Refresh carrier status
                     </Button>
                     <Button
                       type="button"
@@ -346,17 +378,33 @@ export default function ShipmentsPage() {
                       disabled={selected.status === "cancelled"}
                       onClick={() => postShipmentAction(selected.id, "cancel")}
                     >
-                      Cancel Bosta waybill
+                      Cancel waybill
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      loading={busyId === selected.id}
+                      onClick={() => void openShipmentLabel(selected.id, "pdf")}
+                    >
+                      Print PDF
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      loading={busyId === selected.id}
+                      onClick={() => void openShipmentLabel(selected.id, "zpl")}
+                    >
+                      Print thermal
                     </Button>
                   </div>
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <p className="mb-2 text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       Tracking timeline
                     </p>
                     <ul className="space-y-3 border-s-2 border-[color:var(--color-divider)] ps-4">
                       {timeline.map((ev, i) => (
                         <li key={i} className="relative">
-                          <span className="absolute -start-[21px] top-1.5 size-2 rounded-full bg-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)]" />
+                          <span className="absolute -start-[21px] top-1.5 size-2 rounded-full bg-[color:var(--color-primary)] shadow-none" />
                           <p className="font-medium">{ev.label}</p>
                           {ev.at ? (
                             <p className="text-xs text-[color:var(--color-text-muted)]">
@@ -377,7 +425,7 @@ export default function ShipmentsPage() {
               <CardTitle className="text-base">Route map</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex h-56 items-center justify-center rounded-xl bg-[color:var(--color-bg-subtle)] text-center text-sm text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+              <div className="flex h-56 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] text-center text-sm text-[color:var(--color-text-muted)]">
                 Interactive map placeholder — connect Mapbox or Google Maps with
                 route polyline.
               </div>

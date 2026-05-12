@@ -29,21 +29,21 @@ export function ResponsiveKanban<T extends string>({
         {columns.map((c) => (
           <div
             key={c.id}
-            className="flex w-[min(220px,70vw)] shrink-0 flex-col rounded-2xl border-0 bg-[color:var(--color-kanban-column)] shadow-[var(--shadow-neo-raised)] md:w-[240px] lg:w-[280px]"
+            className="flex w-[min(220px,70vw)] shrink-0 flex-col rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-kanban-column)] shadow-none md:w-[240px] lg:w-[268px]"
           >
-            <div className="border-b border-[color:var(--color-divider)] px-3 py-2.5">
+            <div className="border-b border-[color:var(--color-divider)] px-3 py-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   {c.statusDotClass ? (
                     <span
-                      className={`size-2 shrink-0 rounded-full ${c.statusDotClass}`}
+                      className={`size-1.5 shrink-0 rounded-full ${c.statusDotClass}`}
                       aria-hidden
                     />
                   ) : null}
-                  <span className="truncate text-sm font-semibold uppercase tracking-wide text-[color:var(--color-kanban-header)]">
+                  <span className="truncate text-[12px] font-semibold tracking-tight text-[color:var(--color-kanban-header)]">
                     {c.title}
                   </span>
-                  <span className="shrink-0 rounded-full bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                  <span className="shrink-0 rounded-full bg-[color:var(--color-shell)] px-1.5 py-px text-[11px] font-medium tabular-nums text-[color:var(--color-text-muted)] ring-1 ring-[color:var(--color-border)]">
                     {countFor(c.id)}
                   </span>
                 </div>
@@ -82,7 +82,7 @@ export function ResponsiveKanban<T extends string>({
                   aria-hidden
                 />
               ) : null}
-              <span className="uppercase tracking-wide">{c.title}</span>
+              <span className="tracking-tight">{c.title}</span>
               <span className="rounded-full bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[color:var(--color-text-secondary)]">
                 {countFor(c.id)}
               </span>

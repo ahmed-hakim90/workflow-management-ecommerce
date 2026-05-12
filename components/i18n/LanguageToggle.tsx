@@ -38,7 +38,7 @@ export function LanguageToggle({
     <button
       type="button"
       className={cn(
-        "inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
+        "inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[var(--ds-radius-md)] px-2.5 text-xs font-semibold text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
         className,
       )}
       aria-label={`Switch language to ${LOCALE_LABELS[nextLocale]}`}

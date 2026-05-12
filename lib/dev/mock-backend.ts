@@ -3,6 +3,7 @@
  * Keeps behavior close to Firestore services without external DB.
  */
 import { buildPayment } from "@/lib/logic/payment";
+import { orderIngestFingerprint } from "@/lib/logic/order-ingest-fingerprint";
 import { assertTransition } from "@/lib/logic/order-state-machine";
 import {
   assertWarehouseRevert,
@@ -39,8 +40,10 @@ import {
   type TenantStatus,
   type TenantWarehouseSettings,
   type WebhookIngestLog,
+  type OrderEvent,
 } from "@/lib/types/models";
 import { slugify } from "@/lib/string/slugify";
+import { resetMockChatBackend } from "@/lib/dev/mock-chat-backend";
 
 const DEMO_TENANT = "default";
 
@@ -57,6 +60,7 @@ type MockState = {
   tenantKanban: Record<string, TenantKanbanSettings>;
   activityLogs: ActivityLog[];
   webhookIngestLogs: WebhookIngestLog[];
+  orderEvents: OrderEvent[];
   outboundWebhookLogs: OutboundWebhookDeliveryLog[];
   integrationKeys: Set<string>;
   tenants: Record<string, Tenant>;
@@ -70,7 +74,51 @@ function iso() {
   return new Date().toISOString();
 }
 
+function mockOrderCogsValue(order: Pick<Order, "lineItems">): number {
+  return (order.lineItems ?? []).reduce((sum, item) => {
+    const lineCost =
+      typeof item.line_cost === "number" && Number.isFinite(item.line_cost)
+        ? item.line_cost
+        : undefined;
+    const unitCost =
+      typeof item.unit_cost === "number" && Number.isFinite(item.unit_cost)
+        ? item.unit_cost
+        : undefined;
+    return sum + Math.max(0, lineCost ?? (unitCost ?? 0) * item.quantity);
+  }, 0);
+}
+
+function mockShipmentAnalyticsDeltas(
+  type: ShipmentType,
+  shippingCost: number,
+): Partial<AnalyticsDaily> {
+  const base: Partial<AnalyticsDaily> = {
+    shipments_count: 1,
+    shipping_cost: shippingCost,
+  };
+  if (type === "delivery") {
+    return {
+      ...base,
+      delivery_shipments_count: 1,
+      delivery_shipping_cost: shippingCost,
+    };
+  }
+  if (type === "return") {
+    return {
+      ...base,
+      return_shipments_count: 1,
+      return_shipping_cost: shippingCost,
+    };
+  }
+  return {
+    ...base,
+    exchange_shipments_count: 1,
+    exchange_shipping_cost: shippingCost,
+  };
+}
+
 function createSeed(): MockState {
+  resetMockChatBackend();
   const t0 = "2026-04-20T10:00:00.000Z";
   const users: User[] = [
     {
@@ -197,7 +245,7 @@ function createSeed(): MockState {
         total_amount: 2100,
         paid_amount: 1000,
       }),
-      status: "invoicing",
+      status: "invoiced",
       invoice: { number: "INV-1042", issuedAt: "2026-04-24T10:00:00.000Z" },
       shipmentIds: [],
       createdAt: t0,
@@ -212,9 +260,12 @@ function createSeed(): MockState {
         total_amount: 899,
         paid_amount: 899,
       }),
-      status: "ready_for_warehouse",
+      status: "awb_created",
       invoice: { number: "INV-1043", issuedAt: "2026-04-24T11:00:00.000Z" },
       shipmentIds: ["ship-demo-001"],
+      latestShipmentAwb: "MOCK-DEMO-001",
+      latestShipmentStatus: "created",
+      latestShipmentCarrierTrackingStatus: "created",
       createdAt: t0,
       updatedAt: "2026-04-24T11:15:00.000Z",
     },
@@ -227,8 +278,12 @@ function createSeed(): MockState {
         total_amount: 340,
         paid_amount: 0,
       }),
-      status: "packed",
+      status: "warehouse_packed",
+      invoice: { number: "INV-1044", issuedAt: "2026-04-24T11:30:00.000Z" },
       shipmentIds: ["ship-demo-002"],
+      latestShipmentAwb: "MOCK-DEMO-002",
+      latestShipmentStatus: "packed",
+      latestShipmentCarrierTrackingStatus: "created",
       createdAt: t0,
       updatedAt: "2026-04-24T12:00:00.000Z",
     },
@@ -241,8 +296,12 @@ function createSeed(): MockState {
         total_amount: 1750.25,
         paid_amount: 1750.25,
       }),
-      status: "shipped",
+      status: "out_for_shipping",
+      invoice: { number: "INV-1045", issuedAt: "2026-04-24T13:00:00.000Z" },
       shipmentIds: ["ship-demo-003"],
+      latestShipmentAwb: "MOCK-DEMO-003",
+      latestShipmentStatus: "shipped",
+      latestShipmentCarrierTrackingStatus: "in_transit",
       createdAt: t0,
       updatedAt: "2026-04-24T14:00:00.000Z",
     },
@@ -351,8 +410,11 @@ function createSeed(): MockState {
     features: {
       woocommerce: true,
       bosta: true,
+      jntEgypt: true,
+      fedex: true,
       storefrontOrders: true,
       outboundWebhooks: false,
+      whatsapp: true,
     },
     supportTier: "standard",
     createdAt: t0,
@@ -373,6 +435,7 @@ function createSeed(): MockState {
     tenantKanban: {},
     activityLogs: [],
     webhookIngestLogs: [],
+    orderEvents: [],
     outboundWebhookLogs: [],
     integrationKeys: new Set(),
     tenants: { [DEMO_TENANT]: demoTenant },
@@ -573,7 +636,7 @@ async function mockMaybeAutoShipment(
   }
 }
 
-async function mockTransition(
+export async function mockTransition(
   tenantId: string,
   orderId: string,
   to: OrderStatus,
@@ -589,7 +652,13 @@ async function mockTransition(
   assertTransition(order.status, to);
   const now = iso();
   const prevStatus = order.status;
-  const next: Order = { ...order, ...extra, status: to, updatedAt: now };
+  const next: Order = {
+    ...order,
+    ...extra,
+    status: to,
+    statusUpdatedAt: now,
+    updatedAt: now,
+  };
   s.orders[idx] = next;
   mockAppendActivity({
     tenantId,
@@ -597,7 +666,14 @@ async function mockTransition(
     entityType: "order",
     entityId: orderId,
     userId: actorUserId,
-    metadata: { from: prevStatus, ...(activityMetadata ?? {}) },
+    metadata: { from: prevStatus, to, ...(activityMetadata ?? {}) },
+  });
+  mockAppendOrderEvent({
+    tenantId,
+    orderId,
+    action: `order.status.${to}`,
+    userId: actorUserId,
+    metadata: { from: prevStatus, to, ...(activityMetadata ?? {}) },
   });
   await mockMaybeAutoShipment(
     tenantId,
@@ -620,23 +696,39 @@ export async function mockUpsertOrderFromWooCommerce(input: {
   shipping?: Order["shipping"];
   notes?: string;
   woocommerceOrderSnapshot?: unknown;
-}): Promise<Order> {
+  deliveryId?: string;
+}): Promise<{
+  order: Order;
+  outcome: "created" | "updated" | "unchanged";
+}> {
   const s = ctx();
   const now = iso();
+  const fingerprint = orderIngestFingerprint({
+    customer: input.customer,
+    payment: input.payment,
+    lineItems: input.lineItems,
+    shipping: input.shipping,
+    notes: input.notes,
+  });
+  const lineItemCount = input.lineItems?.length ?? 0;
   const existingIdx = s.orders.findIndex(
     (o) =>
       o.tenantId === input.tenantId &&
-      o.wooCommerceOrderId === input.wooOrderId,
+      (o.wooCommerceOrderId === input.wooOrderId ||
+        o.externalOrderId === input.wooOrderId),
   );
   if (existingIdx >= 0) {
     const prev = s.orders[existingIdx];
+    if (prev.lastWebhookSyncFingerprint === fingerprint) {
+      const bumped: Order = {
+        ...prev,
+        lastSyncedAt: now,
+        updatedAt: now,
+      };
+      s.orders[existingIdx] = bumped;
+      return { order: bumped, outcome: "unchanged" };
+    }
     const paymentLocked = prev.status !== "pending_confirmation";
-    const snapUp =
-      input.woocommerceOrderSnapshot != null
-        ? (JSON.parse(
-            JSON.stringify(input.woocommerceOrderSnapshot),
-          ) as Order["woocommerceOrderSnapshot"])
-        : prev.woocommerceOrderSnapshot;
     const next: Order = {
       ...prev,
       customer: input.customer,
@@ -644,8 +736,14 @@ export async function mockUpsertOrderFromWooCommerce(input: {
       lineItems: input.lineItems ?? prev.lineItems,
       shipping: input.shipping ?? prev.shipping,
       notes: input.notes ?? prev.notes,
-      woocommerceOrderSnapshot: snapUp,
+      lineItemCount,
+      externalOrderId: input.wooOrderId,
+      source: "woocommerce",
+      lastSyncedAt: now,
+      lastWebhookSyncFingerprint: fingerprint,
       updatedAt: now,
+      woocommerceOrderSnapshot: undefined,
+      webhookPayloadRef: undefined,
     };
     s.orders[existingIdx] = next;
     mockAppendActivity({
@@ -654,8 +752,20 @@ export async function mockUpsertOrderFromWooCommerce(input: {
       entityType: "order",
       entityId: prev.id,
       userId: input.actorUserId,
+      metadata: { deliveryId: input.deliveryId, fingerprint },
     });
-    return next;
+    mockAppendOrderEvent({
+      tenantId: input.tenantId,
+      orderId: prev.id,
+      action: "order.ingest.updated",
+      userId: input.actorUserId,
+      metadata: {
+        deliveryId: input.deliveryId,
+        fingerprint,
+        wooOrderId: input.wooOrderId,
+      },
+    });
+    return { order: next, outcome: "updated" };
   }
   const id = crypto.randomUUID();
   const order: Order = {
@@ -666,15 +776,14 @@ export async function mockUpsertOrderFromWooCommerce(input: {
     status: "pending_confirmation",
     shipmentIds: [],
     wooCommerceOrderId: input.wooOrderId,
+    externalOrderId: input.wooOrderId,
+    source: "woocommerce",
+    lastSyncedAt: now,
+    lineItemCount,
     lineItems: input.lineItems,
     shipping: input.shipping,
     notes: input.notes,
-    woocommerceOrderSnapshot:
-      input.woocommerceOrderSnapshot != null
-        ? (JSON.parse(
-            JSON.stringify(input.woocommerceOrderSnapshot),
-          ) as Order["woocommerceOrderSnapshot"])
-        : undefined,
+    lastWebhookSyncFingerprint: fingerprint,
     createdAt: now,
     updatedAt: now,
   };
@@ -685,6 +794,18 @@ export async function mockUpsertOrderFromWooCommerce(input: {
     entityType: "order",
     entityId: id,
     userId: input.actorUserId,
+    metadata: { deliveryId: input.deliveryId, fingerprint },
+  });
+  mockAppendOrderEvent({
+    tenantId: input.tenantId,
+    orderId: id,
+    action: "order.ingest.created",
+    userId: input.actorUserId,
+    metadata: {
+      deliveryId: input.deliveryId,
+      fingerprint,
+      wooOrderId: input.wooOrderId,
+    },
   });
   mockAnalyticsDailyIncrement({
     tenantId: order.tenantId,
@@ -692,9 +813,10 @@ export async function mockUpsertOrderFromWooCommerce(input: {
     deltas: {
       orders_count: 1,
       orders_value: order.payment.total_amount,
+      cogs_value: mockOrderCogsValue(order),
     },
   });
-  return order;
+  return { order, outcome: "created" };
 }
 
 export async function mockConfirmOrder(input: {
@@ -765,43 +887,25 @@ export async function mockInvoiceOrder(input: {
 
   const invoice = { number: input.invoiceNumber, issuedAt: iso() };
 
+  // confirmed → invoice_required → invoiced (مماثل لخدمة الإنتاج)
   if (current.status === "confirmed") {
-    assertTransition(current.status, "invoicing");
-    const prevStatus = current.status;
-    const now = iso();
-    current = {
-      ...current,
-      status: "invoicing",
-      invoice,
-      updatedAt: now,
-    };
-    s.orders[idx] = current;
-    mockAppendActivity({
-      tenantId: input.tenantId,
-      action: "order.status.invoicing",
-      entityType: "order",
-      entityId: input.orderId,
-      userId: input.actorUserId,
-      metadata: { from: prevStatus },
-    });
-    await mockMaybeAutoShipment(
+    const reqResult = await mockTransition(
       input.tenantId,
       input.orderId,
-      prevStatus,
-      "invoicing",
-      current,
+      "invoice_required",
       input.actorUserId,
     );
+    current = reqResult.order;
   }
 
-  if (current.status !== "invoicing") {
+  if (current.status !== "invoice_required") {
     throw new Error(`Cannot invoice from status ${current.status}`);
   }
 
   const { order: final } = await mockTransition(
     input.tenantId,
     input.orderId,
-    "ready_for_warehouse",
+    "invoiced",
     input.actorUserId,
     { invoice },
   );
@@ -885,6 +989,7 @@ export function mockDeleteOrder(input: {
     deltas: {
       orders_count: -1,
       orders_value: -order.payment.total_amount,
+      cogs_value: -mockOrderCogsValue(order),
     },
   });
 
@@ -928,6 +1033,9 @@ export async function mockCreateShipmentForOrder(input: {
   tenantId: string;
   orderId: string;
   type?: ShipmentType;
+  provider?: Shipment["provider"];
+  serviceCode?: string;
+  labelFormat?: Shipment["labelFormat"];
   actorUserId: string;
 }): Promise<Shipment> {
   const order = mockGetOrder(input.tenantId, input.orderId);
@@ -936,7 +1044,10 @@ export async function mockCreateShipmentForOrder(input: {
   const id = crypto.randomUUID();
   const now = iso();
   const type: ShipmentType = input.type ?? "delivery";
-  const awb = `MOCK-${id.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+  const provider = input.provider ?? "mock";
+  const providerPrefix =
+    provider === "jnt_egypt" ? "JTE" : provider === "fedex" ? "FDX" : "MOCK";
+  const awb = `${providerPrefix}-${id.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
   const byName = actorName(input.tenantId, input.actorUserId);
   const shipFee = order.shipping?.cost ?? 0;
   const shipment: Shipment = {
@@ -946,7 +1057,19 @@ export async function mockCreateShipmentForOrder(input: {
     awb,
     type,
     status: "created",
-    provider: "mock",
+    provider,
+    serviceCode: input.serviceCode,
+    labelFormat: input.labelFormat ?? "pdf",
+    labelUrl:
+      input.labelFormat === "zpl" || input.labelFormat === "thermal"
+        ? undefined
+        : `https://example.test/labels/${id}.pdf`,
+    thermalLabelData:
+      input.labelFormat === "zpl" || input.labelFormat === "thermal"
+        ? "^XA^FO40,40^FDDEMO LABEL^FS^XZ"
+        : undefined,
+    cod_amount: order.payment.cod_amount,
+    allow_opening: false,
     shipping_fees: shipFee,
     createdByUserId: input.actorUserId,
     createdByUserName: byName,
@@ -961,6 +1084,9 @@ export async function mockCreateShipmentForOrder(input: {
   s.orders[oidx] = {
     ...o,
     shipmentIds: [...(o.shipmentIds ?? []), id],
+    latestShipmentAwb: shipment.awb,
+    latestShipmentStatus: shipment.status,
+    latestShipmentCarrierTrackingStatus: shipment.carrierTrackingStatus,
     updatedAt: now,
   };
   s.shipments.push(shipment);
@@ -972,14 +1098,84 @@ export async function mockCreateShipmentForOrder(input: {
     userId: input.actorUserId,
     metadata: { orderId: input.orderId, awb: shipment.awb },
   });
-  if (type === "delivery") {
-    mockAnalyticsDailyIncrement({
-      tenantId: input.tenantId,
-      date: now.slice(0, 10),
-      deltas: { shipments_count: 1, shipping_cost: shipFee },
-    });
-  }
+  mockAnalyticsDailyIncrement({
+    tenantId: input.tenantId,
+    date: now.slice(0, 10),
+    deltas: mockShipmentAnalyticsDeltas(type, shipFee),
+  });
   return shipment;
+}
+
+export function mockUpdateShipment(input: {
+  tenantId: string;
+  shipmentId: string;
+  actorUserId: string;
+  codAmount?: number;
+  allowOpening?: boolean;
+  notes?: string;
+}): Shipment {
+  const s = ctx();
+  const idx = s.shipments.findIndex((sh) => sh.id === input.shipmentId);
+  if (idx < 0) throw new Error("Shipment not found");
+  const shipment = s.shipments[idx];
+  if (shipment.tenantId !== input.tenantId) throw new Error("Shipment not found");
+  if (shipment.status === "cancelled") throw new Error("لا يمكن تعديل بوليصة ملغاة.");
+  if (shipment.status === "shipped" || shipment.status === "delivered") {
+    throw new Error("لا يمكن تعديل هذه البوليصة بعد تسليمها للمندوب.");
+  }
+  const now = iso();
+  const next: Shipment = {
+    ...shipment,
+    cod_amount: input.codAmount ?? shipment.cod_amount,
+    allow_opening: input.allowOpening ?? shipment.allow_opening,
+    carrierTrackingStatus: "updated",
+    lastTrackingSyncAt: now,
+    trackingHistory: [
+      ...(shipment.trackingHistory ?? []),
+      { at: now, status: "updated", details: "Demo shipment updated" },
+    ].slice(-25),
+    updatedAt: now,
+  };
+  s.shipments[idx] = next;
+
+  if (input.codAmount !== undefined && shipment.type === "delivery") {
+    const oidx = findOrderIndex(shipment.order_id);
+    if (oidx >= 0) {
+      const order = s.orders[oidx];
+      const total = Math.round(order.payment.total_amount * 100) / 100;
+      const cod = Math.round(Math.max(0, input.codAmount) * 100) / 100;
+      const paid = Math.round(Math.max(0, total - cod) * 100) / 100;
+      s.orders[oidx] = {
+        ...order,
+        payment: {
+          payment_status: cod <= 0 ? "paid" : cod >= total ? "cod" : "partial",
+          total_amount: total,
+          paid_amount: paid,
+          remaining_amount: cod,
+          cod_amount: cod,
+        },
+        latestShipmentAwb: next.awb,
+        latestShipmentStatus: next.status,
+        latestShipmentCarrierTrackingStatus: next.carrierTrackingStatus,
+        updatedAt: now,
+      };
+    }
+  }
+
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "shipment.updated",
+    entityType: "shipment",
+    entityId: input.shipmentId,
+    userId: input.actorUserId,
+    metadata: {
+      awb: shipment.awb,
+      codAmount: input.codAmount,
+      allowOpening: input.allowOpening,
+      notes: input.notes,
+    },
+  });
+  return next;
 }
 
 export function mockSyncShipmentTracking(input: {
@@ -1079,22 +1275,26 @@ export async function mockScanAwb(input: {
   let packedAt = shipment.packedAt;
   let shippedAt = shipment.shippedAt;
 
-  if (order.status === "shipped" && shipment.status === "shipped") {
+  if (order.status === "out_for_shipping" && shipment.status === "shipped") {
     throw new Error("Duplicate scan: order already shipped for this AWB");
-  } else if (order.status === "ready_for_warehouse") {
+  } else if (order.status === "awb_created") {
     if (mode === "single_fulfill") {
-      assertWarehouseScanTransition("ready_for_warehouse", "shipped", "single_fulfill");
-      newOrderStatus = "shipped";
+      assertWarehouseScanTransition(
+        "awb_created",
+        "out_for_shipping",
+        "single_fulfill",
+      );
+      newOrderStatus = "out_for_shipping";
       newShipmentStatus = "shipped";
       packedAt = now;
       shippedAt = now;
     } else {
-      assertWarehouseScanTransition("ready_for_warehouse", "packed", "per_step");
-      newOrderStatus = "packed";
+      assertWarehouseScanTransition("awb_created", "warehouse_packed", "per_step");
+      newOrderStatus = "warehouse_packed";
       newShipmentStatus = "packed";
       packedAt = now;
     }
-  } else if (order.status === "packed") {
+  } else if (order.status === "warehouse_packed") {
     if (cooldownMs > 0 && shipment.packedAt) {
       const elapsed = Date.now() - new Date(shipment.packedAt).getTime();
       if (elapsed < cooldownMs) {
@@ -1103,13 +1303,13 @@ export async function mockScanAwb(input: {
         );
       }
     }
-    assertWarehouseScanTransition("packed", "shipped", mode);
-    newOrderStatus = "shipped";
+    assertWarehouseScanTransition("warehouse_packed", "out_for_shipping", mode);
+    newOrderStatus = "out_for_shipping";
     newShipmentStatus = "shipped";
     shippedAt = now;
   } else {
     throw new Error(
-      `Scan not allowed for order status ${order.status} (expected ready_for_warehouse or packed)`,
+      `Scan not allowed for order status ${order.status} (expected awb_created or warehouse_packed)`,
     );
   }
 
@@ -1141,10 +1341,10 @@ export async function mockScanAwb(input: {
   });
 
   const shouldIncPacked =
-    nextOrder.status === "packed" ||
+    nextOrder.status === "warehouse_packed" ||
     (wh.singleScanFulfills &&
-      prevOrderStatus === "ready_for_warehouse" &&
-      nextOrder.status === "shipped");
+      prevOrderStatus === "awb_created" &&
+      nextOrder.status === "out_for_shipping");
   if (shouldIncPacked) {
     await mockIncrementUserStat({
       tenantId: input.tenantId,
@@ -1233,15 +1433,15 @@ export function mockSetTenantStatus(input: {
   return next;
 }
 
-export function mockGetUserByFirebaseUid(firebaseUid: string): User | null {
-  return ctx().users.find((u) => u.firebaseUid === firebaseUid) ?? null;
+export function mockGetUserBySupabaseUserId(supabaseUserId: string): User | null {
+  return ctx().users.find((u) => u.supabaseUserId === supabaseUserId) ?? null;
 }
 
 export function mockCreateUser(input: {
   tenantId: string;
   name: string;
   email?: string;
-  firebaseUid?: string;
+  supabaseUserId?: string;
   language?: User["language"];
   role: UserRole;
   permissions?: string[];
@@ -1256,7 +1456,7 @@ export function mockCreateUser(input: {
     tenantId: input.tenantId,
     name: input.name,
     email: input.email,
-    firebaseUid: input.firebaseUid,
+    supabaseUserId: input.supabaseUserId,
     language: input.language ?? "en",
     role: input.role,
     permissions: input.permissions ?? [],
@@ -1333,6 +1533,13 @@ export function mockListTickets(
   return rows.slice(0, 200);
 }
 
+export function mockListTicketsByOrder(
+  tenantId: string,
+  orderId: string,
+): Ticket[] {
+  return mockListTickets(tenantId).filter((t) => t.order_id === orderId);
+}
+
 export function mockCreateTicket(input: {
   tenantId: string;
   order_id: string;
@@ -1372,20 +1579,18 @@ export function mockCreateTicket(input: {
     userId: input.actorUserId,
     metadata: { orderId: input.order_id, type: input.type },
   });
-  const ord = mockGetOrder(input.tenantId, input.order_id);
-  const orderVal = ord?.payment.total_amount ?? 0;
   const dkey = now.slice(0, 10);
   if (input.type === "return") {
     mockAnalyticsDailyIncrement({
       tenantId: input.tenantId,
       date: dkey,
-      deltas: { returns_count: 1, returns_value: orderVal },
+      deltas: { returns_count: 1 },
     });
   } else if (input.type === "exchange") {
     mockAnalyticsDailyIncrement({
       tenantId: input.tenantId,
       date: dkey,
-      deltas: { exchanges_count: 1, exchanges_value: 0 },
+      deltas: { exchanges_count: 1 },
     });
   }
   return ticket;
@@ -1491,6 +1696,41 @@ export function mockAssignTicket(input: {
   return next;
 }
 
+export function mockCloseTicket(input: {
+  tenantId: string;
+  ticketId: string;
+  actorUserId: string;
+}): Ticket {
+  const s = ctx();
+  const idx = s.tickets.findIndex((t) => t.id === input.ticketId);
+  if (idx < 0) throw new Error("Ticket not found");
+  const t = s.tickets[idx];
+  if (t.tenantId !== input.tenantId) throw new Error("Ticket not found");
+  if (t.status !== "resolved") {
+    throw new Error("Only resolved tickets can be closed");
+  }
+  const now = iso();
+  const next: Ticket = {
+    ...t,
+    status: "closed",
+    updatedAt: now,
+  };
+  s.tickets[idx] = next;
+  mockAppendActivity({
+    tenantId: input.tenantId,
+    action: "ticket.closed",
+    entityType: "ticket",
+    entityId: input.ticketId,
+    userId: input.actorUserId,
+    metadata: {
+      orderId: t.order_id,
+      type: t.type,
+      previousStatus: t.status,
+    },
+  });
+  return next;
+}
+
 export async function mockResolveTicket(input: {
   tenantId: string;
   ticketId: string;
@@ -1546,6 +1786,29 @@ export async function mockResolveTicket(input: {
     updatedAt: now,
   };
   s.tickets[idx] = next;
+  const resolvedValue = Math.max(
+    0,
+    input.refundAmount ?? mockGetOrder(input.tenantId, t.order_id)?.payment.total_amount ?? 0,
+  );
+  if (resolvedValue > 0) {
+    const date = now.slice(0, 10);
+    if (t.type === "return" || kind === "refund_without_shipment") {
+      mockAnalyticsDailyIncrement({
+        tenantId: input.tenantId,
+        date,
+        deltas: {
+          returns_value: resolvedValue,
+          refunds_value: resolvedValue,
+        },
+      });
+    } else if (t.type === "exchange") {
+      mockAnalyticsDailyIncrement({
+        tenantId: input.tenantId,
+        date,
+        deltas: { exchanges_value: resolvedValue },
+      });
+    }
+  }
   mockAppendActivity({
     tenantId: input.tenantId,
     action: "ticket.resolved",
@@ -1711,6 +1974,126 @@ export function mockSetTenantBostaFields(
   }
 }
 
+function applyStringPatch(
+  target: Record<string, string | undefined>,
+  fields: Record<string, string | null | undefined>,
+) {
+  for (const [key, val] of Object.entries(fields)) {
+    if (val === undefined) continue;
+    if (val === null || val.trim() === "") {
+      delete target[key];
+    } else {
+      target[key] = val.trim();
+    }
+  }
+}
+
+export function mockSetTenantJntEgyptFields(
+  tenantId: string,
+  fields: {
+    [K in keyof NonNullable<TenantIntegrationsDoc["jntEgypt"]>]?:
+      | NonNullable<TenantIntegrationsDoc["jntEgypt"]>[K]
+      | null;
+  },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const jnt = { ...(integrations.jntEgypt ?? {}) };
+  applyStringPatch(
+    jnt as Record<string, string | undefined>,
+    fields as Record<string, string | null | undefined>,
+  );
+  if (Object.keys(jnt).length === 0) {
+    delete integrations.jntEgypt;
+  } else {
+    integrations.jntEgypt = jnt;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
+export function mockSetTenantFedExFields(
+  tenantId: string,
+  fields: {
+    [K in keyof NonNullable<TenantIntegrationsDoc["fedex"]>]?:
+      | NonNullable<TenantIntegrationsDoc["fedex"]>[K]
+      | null;
+  },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const fedex = { ...(integrations.fedex ?? {}) };
+  applyStringPatch(
+    fedex as Record<string, string | undefined>,
+    fields as Record<string, string | null | undefined>,
+  );
+  if (Object.keys(fedex).length === 0) {
+    delete integrations.fedex;
+  } else {
+    integrations.fedex = fedex;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
+export function mockSetTenantWhatsAppCloudFields(
+  tenantId: string,
+  fields: {
+    verifyToken?: string | null;
+    accessToken?: string | null;
+    phoneNumberId?: string | null;
+    businessAccountId?: string | null;
+    appSecret?: string | null;
+  },
+) {
+  const s = ctx();
+  const integrations: TenantIntegrationsDoc = {
+    ...(s.tenantIntegrations[tenantId] ?? {}),
+  };
+  const whatsapp = { ...(integrations.whatsapp ?? {}) };
+  const apply = (
+    key:
+      | "verifyToken"
+      | "accessToken"
+      | "phoneNumberId"
+      | "businessAccountId"
+      | "appSecret",
+    val: string | null | undefined,
+  ) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete whatsapp[key];
+    } else {
+      whatsapp[key] = val.trim();
+    }
+  };
+  apply("verifyToken", fields.verifyToken);
+  apply("accessToken", fields.accessToken);
+  apply("phoneNumberId", fields.phoneNumberId);
+  apply("businessAccountId", fields.businessAccountId);
+  apply("appSecret", fields.appSecret);
+  if (Object.keys(whatsapp).length === 0) {
+    delete integrations.whatsapp;
+  } else {
+    integrations.whatsapp = whatsapp;
+  }
+  if (Object.keys(integrations).length === 0) {
+    delete s.tenantIntegrations[tenantId];
+  } else {
+    s.tenantIntegrations[tenantId] = integrations;
+  }
+}
+
 export function mockSetTenantStorefrontOrderFields(
   tenantId: string,
   fields: {
@@ -1751,7 +2134,7 @@ export function mockSetTenantStorefrontOrderFields(
 export function mockRevertOrder(input: {
   tenantId: string;
   orderId: string;
-  to: "invoicing" | "ready_for_warehouse";
+  to: "ready_for_shipping" | "awb_created" | "warehouse_picking";
   reason: string;
   actorUserId: string;
 }): Order {
@@ -1763,9 +2146,17 @@ export function mockRevertOrder(input: {
   assertWarehouseRevert(order.status, input.to);
   const from = order.status;
   const now = iso();
-  const next: Order = { ...order, status: input.to, updatedAt: now };
+  const next: Order = {
+    ...order,
+    status: input.to,
+    statusUpdatedAt: now,
+    updatedAt: now,
+  };
   s.orders[oidx] = next;
-  if (from === "packed" && input.to === "ready_for_warehouse") {
+  if (
+    (from === "warehouse_packed" || from === "warehouse_picking") &&
+    (input.to === "awb_created" || input.to === "warehouse_picking")
+  ) {
     for (let i = 0; i < s.shipments.length; i++) {
       const sh = s.shipments[i];
       if (
@@ -1884,11 +2275,19 @@ function emptyAnalyticsDailyRow(tenantId: string, date: string): AnalyticsDaily 
     date,
     orders_count: 0,
     orders_value: 0,
+    cogs_value: 0,
     confirmed_orders_count: 0,
     shipments_count: 0,
     shipping_cost: 0,
+    delivery_shipments_count: 0,
+    delivery_shipping_cost: 0,
+    return_shipments_count: 0,
+    return_shipping_cost: 0,
+    exchange_shipments_count: 0,
+    exchange_shipping_cost: 0,
     returns_count: 0,
     returns_value: 0,
+    refunds_value: 0,
     exchanges_count: 0,
     exchanges_value: 0,
     updatedAt: iso(),
@@ -1901,11 +2300,19 @@ export function mockAnalyticsDailyIncrement(input: {
   deltas: Partial<{
     orders_count: number;
     orders_value: number;
+    cogs_value: number;
     confirmed_orders_count: number;
     shipments_count: number;
     shipping_cost: number;
+    delivery_shipments_count: number;
+    delivery_shipping_cost: number;
+    return_shipments_count: number;
+    return_shipping_cost: number;
+    exchange_shipments_count: number;
+    exchange_shipping_cost: number;
     returns_count: number;
     returns_value: number;
+    refunds_value: number;
     exchanges_count: number;
     exchanges_value: number;
   }>;
@@ -1918,13 +2325,33 @@ export function mockAnalyticsDailyIncrement(input: {
   const d = input.deltas;
   if (d.orders_count) next.orders_count += d.orders_count;
   if (d.orders_value) next.orders_value += d.orders_value;
+  if (d.cogs_value) next.cogs_value += d.cogs_value;
   if (d.confirmed_orders_count) {
     next.confirmed_orders_count += d.confirmed_orders_count;
   }
   if (d.shipments_count) next.shipments_count += d.shipments_count;
   if (d.shipping_cost) next.shipping_cost += d.shipping_cost;
+  if (d.delivery_shipments_count) {
+    next.delivery_shipments_count += d.delivery_shipments_count;
+  }
+  if (d.delivery_shipping_cost) {
+    next.delivery_shipping_cost += d.delivery_shipping_cost;
+  }
+  if (d.return_shipments_count) {
+    next.return_shipments_count += d.return_shipments_count;
+  }
+  if (d.return_shipping_cost) {
+    next.return_shipping_cost += d.return_shipping_cost;
+  }
+  if (d.exchange_shipments_count) {
+    next.exchange_shipments_count += d.exchange_shipments_count;
+  }
+  if (d.exchange_shipping_cost) {
+    next.exchange_shipping_cost += d.exchange_shipping_cost;
+  }
   if (d.returns_count) next.returns_count += d.returns_count;
   if (d.returns_value) next.returns_value += d.returns_value;
+  if (d.refunds_value) next.refunds_value += d.refunds_value;
   if (d.exchanges_count) next.exchanges_count += d.exchanges_count;
   if (d.exchanges_value) next.exchanges_value += d.exchanges_value;
   next.updatedAt = iso();
@@ -1951,10 +2378,12 @@ export function mockRebuildAnalyticsDay(
 
   let orders_count = 0;
   let orders_value = 0;
+  let cogs_value = 0;
   for (const o of orders) {
     if (o.createdAt.slice(0, 10) !== date) continue;
     orders_count += 1;
     orders_value += o.payment.total_amount;
+    cogs_value += mockOrderCogsValue(o);
   }
 
   let confirmed_orders_count = 0;
@@ -1967,25 +2396,59 @@ export function mockRebuildAnalyticsDay(
 
   let shipments_count = 0;
   let shipping_cost = 0;
+  let delivery_shipments_count = 0;
+  let delivery_shipping_cost = 0;
+  let return_shipments_count = 0;
+  let return_shipping_cost = 0;
+  let exchange_shipments_count = 0;
+  let exchange_shipping_cost = 0;
   for (const sh of s.shipments) {
     if (sh.tenantId !== tenantId) continue;
-    if (sh.type !== "delivery" || sh.createdAt.slice(0, 10) !== date) continue;
+    if (sh.createdAt.slice(0, 10) !== date) continue;
     shipments_count += 1;
     const o = orderById.get(sh.order_id);
-    shipping_cost += sh.shipping_fees ?? o?.shipping?.cost ?? 0;
+    const fee = sh.shipping_fees ?? o?.shipping?.cost ?? 0;
+    shipping_cost += fee;
+    if (sh.type === "delivery") {
+      delivery_shipments_count += 1;
+      delivery_shipping_cost += fee;
+    } else if (sh.type === "return") {
+      return_shipments_count += 1;
+      return_shipping_cost += fee;
+    } else if (sh.type === "exchange") {
+      exchange_shipments_count += 1;
+      exchange_shipping_cost += fee;
+    }
   }
 
   let returns_count = 0;
   let returns_value = 0;
+  let refunds_value = 0;
   let exchanges_count = 0;
+  let exchanges_value = 0;
   for (const t of s.tickets) {
     if (t.tenantId !== tenantId) continue;
     if (t.createdAt.slice(0, 10) !== date) continue;
     if (t.type === "return") {
       returns_count += 1;
-      returns_value += orderById.get(t.order_id)?.payment.total_amount ?? 0;
     } else if (t.type === "exchange") {
       exchanges_count += 1;
+    }
+  }
+  for (const t of s.tickets) {
+    if (t.tenantId !== tenantId) continue;
+    if (!t.resolution?.resolvedAt || t.resolution.resolvedAt.slice(0, 10) !== date) {
+      continue;
+    }
+    const value = Math.max(
+      0,
+      t.resolution.refundAmount ?? orderById.get(t.order_id)?.payment.total_amount ?? 0,
+    );
+    if (t.type === "return" || t.resolution.kind === "refund_without_shipment") {
+      returns_value += value;
+      refunds_value += value;
+    } else if (t.type === "exchange") {
+      exchanges_value += value;
     }
   }
 
@@ -1996,13 +2459,21 @@ export function mockRebuildAnalyticsDay(
     date,
     orders_count,
     orders_value,
+    cogs_value,
     confirmed_orders_count,
     shipments_count,
     shipping_cost,
+    delivery_shipments_count,
+    delivery_shipping_cost,
+    return_shipments_count,
+    return_shipping_cost,
+    exchange_shipments_count,
+    exchange_shipping_cost,
     returns_count,
     returns_value,
+    refunds_value,
     exchanges_count,
-    exchanges_value: 0,
+    exchanges_value,
     updatedAt: iso(),
   };
   s.analyticsDaily[id] = row;
@@ -2029,6 +2500,59 @@ export function mockReleaseIntegrationEventClaim(input: {
 }): void {
   const key = `${input.tenantId}_${input.source}_${input.deliveryId}`;
   ctx().integrationKeys.delete(key);
+}
+
+export function mockAppendOrderEvent(input: {
+  tenantId: string;
+  orderId: string;
+  action: string;
+  userId: string;
+  metadata?: Record<string, unknown>;
+}): void {
+  const s = ctx();
+  const id = crypto.randomUUID();
+  const createdAt = iso();
+  s.orderEvents.unshift({
+    id,
+    tenantId: input.tenantId,
+    orderId: input.orderId,
+    action: input.action,
+    userId: input.userId,
+    metadata: input.metadata ?? {},
+    createdAt,
+  });
+  if (s.orderEvents.length > 2000) s.orderEvents.length = 2000;
+}
+
+export function mockListOrderEvents(input: {
+  tenantId: string;
+  orderId: string;
+  limit: number;
+  actionPrefix?: string;
+}): OrderEvent[] {
+  const s = ctx();
+  const p = input.actionPrefix?.trim();
+  let rows = s.orderEvents.filter(
+    (e) => e.tenantId === input.tenantId && e.orderId === input.orderId,
+  );
+  if (p) rows = rows.filter((e) => e.action.startsWith(p));
+  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return rows.slice(0, input.limit);
+}
+
+export function mockListRecentOrderEventsByTenant(input: {
+  tenantId: string;
+  limit: number;
+  sinceIso?: string;
+}): OrderEvent[] {
+  const s = ctx();
+  let rows = s.orderEvents.filter((e) => e.tenantId === input.tenantId);
+  if (input.sinceIso?.trim()) {
+    const t = input.sinceIso.trim();
+    rows = rows.filter((e) => e.createdAt >= t);
+  }
+  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return rows.slice(0, input.limit);
 }
 
 export function mockAppendWebhookIngestLog(row: WebhookIngestLog): void {

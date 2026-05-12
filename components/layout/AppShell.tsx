@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FirebaseSessionSync } from "@/components/auth/firebase-session-sync";
+import { SupabaseSessionSync } from "@/components/auth/supabase-session-sync";
 import { UnauthenticatedBanner } from "@/components/auth/unauthenticated-banner";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { Container } from "@/components/layout/container";
 import { AppDrawer } from "@/components/layout/drawer";
 import { NewOrderSubscriber } from "@/components/notifications/new-order-subscriber";
@@ -51,6 +52,18 @@ function LocalizedAppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      const { commandPaletteOpen, setCommandPaletteOpen } =
+        useUiStore.getState();
+      setCommandPaletteOpen(!commandPaletteOpen);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!ready || !hasCredentials || tenantName?.trim()) return;
     void syncSessionFromMe();
   }, [ready, hasCredentials, tenantName]);
@@ -62,7 +75,7 @@ function LocalizedAppShell({ children }: { children: React.ReactNode }) {
       className="flex min-h-[100dvh] min-h-screen bg-[color:var(--color-shell)] text-[color:var(--color-text-primary)]"
     >
       <DomTranslator locale={locale} />
-      <FirebaseSessionSync />
+      <SupabaseSessionSync />
       {mobileNavOpen ? (
         <button
           type="button"
@@ -91,6 +104,7 @@ function LocalizedAppShell({ children }: { children: React.ReactNode }) {
         </Container>
       </div>
       <AppDrawer />
+      <CommandPalette />
       <NewOrderToasts />
     </div>
   );

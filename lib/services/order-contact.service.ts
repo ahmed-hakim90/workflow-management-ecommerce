@@ -1,11 +1,10 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { logActivity } from "@/lib/services/activity.service";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import { mockListActivities } from "@/lib/dev/mock-backend";
 import type { ActivityLog } from "@/lib/types/models";
 import { getUser } from "@/lib/services/users.service";
-import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
+import { updateOrderDoc } from "@/lib/repositories/orders.repository";
 
 export type OrderWhatsAppSummary = {
   sentAt: string;
@@ -33,18 +32,16 @@ export async function logOrderWhatsAppSent(input: {
     metadata: { phone: input.phone },
   });
   if (!isDevMockDataEnabled()) {
-    await getDb()
-      .collection(COLLECTIONS.orders)
-      .doc(input.orderId)
-      .update(
-        omitUndefinedForFirestore({
+    await updateOrderDoc(
+      input.orderId,
+      {
           whatsappSentAt: now,
           whatsappSentByUserId: input.actorUserId,
           whatsappSentByUserName: actor?.name,
           whatsappSentPhone: input.phone,
           updatedAt: now,
-        }),
-      );
+      },
+    );
   }
 }
 
@@ -80,16 +77,24 @@ export async function listLatestOrderWhatsAppSends(
   }
 
   const wanted = new Set(wantedIds);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.activityLogs)
-    .where("tenantId", "==", tenantId)
-    .where("entityType", "==", "order")
-    .where("action", "==", "order.whatsapp_sent")
-    .get();
-
-  const rows = snap.docs
-    .map((d) => d.data() as ActivityLog)
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("activity_logs")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("entity_type", "order")
+    .eq("action", "order.whatsapp_sent");
+  if (error) throw error;
+  const rows = (data ?? [])
+    .map((row) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      userId: row.user_id,
+      metadata: row.metadata ?? {},
+      timestamp: row.created_at,
+    }) as ActivityLog)
     .filter((a) => wanted.has(a.entityId))
     .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 

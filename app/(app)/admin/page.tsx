@@ -112,7 +112,7 @@ export default function AdminPage() {
       />
 
       {!loading && err ? (
-        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}
@@ -152,7 +152,7 @@ export default function AdminPage() {
           </CardContent>
         </Card>
         {data?.bottleneck ? (
-          <div className="col-span-12 rounded-xl border border-[color:var(--color-callout-warning-border)] bg-[color:var(--color-callout-warning-bg)] p-4 text-sm text-[color:var(--color-callout-warning-text)] shadow-[var(--shadow-notion-subtle)]">
+          <div className="col-span-12 rounded-[var(--ds-radius-md)] border border-[color:var(--color-callout-warning-border)] bg-[color:var(--color-callout-warning-bg)] p-4 text-sm text-[color:var(--color-callout-warning-text)] shadow-none">
             <span className="text-[color:var(--color-text-primary)]/80">
               Potential bottleneck:
             </span>{" "}

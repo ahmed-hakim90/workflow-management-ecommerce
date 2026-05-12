@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import type { UserStats } from "@/lib/types/models";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import { mockGetUserStatsForToday } from "@/lib/dev/mock-backend";
@@ -8,45 +7,43 @@ import {
   getTenantOrderStageRollup,
   orderValueForStageRollup,
 } from "@/lib/services/order-stage-rollup.service";
-import { DASHBOARD_ORDER_STAGE_KEYS } from "@/lib/logic/dashboard-order-stages";
+import {
+  DASHBOARD_ORDER_STAGE_KEYS,
+  emptyDashboardStages,
+  emptyDashboardStageValues,
+  isDashboardOrderStage,
+  type DashboardOrderStageKey,
+} from "@/lib/logic/dashboard-order-stages";
 
-const KANBAN_STATUSES = [...DASHBOARD_ORDER_STAGE_KEYS] as const;
+type KanbanStageKey = DashboardOrderStageKey;
 
-type KanbanStageKey = (typeof KANBAN_STATUSES)[number];
+const KANBAN_STATUS_SET = new Set<string>(DASHBOARD_ORDER_STAGE_KEYS);
 
-const KANBAN_STATUS_SET = new Set<string>(KANBAN_STATUSES);
-
-/** Counts (and `warehouse` roll-up) plus matching `stageValues` (pipeline monetary totals). */
+/**
+ * Pipeline counts plus a virtual `warehouse` rollup
+ * (warehouse_picking + warehouse_packed) and matching `stageValues`.
+ */
 export type OrdersPerStageResult = {
   [K in KanbanStageKey | "warehouse"]: number;
 } & {
   stageValues: { [K in KanbanStageKey | "warehouse"]: number };
 };
 
-const ZERO_SIX = (): { [K in KanbanStageKey]: number } => ({
-  pending_confirmation: 0,
-  confirmed: 0,
-  invoicing: 0,
-  ready_for_warehouse: 0,
-  packed: 0,
-  shipped: 0,
-});
-
-function perStageValueTotals(
-  v: { [K in KanbanStageKey]: number },
-): OrdersPerStageResult["stageValues"] {
+function withWarehouseRollup<T extends Record<KanbanStageKey, number>>(
+  v: T,
+): T & { warehouse: number } {
   return {
     ...v,
-    warehouse: v.ready_for_warehouse + v.packed,
+    warehouse: (v.warehouse_picking ?? 0) + (v.warehouse_packed ?? 0),
   };
 }
 
 const ZERO_STAGE: OrdersPerStageResult = (() => {
-  const z = ZERO_SIX();
+  const counts = emptyDashboardStages();
+  const values = emptyDashboardStageValues();
   return {
-    ...z,
-    warehouse: 0,
-    stageValues: perStageValueTotals(z),
+    ...withWarehouseRollup(counts),
+    stageValues: withWarehouseRollup(values),
   };
 })();
 
@@ -55,8 +52,8 @@ export async function getOrdersPerStage(
 ): Promise<OrdersPerStageResult> {
   if (isDevMockDataEnabled()) {
     const orders = await listOrders(tenantId);
-    const counts = ZERO_SIX();
-    const amounts = ZERO_SIX();
+    const counts = emptyDashboardStages();
+    const amounts = emptyDashboardStageValues();
     for (const o of orders) {
       if (KANBAN_STATUS_SET.has(o.status)) {
         const b = o.status as KanbanStageKey;
@@ -65,9 +62,8 @@ export async function getOrdersPerStage(
       }
     }
     return {
-      ...counts,
-      warehouse: counts.ready_for_warehouse + counts.packed,
-      stageValues: perStageValueTotals(amounts),
+      ...withWarehouseRollup(counts),
+      stageValues: withWarehouseRollup(amounts),
     };
   }
 
@@ -78,24 +74,15 @@ export async function getOrdersPerStage(
   }
 
   const { stages, stageValues: sv0 } = rollup;
-  const amt: { [K in KanbanStageKey]: number } = {
-    pending_confirmation: sv0.pending_confirmation ?? 0,
-    confirmed: sv0.confirmed ?? 0,
-    invoicing: sv0.invoicing ?? 0,
-    ready_for_warehouse: sv0.ready_for_warehouse ?? 0,
-    packed: sv0.packed ?? 0,
-    shipped: sv0.shipped ?? 0,
-  };
+  const counts = emptyDashboardStages();
+  const amounts = emptyDashboardStageValues();
+  for (const k of DASHBOARD_ORDER_STAGE_KEYS) {
+    counts[k] = stages[k] ?? 0;
+    amounts[k] = sv0[k] ?? 0;
+  }
   return {
-    pending_confirmation: stages.pending_confirmation ?? 0,
-    confirmed: stages.confirmed ?? 0,
-    invoicing: stages.invoicing ?? 0,
-    ready_for_warehouse: stages.ready_for_warehouse ?? 0,
-    packed: stages.packed ?? 0,
-    shipped: stages.shipped ?? 0,
-    warehouse:
-      (stages.ready_for_warehouse ?? 0) + (stages.packed ?? 0),
-    stageValues: perStageValueTotals(amt),
+    ...withWarehouseRollup(counts),
+    stageValues: withWarehouseRollup(amounts),
   };
 }
 
@@ -106,9 +93,15 @@ export async function getUserStatsForToday(
   if (isDevMockDataEnabled()) return mockGetUserStatsForToday(tenantId, userId);
   const date = new Date().toISOString().slice(0, 10);
   const id = `${tenantId}_${userId}_${date}`;
-  const db = getDb();
-  const snap = await db.collection(COLLECTIONS.userStats).doc(id).get();
-  if (!snap.exists) {
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("user_stats")
+    .select("metrics, updated_at")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", userId)
+    .eq("date", date)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
     return {
       id,
       tenantId,
@@ -120,5 +113,17 @@ export async function getUserStatsForToday(
       updatedAt: new Date().toISOString(),
     };
   }
-  return snap.data() as UserStats;
+  const metrics = (data.metrics ?? {}) as Partial<UserStats>;
+  return {
+    id,
+    tenantId,
+    userId,
+    date,
+    confirmed: metrics.confirmed ?? 0,
+    invoiced: metrics.invoiced ?? 0,
+    packed: metrics.packed ?? 0,
+    updatedAt: data.updated_at ?? new Date().toISOString(),
+  };
 }
+
+export { isDashboardOrderStage };

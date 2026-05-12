@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 
-const trustLogos = ["WooCommerce", "Bosta", "WhatsApp", "Firebase", "Analytics"] as const;
+const trustLogos = ["WooCommerce", "Bosta", "WhatsApp", "Supabase", "Analytics"] as const;
 
 const heroMetrics = [
   { label: "Orders synced", value: "1.2M+", detail: "Across stores and channels" },
@@ -78,7 +78,7 @@ const integrations = [
   { name: "WooCommerce", description: "Order webhooks and catalog context" },
   { name: "Bosta", description: "Shipment creation and tracking" },
   { name: "WhatsApp", description: "Confirmation and customer updates" },
-  { name: "Firebase", description: "Auth, app data, and operational state" },
+  { name: "Supabase", description: "Auth, app data, and operational state" },
 ] as const;
 
 function LinkedInIcon({ className }: { className?: string }) {
@@ -106,7 +106,7 @@ export default function LandingPage() {
             href="/"
             className="flex items-center gap-2 text-lg font-semibold text-[color:var(--color-text-primary)]"
           >
-            <span className="flex size-9 items-center justify-center rounded-xl bg-[color:var(--color-primary)] text-sm font-black text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]">
+            <span className="flex size-9 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)] text-sm font-black text-[color:var(--color-primary-contrast)] shadow-none">
               S
             </span>
             Store OMS
@@ -153,7 +153,7 @@ export default function LandingPage() {
         />
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 md:grid-cols-[1.02fr_0.98fr] md:items-center md:gap-14 md:px-6 lg:py-20">
           <div className="space-y-7">
-            <span className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-card)] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)]">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-card)] px-3 py-1 text-[11px] font-medium text-[color:var(--color-primary)] shadow-none">
               <Sparkles className="size-3.5" aria-hidden />
               Built for fast-moving ecommerce teams
             </span>
@@ -185,12 +185,12 @@ export default function LandingPage() {
               {heroMetrics.map((metric) => (
                 <div
                   key={metric.label}
-                  className="rounded-2xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]"
+                  className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 shadow-none"
                 >
                   <p className="text-2xl font-bold text-[color:var(--color-primary)]">
                     {metric.value}
                   </p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-wide">
+                  <p className="mt-1 text-[12px] font-medium text-[color:var(--color-text-muted)]">
                     {metric.label}
                   </p>
                   <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
@@ -206,12 +206,12 @@ export default function LandingPage() {
               className="absolute -right-10 -top-10 size-44 rounded-full bg-[color:var(--color-primary)]/10 blur-3xl"
               aria-hidden
             />
-            <Card className="relative overflow-hidden rounded-[2rem]">
+            <Card className="relative overflow-hidden rounded-[var(--ds-radius-lg)]">
               <CardContent className="p-4 md:p-5">
-                <div className="rounded-[1.5rem] bg-[color:var(--color-bg-subtle)] p-4 shadow-[var(--shadow-neo-inset)]">
+                <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                      <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                         Operations pulse
                       </p>
                       <h2 className="mt-1 text-xl font-bold">Today&apos;s command view</h2>
@@ -225,7 +225,7 @@ export default function LandingPage() {
                     {platformStats.map((stat) => (
                       <div
                         key={stat.label}
-                        className="rounded-2xl bg-[color:var(--color-card)] p-3 shadow-[var(--shadow-neo-raised-sm)]"
+                        className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-3 shadow-none"
                       >
                         <p className="text-xs text-[color:var(--color-text-muted)]">
                           {stat.label}
@@ -240,10 +240,10 @@ export default function LandingPage() {
                     ))}
                   </div>
 
-                  <div className="mt-4 rounded-2xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]">
+                  <div className="mt-4 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 shadow-none">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                        <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                           Fulfillment throughput
                         </p>
                         <p className="mt-1 text-sm text-[color:var(--color-text-secondary)]">
@@ -252,7 +252,7 @@ export default function LandingPage() {
                       </div>
                       <Clock3 className="size-5 text-[color:var(--color-primary)]" aria-hidden />
                     </div>
-                    <div className="mt-6 flex h-44 items-end justify-between gap-1 rounded-xl bg-[color:var(--color-bg-subtle)] px-4 py-3 shadow-[var(--shadow-neo-inset)]">
+                    <div className="mt-6 flex h-44 items-end justify-between gap-1 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] px-4 py-3">
                       {[42, 56, 38, 64, 70, 52, 78, 74, 88, 68, 82, 92].map((height, index) => (
                         <div
                           key={`${height}-${index}`}
@@ -267,8 +267,8 @@ export default function LandingPage() {
                   </div>
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl bg-[color:var(--color-primary)] p-4 text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]">
-                      <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+                    <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-primary)]/30 bg-[color:var(--color-primary)] p-4 text-[color:var(--color-primary-contrast)] shadow-none">
+                      <p className="text-[12px] font-medium opacity-90">
                         At risk
                       </p>
                       <p className="mt-2 text-2xl font-bold">8 orders</p>
@@ -276,8 +276,8 @@ export default function LandingPage() {
                         Missing address or customer confirmation.
                       </p>
                     </div>
-                    <div className="rounded-2xl bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 shadow-none">
+                      <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                         Next action
                       </p>
                       <p className="mt-2 font-semibold">Notify confirmation team</p>
@@ -295,7 +295,7 @@ export default function LandingPage() {
 
       <section className="border-y border-[color:var(--color-divider)] bg-[color:var(--color-bg-subtle)]/50 py-10">
         <div className="mx-auto max-w-6xl px-4 text-center md:px-6">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-[color:var(--color-text-muted)]">
+          <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
             Connect the systems your operations already use
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-8 opacity-70">
@@ -313,7 +313,7 @@ export default function LandingPage() {
 
       <section id="platform" className="mx-auto max-w-6xl px-4 py-16 md:px-6 lg:py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <span className="text-xs font-semibold uppercase tracking-widest text-[color:var(--color-primary)]">
+          <span className="text-[12px] font-semibold text-[color:var(--color-primary)]">
             Platform
           </span>
           <h2 className="mt-3 text-3xl font-bold md:text-4xl">
@@ -328,7 +328,7 @@ export default function LandingPage() {
           {benefits.map(({ title, body, icon: Icon }) => (
             <Card key={title} className="group transition-transform hover:-translate-y-1">
               <CardContent className="space-y-4 p-6">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]">
+                <div className="flex size-12 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-none">
                   <Icon className="size-5" aria-hidden />
                 </div>
                 <div>
@@ -351,7 +351,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 md:px-6">
           <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
             <div className="space-y-4">
-              <span className="text-xs font-semibold uppercase tracking-widest text-[color:var(--color-primary)]">
+              <span className="text-[12px] font-semibold text-[color:var(--color-primary)]">
                 Workflow
               </span>
               <h2 className="text-3xl font-bold md:text-4xl">
@@ -375,7 +375,7 @@ export default function LandingPage() {
                 <Card key={step.title}>
                   <CardContent className="p-5">
                     <div className="flex items-start gap-4">
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--color-bg-subtle)] text-sm font-bold text-[color:var(--color-primary)] shadow-[var(--shadow-neo-inset)]">
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] text-sm font-bold text-[color:var(--color-primary)]">
                         {index + 1}
                       </span>
                       <div>
@@ -399,7 +399,7 @@ export default function LandingPage() {
             <CardContent className="p-6">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                  <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                     Revenue and fulfillment performance
                   </p>
                   <h2 className="mt-2 text-2xl font-bold md:text-3xl">
@@ -407,7 +407,7 @@ export default function LandingPage() {
                   </h2>
                 </div>
                 <div
-                  className="flex rounded-lg bg-[color:var(--color-bg-subtle)] p-0.5 text-[11px] font-semibold shadow-[var(--shadow-neo-inset)]"
+                  className="flex rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-0.5 text-[11px] font-semibold"
                   role="group"
                   aria-label="Chart range"
                 >
@@ -422,7 +422,7 @@ export default function LandingPage() {
                   </span>
                 </div>
               </div>
-              <div className="mt-6 flex h-56 items-end justify-between gap-1 rounded-xl bg-[color:var(--color-bg-subtle)] px-4 py-3 shadow-[var(--shadow-neo-inset)]">
+              <div className="mt-6 flex h-56 items-end justify-between gap-1 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] px-4 py-3">
                 {[48, 66, 54, 72, 58, 81, 75, 88, 70, 94, 86, 98].map((height, index) => (
                   <div
                     key={`${height}-${index}`}
@@ -480,7 +480,7 @@ export default function LandingPage() {
             ].map(({ title, body, icon: Icon }) => (
               <Card key={title}>
                 <CardContent className="flex gap-4 p-5">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]">
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-none">
                     <Icon className="size-5" aria-hidden />
                   </div>
                   <div>
@@ -500,7 +500,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 md:px-6">
           <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
-              <span className="text-xs font-semibold uppercase tracking-widest text-[color:var(--color-primary)]">
+              <span className="text-[12px] font-semibold text-[color:var(--color-primary)]">
                 Integrations
               </span>
               <h2 className="mt-3 text-3xl font-bold md:text-4xl">
@@ -516,7 +516,7 @@ export default function LandingPage() {
               {integrations.map((integration) => (
                 <Card key={integration.name}>
                   <CardContent className="p-5">
-                    <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-[color:var(--color-bg-subtle)] shadow-[var(--shadow-neo-inset)]">
+                    <div className="mb-4 flex size-10 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)]">
                       {integration.name === "WooCommerce" ? (
                         <Warehouse className="size-5 text-[color:var(--color-primary)]" aria-hidden />
                       ) : integration.name === "Bosta" ? (
@@ -540,7 +540,7 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-4 mb-16 md:mx-6">
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-6 overflow-hidden rounded-2xl bg-[color:var(--color-text-primary)] px-8 py-12 text-[color:var(--color-shell)] shadow-[var(--shadow-neo-raised-lg)] md:flex-row md:items-center md:justify-between md:px-12">
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-6 overflow-hidden rounded-[var(--ds-radius-md)] bg-[color:var(--color-text-primary)] px-8 py-12 text-[color:var(--color-shell)] shadow-none md:flex-row md:items-center md:justify-between md:px-12">
           <span
             className="pointer-events-none absolute -end-8 top-1/2 -translate-y-1/2 select-none text-[min(12rem,28vw)] font-black leading-none text-white/[0.07]"
             aria-hidden
@@ -563,7 +563,7 @@ export default function LandingPage() {
             <Link href="/register">
               <Button
                 variant="secondary"
-                className="bg-transparent text-white shadow-[var(--shadow-neo-raised-sm)] ring-1 ring-white/30"
+                className="bg-transparent text-white shadow-none ring-1 ring-white/30"
               >
                 Create Account
               </Button>
@@ -593,14 +593,14 @@ export default function LandingPage() {
           <div className="flex items-center gap-1 text-[color:var(--color-text-muted)]">
             <a
               href="https://linkedin.com"
-              className="rounded-lg p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
+              className="rounded-[var(--ds-radius-md)] p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
               aria-label="LinkedIn"
             >
               <LinkedInIcon className="size-4" />
             </a>
             <a
               href="https://twitter.com"
-              className="rounded-lg p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
+              className="rounded-[var(--ds-radius-md)] p-2 hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-primary)]"
               aria-label="Twitter"
             >
               <XIcon className="size-4" />

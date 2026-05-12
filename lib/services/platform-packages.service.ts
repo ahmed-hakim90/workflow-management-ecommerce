@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockAssignTenantPackage,
@@ -18,15 +17,17 @@ import type {
   PlatformSupportTier,
   TenantEntitlements,
 } from "@/lib/types/models";
-import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
 
 export type IntegrationFeature = keyof PlatformPackageFeatures;
 
 export const DEFAULT_PACKAGE_FEATURES: PlatformPackageFeatures = {
   woocommerce: true,
   bosta: true,
+  jntEgypt: true,
+  fedex: true,
   storefrontOrders: true,
   outboundWebhooks: true,
+  whatsapp: true,
 };
 
 function httpError(message: string, status: number) {
@@ -68,24 +69,29 @@ function normalizeFeatures(
 
 export async function listPlatformPackages(): Promise<PlatformPackage[]> {
   if (isDevMockDataEnabled()) return mockListPlatformPackages();
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.platformPackages)
-    .orderBy("createdAt", "desc")
-    .get();
-  return snap.docs.map((d) => d.data() as PlatformPackage);
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("platform_packages")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description ?? undefined,
+    active: row.active,
+    limits: row.limits ?? {},
+    features: normalizeFeatures(row.features ?? {}),
+    supportTier: row.support_tier ?? "standard",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })) as PlatformPackage[];
 }
 
 export async function getPlatformPackage(
   packageId: string,
 ): Promise<PlatformPackage | null> {
   if (isDevMockDataEnabled()) return mockGetPlatformPackage(packageId);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.platformPackages)
-    .doc(packageId)
-    .get();
-  return snap.exists ? (snap.data() as PlatformPackage) : null;
+  return (await listPlatformPackages()).find((pkg) => pkg.id === packageId) ?? null;
 }
 
 export async function createPlatformPackage(input: {
@@ -110,11 +116,20 @@ export async function createPlatformPackage(input: {
   };
   if (!pkg.name) throw httpError("Package name is required", 422);
   if (isDevMockDataEnabled()) return mockCreatePlatformPackage(pkg);
-  const db = getDb();
-  await db
-    .collection(COLLECTIONS.platformPackages)
-    .doc(pkg.id)
-    .set(omitUndefinedForFirestore(pkg));
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("platform_packages")
+    .insert({
+      id: pkg.id,
+      name: pkg.name,
+      description: pkg.description,
+      active: pkg.active,
+      limits: pkg.limits,
+      features: pkg.features,
+      support_tier: pkg.supportTier,
+      created_at: pkg.createdAt,
+      updated_at: pkg.updatedAt,
+    });
+  if (error) throw error;
   return pkg;
 }
 
@@ -147,11 +162,19 @@ export async function updatePlatformPackage(input: {
     updatedAt: new Date().toISOString(),
   };
   if (!next.name) throw httpError("Package name is required", 422);
-  const db = getDb();
-  await db
-    .collection(COLLECTIONS.platformPackages)
-    .doc(input.packageId)
-    .set(omitUndefinedForFirestore(next));
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("platform_packages")
+    .update({
+      name: next.name,
+      description: next.description,
+      active: next.active,
+      limits: next.limits,
+      features: next.features,
+      support_tier: next.supportTier,
+      updated_at: next.updatedAt,
+    })
+    .eq("id", input.packageId);
+  if (error) throw error;
   return next;
 }
 
@@ -159,12 +182,23 @@ export async function getTenantEntitlements(
   tenantId: string,
 ): Promise<TenantEntitlements | null> {
   if (isDevMockDataEnabled()) return mockGetTenantEntitlements(tenantId);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenantEntitlements)
-    .doc(tenantId)
-    .get();
-  return snap.exists ? (snap.data() as TenantEntitlements) : null;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenant_entitlements")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return data
+    ? ({
+        tenantId: data.tenant_id,
+        packageId: data.package_id,
+        packageSnapshot: data.package_snapshot ?? undefined,
+        overrides: data.overrides ?? undefined,
+        assignedAt: data.created_at,
+        assignedBy: data.assigned_by ?? "",
+        updatedAt: data.updated_at,
+      } as TenantEntitlements)
+    : null;
 }
 
 export async function assignTenantPackage(input: {
@@ -186,11 +220,16 @@ export async function assignTenantPackage(input: {
     updatedAt: now,
   };
   if (isDevMockDataEnabled()) return mockAssignTenantPackage(entitlements);
-  const db = getDb();
-  await db
-    .collection(COLLECTIONS.tenantEntitlements)
-    .doc(input.tenantId)
-    .set(omitUndefinedForFirestore(entitlements));
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("tenant_entitlements")
+    .upsert({
+      tenant_id: input.tenantId,
+      package_id: input.packageId,
+      package_snapshot: pkg ?? {},
+      assigned_by: input.assignedBy,
+      updated_at: now,
+    });
+  if (error) throw error;
   return entitlements;
 }
 
@@ -204,6 +243,7 @@ export function effectivePackageFromEntitlements(
     ...pkg,
     limits: { ...pkg.limits, ...limitOverrides },
     features: {
+      ...DEFAULT_PACKAGE_FEATURES,
       ...pkg.features,
       ...(features ?? {}),
     },

@@ -28,7 +28,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       className={cn(
-        "flex size-11 shrink-0 items-center justify-center rounded-lg text-[color:var(--color-text-secondary)] transition-colors",
+        "flex size-11 shrink-0 items-center justify-center rounded-[var(--ds-radius-md)] text-[color:var(--color-text-secondary)] transition-colors",
         "hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
         "focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
         className,

@@ -33,6 +33,7 @@ export async function GET(
       ...bundle,
       order: {
         ...bundle.order,
+        omsStatus: bundle.order.status,
         wooCommerceOrderAdminUrl: buildWooCommerceOrderAdminUrl({
           storeUrl: integrations.woocommerce?.storeUrl,
           wooOrderId: bundle.order.wooCommerceOrderId,

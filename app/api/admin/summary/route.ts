@@ -17,11 +17,15 @@ export async function GET(req: Request) {
       getOrdersPerStage(ctx.tenantId),
       listOrdersPage(ctx.tenantId, {
         status: [
+          "new",
           "pending_confirmation",
           "confirmed",
-          "invoicing",
-          "ready_for_warehouse",
-          "packed",
+          "invoice_required",
+          "invoiced",
+          "ready_for_shipping",
+          "awb_created",
+          "warehouse_picking",
+          "warehouse_packed",
         ],
         limit: 50,
       }),

@@ -23,25 +23,37 @@ const THRESHOLDS: Partial<
     minutes: 60,
     nextAction: "إصدار الفاتورة وتجهيز الطلب للمخزن",
   },
-  invoicing: {
+  invoice_required: {
     minutes: 120,
     nextAction: "إنهاء الفوترة ونقل الطلب للمخزن",
   },
-  ready_for_warehouse: {
+  invoiced: {
+    minutes: 120,
+    nextAction: "تجهيز الشحن وإنشاء البوليصة",
+  },
+  ready_for_shipping: {
     minutes: 120,
     nextAction: "تجهيز/تعبئة الطلب في المخزن",
   },
-  packed: {
-    minutes: 60,
-    nextAction: "شحن الطلب",
+  awb_created: {
+    minutes: 90,
+    nextAction: "بدء الالتقاط أو التعبئة",
   },
-  shipped: {
+  warehouse_picking: {
+    minutes: 90,
+    nextAction: "إكمال الالتقاط",
+  },
+  warehouse_packed: {
+    minutes: 60,
+    nextAction: "تسليم الشحنة للناقل",
+  },
+  out_for_shipping: {
     minutes: 1440,
     nextAction: "متابعة التسليم أو تحديث الحالة",
   },
-  follow_up: {
+  failed_delivery: {
     minutes: 1440,
-    nextAction: "إغلاق المتابعة أو تحديث النتيجة",
+    nextAction: "متابعة إعادة المحاولة أو الإرجاع",
   },
 };
 

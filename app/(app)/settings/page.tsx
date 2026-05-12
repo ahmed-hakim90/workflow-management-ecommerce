@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import {
   type WebhookIngestLog,
 } from "@/lib/types/models";
 import { UsersManagement } from "@/components/users/users-management";
+import { InboxTemplatesSettings } from "@/components/inbox/inbox-templates-settings";
 import { useLocale } from "@/components/i18n/LocaleProvider";
 import type { Locale } from "@/lib/i18n/config";
 
@@ -33,6 +34,7 @@ type AdvTabId =
   | "general"
   | "kanban"
   | "shipment"
+  | "inbox_templates"
   | "webhooks"
   | "payment"
   | "users"
@@ -41,6 +43,7 @@ type AdvTabId =
 const ADV_TAB_DEFS: { id: AdvTabId; label: string }[] = [
   { id: "general", label: "General" },
   { id: "shipment", label: "Shipment rules" },
+  { id: "inbox_templates", label: "Inbox templates" },
   { id: "webhooks", label: "Status webhooks" },
   { id: "kanban", label: "Kanban JSON" },
   { id: "payment", label: "Payment" },
@@ -70,6 +73,81 @@ type BostaLocationOption = {
   id: string;
   name: string;
 };
+
+const PLATFORM_SETUP_LINKS: {
+  label: string;
+  href: string;
+  hint?: string;
+}[] = [
+  {
+    label: "WooCommerce — Webhooks",
+    href: "https://woocommerce.com/document/webhooks/",
+    hint: "في المتجر: الإعدادات → متقدم → Webhooks",
+  },
+  {
+    label: "WooCommerce — REST API keys",
+    href: "https://woocommerce.com/document/woocommerce-rest-api/",
+    hint: "الإعدادات → متقدم → REST API",
+  },
+  {
+    label: "Meta — WhatsApp Cloud API",
+    href: "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started",
+  },
+  {
+    label: "Meta — تطبيقات المطوّر",
+    href: "https://developers.facebook.com/apps/",
+    hint: "Webhook + Access token",
+  },
+  {
+    label: "Meta — مدير واتساب للأعمال",
+    href: "https://business.facebook.com/latest/whatsapp_manager/",
+  },
+  {
+    label: "Bosta — لوحة الأعمال / مفتاح API",
+    href: "https://business.bosta.co/",
+  },
+  {
+    label: "Bosta — توثيق الـ API",
+    href: "https://docs.bosta.co/",
+  },
+  {
+    label: "n8n — Webhooks",
+    href: "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/",
+  },
+  {
+    label: "n8n Cloud",
+    href: "https://app.n8n.cloud/",
+    hint: "لو تستخدم استضافة n8n",
+  },
+];
+
+function PlatformSetupLinkRow({
+  label,
+  href,
+  hint,
+}: {
+  label: string;
+  href: string;
+  hint?: string;
+}) {
+  return (
+    <li className="text-sm">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 font-medium text-[color:var(--color-primary)] hover:underline"
+      >
+        {label}
+        <ExternalLink className="size-3.5 shrink-0 opacity-80" aria-hidden />
+        <span className="sr-only">(يفتح في نافذة جديدة)</span>
+      </a>
+      {hint ? (
+        <p className="mt-0.5 text-xs text-[color:var(--color-text-muted)]">{hint}</p>
+      ) : null}
+    </li>
+  );
+}
 
 type SectionId =
   | "profile"
@@ -108,9 +186,16 @@ export default function SettingsPage() {
 
   const advTabs = useMemo(
     () =>
-      ADV_TAB_DEFS.filter(
-        (t) => t.id !== "users" || can(permissionSubject, "user:read"),
-      ),
+      ADV_TAB_DEFS.filter((tab) => {
+        if (tab.id === "users" && !can(permissionSubject, "user:read"))
+          return false;
+        if (
+          tab.id === "inbox_templates" &&
+          !can(permissionSubject, "inbox:manage")
+        )
+          return false;
+        return true;
+      }),
     [permissionSubject],
   );
 
@@ -137,6 +222,16 @@ export default function SettingsPage() {
   const [whCooldownSec, setWhCooldownSec] = useState(3.5);
   const [whTemplate, setWhTemplate] = useState("");
   const [orderLinkTemplateDraft, setOrderLinkTemplateDraft] = useState("");
+  const [whatsappAutomationEnabled, setWhatsappAutomationEnabled] =
+    useState(false);
+  const [inlineReplyClassifier, setInlineReplyClassifier] = useState(false);
+  const [n8nWebhookUrlDraft, setN8nWebhookUrlDraft] = useState("");
+  const [n8nWebhookSecretDraft, setN8nWebhookSecretDraft] = useState("");
+  const [n8nSecretConfigured, setN8nSecretConfigured] = useState(false);
+  const [orderConfirmationTemplateNameDraft, setOrderConfirmationTemplateNameDraft] =
+    useState("");
+  const [orderConfirmationTemplateLangDraft, setOrderConfirmationTemplateLangDraft] =
+    useState("");
   const [outboundWebhookDrafts, setOutboundWebhookDrafts] = useState<
     OutboundWebhookDraft[]
   >([]);
@@ -162,7 +257,7 @@ export default function SettingsPage() {
     hasPerTenantWooSecret: boolean;
     hasServerEnvWooSecret: boolean;
     effectiveSecretReady: boolean;
-    hasFirebaseAdmin: boolean;
+    hasSupabaseConfigured: boolean;
     hasCustomAppUrl: boolean;
     hasVercelUrl: boolean;
     warnings: string[];
@@ -219,6 +314,60 @@ export default function SettingsPage() {
   const [bostaBuildingDraft, setBostaBuildingDraft] = useState("");
   const [bostaAddressLineDraft, setBostaAddressLineDraft] = useState("");
   const [bostaPackageDescDraft, setBostaPackageDescDraft] = useState("");
+  const [jntConfigured, setJntConfigured] = useState(false);
+  const [jntMsg, setJntMsg] = useState<string | null>(null);
+  const [jntErr, setJntErr] = useState<string | null>(null);
+  const [jntApiAccountDraft, setJntApiAccountDraft] = useState("");
+  const [jntCustomerCodeDraft, setJntCustomerCodeDraft] = useState("");
+  const [jntPasswordDraft, setJntPasswordDraft] = useState("");
+  const [jntDigestDraft, setJntDigestDraft] = useState("");
+  const [jntBaseDraft, setJntBaseDraft] = useState("");
+  const [jntEnvironmentDraft, setJntEnvironmentDraft] = useState<"test" | "prod">("prod");
+  const [jntSenderNameDraft, setJntSenderNameDraft] = useState("");
+  const [jntSenderPhoneDraft, setJntSenderPhoneDraft] = useState("");
+  const [jntSenderCityDraft, setJntSenderCityDraft] = useState("");
+  const [jntSenderAreaDraft, setJntSenderAreaDraft] = useState("");
+  const [jntSenderAddressDraft, setJntSenderAddressDraft] = useState("");
+  const [jntServiceDraft, setJntServiceDraft] = useState("");
+  const [jntWeightDraft, setJntWeightDraft] = useState("");
+  const [fedexConfigured, setFedexConfigured] = useState(false);
+  const [fedexMsg, setFedexMsg] = useState<string | null>(null);
+  const [fedexErr, setFedexErr] = useState<string | null>(null);
+  const [fedexClientIdDraft, setFedexClientIdDraft] = useState("");
+  const [fedexClientSecretDraft, setFedexClientSecretDraft] = useState("");
+  const [fedexAccountDraft, setFedexAccountDraft] = useState("");
+  const [fedexBaseDraft, setFedexBaseDraft] = useState("");
+  const [fedexEnvironmentDraft, setFedexEnvironmentDraft] = useState<"test" | "prod">("prod");
+  const [fedexShipperNameDraft, setFedexShipperNameDraft] = useState("");
+  const [fedexShipperPhoneDraft, setFedexShipperPhoneDraft] = useState("");
+  const [fedexStreetDraft, setFedexStreetDraft] = useState("");
+  const [fedexCityDraft, setFedexCityDraft] = useState("");
+  const [fedexPostalDraft, setFedexPostalDraft] = useState("");
+  const [fedexCountryDraft, setFedexCountryDraft] = useState("EG");
+  const [fedexServiceDraft, setFedexServiceDraft] = useState("");
+  const [fedexPackagingDraft, setFedexPackagingDraft] = useState("");
+  const [fedexWeightDraft, setFedexWeightDraft] = useState("");
+
+  const [waWebhookCanonical, setWaWebhookCanonical] = useState<string | null>(
+    null,
+  );
+  const [waCopied, setWaCopied] = useState(false);
+  const [waVerifyDraft, setWaVerifyDraft] = useState("");
+  const [waAccessDraft, setWaAccessDraft] = useState("");
+  const [waAppSecretDraft, setWaAppSecretDraft] = useState("");
+  const [waPhoneIdDraft, setWaPhoneIdDraft] = useState("");
+  const [waBizDraft, setWaBizDraft] = useState("");
+  const [waVerifyConfigured, setWaVerifyConfigured] = useState(false);
+  const [waAccessLast4, setWaAccessLast4] = useState<string | null>(null);
+  const [waAppSecretLast4, setWaAppSecretLast4] = useState<string | null>(null);
+  const [waSigDiag, setWaSigDiag] = useState<{
+    hasGlobalAppSecret: boolean;
+    hasTenantAppSecret: boolean;
+    signatureReady: boolean;
+  } | null>(null);
+  const [waMsg, setWaMsg] = useState<string | null>(null);
+  const [waErr, setWaErr] = useState<string | null>(null);
+  const [waSaving, setWaSaving] = useState(false);
 
   const wooWebhookUrl = useMemo(() => {
     const base = (appOrigin || "").replace(/\/$/, "");
@@ -241,6 +390,13 @@ export default function SettingsPage() {
     () =>
       storefrontOrderWebhookCanonical?.trim() || storefrontOrderWebhookUrl,
     [storefrontOrderWebhookCanonical, storefrontOrderWebhookUrl],
+  );
+
+  const waDisplayUrl = useMemo(
+    () =>
+      waWebhookCanonical?.trim() ||
+      `${(appOrigin || "").replace(/\/$/, "")}/api/webhooks/whatsapp?tenant=${encodeURIComponent(tenantId)}`,
+    [waWebhookCanonical, appOrigin, tenantId],
   );
 
   const saveProfile = useCallback(async () => {
@@ -298,6 +454,9 @@ export default function SettingsPage() {
     (async () => {
       setWooErr(null);
       setBostaErr(null);
+      setJntErr(null);
+      setFedexErr(null);
+      setWaErr(null);
       setStorefrontOrderErr(null);
       setWooIngestLoadErr(null);
       setWooDiagnostic(null);
@@ -311,6 +470,7 @@ export default function SettingsPage() {
         const d = json.data as {
           serverPublicBaseUrl?: string;
           woocommerceWebhookUrl?: string;
+          whatsappWebhookUrl?: string;
           storefrontOrderWebhookUrl?: string;
           storefrontOrderWebhookSecretConfigured?: boolean;
           storefrontOrderSecretHeaderName?: string;
@@ -328,11 +488,48 @@ export default function SettingsPage() {
           bostaDefaultBuildingNumber?: string | null;
           bostaDefaultAddressLine?: string | null;
           bostaPackageDescription?: string | null;
+          jntApiAccountConfigured?: boolean;
+          jntCustomerCodeConfigured?: boolean;
+          jntPasswordConfigured?: boolean;
+          jntDigestSecretConfigured?: boolean;
+          jntBaseUrl?: string | null;
+          jntEnvironment?: "test" | "prod";
+          jntSenderName?: string | null;
+          jntSenderPhone?: string | null;
+          jntSenderCity?: string | null;
+          jntSenderArea?: string | null;
+          jntSenderAddress?: string | null;
+          jntDefaultServiceCode?: string | null;
+          jntDefaultWeightKg?: string | null;
+          fedexClientIdConfigured?: boolean;
+          fedexClientSecretConfigured?: boolean;
+          fedexAccountNumber?: string | null;
+          fedexBaseUrl?: string | null;
+          fedexEnvironment?: "test" | "prod";
+          fedexShipperName?: string | null;
+          fedexShipperPhone?: string | null;
+          fedexShipperStreet?: string | null;
+          fedexShipperCity?: string | null;
+          fedexShipperPostalCode?: string | null;
+          fedexShipperCountryCode?: string | null;
+          fedexDefaultServiceType?: string | null;
+          fedexDefaultPackagingType?: string | null;
+          fedexDefaultWeightKg?: string | null;
+          whatsappVerifyTokenConfigured?: boolean;
+          whatsappPhoneNumberId?: string | null;
+          whatsappBusinessAccountId?: string | null;
+          whatsappAccessTokenLast4?: string | null;
+          whatsappAppSecretLast4?: string | null;
+          whatsappSignatureDiagnostics?: {
+            hasGlobalAppSecret: boolean;
+            hasTenantAppSecret: boolean;
+            signatureReady: boolean;
+          };
           webhookDiagnostics?: {
             hasPerTenantWooSecret: boolean;
             hasServerEnvWooSecret: boolean;
             effectiveSecretReady: boolean;
-            hasFirebaseAdmin: boolean;
+            hasSupabaseConfigured: boolean;
             hasCustomAppUrl: boolean;
             hasVercelUrl: boolean;
             warnings: string[];
@@ -363,6 +560,16 @@ export default function SettingsPage() {
               );
           }
           setWooWebhookCanonical(d.woocommerceWebhookUrl?.trim() || null);
+          setWaWebhookCanonical(d.whatsappWebhookUrl?.trim() || null);
+          setWaVerifyConfigured(!!d.whatsappVerifyTokenConfigured);
+          setWaPhoneIdDraft(d.whatsappPhoneNumberId?.trim() ?? "");
+          setWaBizDraft(d.whatsappBusinessAccountId?.trim() ?? "");
+          setWaAccessLast4(d.whatsappAccessTokenLast4 ?? null);
+          setWaAppSecretLast4(d.whatsappAppSecretLast4 ?? null);
+          setWaSigDiag(d.whatsappSignatureDiagnostics ?? null);
+          setWaVerifyDraft("");
+          setWaAccessDraft("");
+          setWaAppSecretDraft("");
           setStorefrontOrderWebhookCanonical(
             d.storefrontOrderWebhookUrl?.trim() || null,
           );
@@ -389,6 +596,48 @@ export default function SettingsPage() {
           setBostaBuildingDraft(d.bostaDefaultBuildingNumber?.trim() ?? "");
           setBostaAddressLineDraft(d.bostaDefaultAddressLine?.trim() ?? "");
           setBostaPackageDescDraft(d.bostaPackageDescription?.trim() ?? "");
+          setJntConfigured(
+            !!(
+              d.jntApiAccountConfigured &&
+              d.jntCustomerCodeConfigured &&
+              d.jntPasswordConfigured &&
+              d.jntDigestSecretConfigured
+            ),
+          );
+          setJntApiAccountDraft("");
+          setJntCustomerCodeDraft("");
+          setJntPasswordDraft("");
+          setJntDigestDraft("");
+          setJntBaseDraft(d.jntBaseUrl?.trim() ?? "");
+          setJntEnvironmentDraft(d.jntEnvironment ?? "prod");
+          setJntSenderNameDraft(d.jntSenderName?.trim() ?? "");
+          setJntSenderPhoneDraft(d.jntSenderPhone?.trim() ?? "");
+          setJntSenderCityDraft(d.jntSenderCity?.trim() ?? "");
+          setJntSenderAreaDraft(d.jntSenderArea?.trim() ?? "");
+          setJntSenderAddressDraft(d.jntSenderAddress?.trim() ?? "");
+          setJntServiceDraft(d.jntDefaultServiceCode?.trim() ?? "");
+          setJntWeightDraft(d.jntDefaultWeightKg?.trim() ?? "");
+          setFedexConfigured(
+            !!(
+              d.fedexClientIdConfigured &&
+              d.fedexClientSecretConfigured &&
+              d.fedexAccountNumber?.trim()
+            ),
+          );
+          setFedexClientIdDraft("");
+          setFedexClientSecretDraft("");
+          setFedexAccountDraft(d.fedexAccountNumber?.trim() ?? "");
+          setFedexBaseDraft(d.fedexBaseUrl?.trim() ?? "");
+          setFedexEnvironmentDraft(d.fedexEnvironment ?? "prod");
+          setFedexShipperNameDraft(d.fedexShipperName?.trim() ?? "");
+          setFedexShipperPhoneDraft(d.fedexShipperPhone?.trim() ?? "");
+          setFedexStreetDraft(d.fedexShipperStreet?.trim() ?? "");
+          setFedexCityDraft(d.fedexShipperCity?.trim() ?? "");
+          setFedexPostalDraft(d.fedexShipperPostalCode?.trim() ?? "");
+          setFedexCountryDraft(d.fedexShipperCountryCode?.trim() ?? "EG");
+          setFedexServiceDraft(d.fedexDefaultServiceType?.trim() ?? "");
+          setFedexPackagingDraft(d.fedexDefaultPackagingType?.trim() ?? "");
+          setFedexWeightDraft(d.fedexDefaultWeightKg?.trim() ?? "");
         }
       } catch (e) {
         if (!cancelled)
@@ -481,8 +730,13 @@ export default function SettingsPage() {
   async function saveWooRestKeys() {
     setWooMsg(null);
     setWooErr(null);
+    const storeUrl = wooStoreDraft.trim();
     const ck = wooCkDraft.trim();
     const cs = wooCsDraft.trim();
+    if (!storeUrl) {
+      setWooErr("Enter your WooCommerce store URL before saving REST keys.");
+      return;
+    }
     if (!ck || !cs) {
       setWooErr("Paste both Consumer key and Consumer secret from WooCommerce.");
       return;
@@ -495,6 +749,7 @@ export default function SettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          woocommerce_store_url: storeUrl,
           woocommerce_consumer_key: ck,
           woocommerce_consumer_secret: cs,
         }),
@@ -503,15 +758,17 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       const d = json.data as {
         woocommerceRestConfigured?: boolean;
+        woocommerceStoreUrl?: string | null;
         woocommerceConsumerKeyLast4?: string | null;
         woocommerceConsumerSecretLast4?: string | null;
       };
       setWooRestConfigured(!!d.woocommerceRestConfigured);
+      setWooStoreDraft(d.woocommerceStoreUrl?.trim() ?? storeUrl);
       setWooCkDraft("");
       setWooCsDraft("");
       setWooCkLast4(d.woocommerceConsumerKeyLast4 ?? null);
       setWooCsLast4(d.woocommerceConsumerSecretLast4 ?? null);
-      setWooMsg("WooCommerce REST keys saved. OMS will push order status to Woo.");
+      setWooMsg("WooCommerce REST API settings saved. OMS will push order status to Woo.");
     } catch (e) {
       setWooErr(e instanceof Error ? e.message : "Save failed");
     }
@@ -733,6 +990,90 @@ export default function SettingsPage() {
     }
   }
 
+  async function copyWaUrl() {
+    const text = waDisplayUrl;
+    if (!text || typeof navigator === "undefined" || !navigator.clipboard)
+      return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setWaCopied(true);
+      window.setTimeout(() => setWaCopied(false), 2000);
+    } catch {
+      setWaErr("Could not copy to clipboard");
+    }
+  }
+
+  async function applyWhatsAppIntegrationsPatch(
+    body: Record<string, string | null>,
+    successMsg: string,
+  ) {
+    setWaMsg(null);
+    setWaErr(null);
+    setWaSaving(true);
+    try {
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        whatsappVerifyTokenConfigured?: boolean;
+        whatsappPhoneNumberId?: string | null;
+        whatsappBusinessAccountId?: string | null;
+        whatsappAccessTokenLast4?: string | null;
+        whatsappAppSecretLast4?: string | null;
+        whatsappSignatureDiagnostics?: {
+          hasGlobalAppSecret: boolean;
+          hasTenantAppSecret: boolean;
+          signatureReady: boolean;
+        };
+      };
+      setWaVerifyConfigured(!!d.whatsappVerifyTokenConfigured);
+      setWaPhoneIdDraft(d.whatsappPhoneNumberId?.trim() ?? "");
+      setWaBizDraft(d.whatsappBusinessAccountId?.trim() ?? "");
+      setWaAccessLast4(d.whatsappAccessTokenLast4 ?? null);
+      setWaAppSecretLast4(d.whatsappAppSecretLast4 ?? null);
+      setWaSigDiag(d.whatsappSignatureDiagnostics ?? null);
+      setWaVerifyDraft("");
+      setWaAccessDraft("");
+      setWaAppSecretDraft("");
+      setWaMsg(successMsg);
+    } catch (e) {
+      setWaErr(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setWaSaving(false);
+    }
+  }
+
+  async function saveWhatsAppCloud() {
+    const body: Record<string, string | null> = {
+      whatsapp_phone_number_id: waPhoneIdDraft.trim() || null,
+      whatsapp_business_account_id: waBizDraft.trim() || null,
+    };
+    if (waVerifyDraft.trim()) body.whatsapp_verify_token = waVerifyDraft.trim();
+    if (waAccessDraft.trim()) body.whatsapp_access_token = waAccessDraft.trim();
+    if (waAppSecretDraft.trim()) body.whatsapp_app_secret = waAppSecretDraft.trim();
+    await applyWhatsAppIntegrationsPatch(body, "WhatsApp Cloud settings saved.");
+  }
+
+  async function clearWhatsAppCloud() {
+    await applyWhatsAppIntegrationsPatch(
+      {
+        whatsapp_verify_token: null,
+        whatsapp_access_token: null,
+        whatsapp_phone_number_id: null,
+        whatsapp_business_account_id: null,
+        whatsapp_app_secret: null,
+      },
+      "WhatsApp Cloud configuration removed for this company.",
+    );
+  }
+
   async function saveStorefrontOrderWebhook() {
     setStorefrontOrderMsg(null);
     setStorefrontOrderErr(null);
@@ -882,6 +1223,127 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveJntSettings(clearSecrets = false) {
+    setJntMsg(null);
+    setJntErr(null);
+    try {
+      const body = clearSecrets
+        ? {
+            jnt_api_account: null,
+            jnt_customer_code: null,
+            jnt_password: null,
+            jnt_digest_secret: null,
+          }
+        : {
+            jnt_api_account: jntApiAccountDraft.trim() || undefined,
+            jnt_customer_code: jntCustomerCodeDraft.trim() || undefined,
+            jnt_password: jntPasswordDraft.trim() || undefined,
+            jnt_digest_secret: jntDigestDraft.trim() || undefined,
+            jnt_base_url: jntBaseDraft.trim() || null,
+            jnt_environment: jntEnvironmentDraft,
+            jnt_sender_name: jntSenderNameDraft.trim() || null,
+            jnt_sender_phone: jntSenderPhoneDraft.trim() || null,
+            jnt_sender_city: jntSenderCityDraft.trim() || null,
+            jnt_sender_area: jntSenderAreaDraft.trim() || null,
+            jnt_sender_address: jntSenderAddressDraft.trim() || null,
+            jnt_default_service_code: jntServiceDraft.trim() || null,
+            jnt_default_weight_kg: jntWeightDraft.trim() || null,
+          };
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        jntApiAccountConfigured?: boolean;
+        jntCustomerCodeConfigured?: boolean;
+        jntPasswordConfigured?: boolean;
+        jntDigestSecretConfigured?: boolean;
+        jntBaseUrl?: string | null;
+      };
+      setJntConfigured(
+        !!(
+          d.jntApiAccountConfigured &&
+          d.jntCustomerCodeConfigured &&
+          d.jntPasswordConfigured &&
+          d.jntDigestSecretConfigured
+        ),
+      );
+      setJntBaseDraft(d.jntBaseUrl?.trim() ?? "");
+      setJntApiAccountDraft("");
+      setJntCustomerCodeDraft("");
+      setJntPasswordDraft("");
+      setJntDigestDraft("");
+      setJntMsg(clearSecrets ? "J&T credentials removed." : "J&T Egypt settings saved.");
+    } catch (e) {
+      setJntErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function saveFedexSettings(clearSecrets = false) {
+    setFedexMsg(null);
+    setFedexErr(null);
+    try {
+      const body = clearSecrets
+        ? {
+            fedex_client_id: null,
+            fedex_client_secret: null,
+            fedex_account_number: null,
+          }
+        : {
+            fedex_client_id: fedexClientIdDraft.trim() || undefined,
+            fedex_client_secret: fedexClientSecretDraft.trim() || undefined,
+            fedex_account_number: fedexAccountDraft.trim() || null,
+            fedex_base_url: fedexBaseDraft.trim() || null,
+            fedex_environment: fedexEnvironmentDraft,
+            fedex_shipper_name: fedexShipperNameDraft.trim() || null,
+            fedex_shipper_phone: fedexShipperPhoneDraft.trim() || null,
+            fedex_shipper_street: fedexStreetDraft.trim() || null,
+            fedex_shipper_city: fedexCityDraft.trim() || null,
+            fedex_shipper_postal_code: fedexPostalDraft.trim() || null,
+            fedex_shipper_country_code: fedexCountryDraft.trim() || null,
+            fedex_default_service_type: fedexServiceDraft.trim() || null,
+            fedex_default_packaging_type: fedexPackagingDraft.trim() || null,
+            fedex_default_weight_kg: fedexWeightDraft.trim() || null,
+          };
+      const res = await fetch("/api/settings/integrations", {
+        method: "PATCH",
+        headers: {
+          ...buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const d = json.data as {
+        fedexClientIdConfigured?: boolean;
+        fedexClientSecretConfigured?: boolean;
+        fedexAccountNumber?: string | null;
+        fedexBaseUrl?: string | null;
+      };
+      setFedexConfigured(
+        !!(
+          d.fedexClientIdConfigured &&
+          d.fedexClientSecretConfigured &&
+          d.fedexAccountNumber?.trim()
+        ),
+      );
+      setFedexAccountDraft(d.fedexAccountNumber?.trim() ?? "");
+      setFedexBaseDraft(d.fedexBaseUrl?.trim() ?? "");
+      setFedexClientIdDraft("");
+      setFedexClientSecretDraft("");
+      setFedexMsg(clearSecrets ? "FedEx credentials removed." : "FedEx settings saved.");
+    } catch (e) {
+      setFedexErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/dev/mock-status")
@@ -897,6 +1359,15 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (advTab === "users" && !can(permissionSubject, "user:read")) {
+      setAdvTab("general");
+    }
+  }, [permissionSubject, advTab]);
+
+  useEffect(() => {
+    if (
+      advTab === "inbox_templates" &&
+      !can(permissionSubject, "inbox:manage")
+    ) {
       setAdvTab("general");
     }
   }, [permissionSubject, advTab]);
@@ -924,6 +1395,12 @@ export default function SettingsPage() {
           create_shipment_stage: "confirmed" | "invoiced";
           whatsappMessageTemplate?: string;
           orderLinkTemplate?: string;
+          whatsappAutomationEnabled?: boolean;
+          n8nWebhookUrl?: string;
+          n8nWebhookSecret?: string;
+          orderConfirmationTemplateName?: string;
+          orderConfirmationTemplateLanguage?: string;
+          inlineReplyClassifier?: boolean;
         };
         if (!cancelled) {
           setAutoShip(d.auto_create_shipment);
@@ -934,6 +1411,17 @@ export default function SettingsPage() {
               "",
           );
           setOrderLinkTemplateDraft(d.orderLinkTemplate?.trim() ?? "");
+          setWhatsappAutomationEnabled(!!d.whatsappAutomationEnabled);
+          setInlineReplyClassifier(!!d.inlineReplyClassifier);
+          setN8nWebhookUrlDraft(d.n8nWebhookUrl?.trim() ?? "");
+          setN8nWebhookSecretDraft("");
+          setN8nSecretConfigured(!!d.n8nWebhookSecret?.trim());
+          setOrderConfirmationTemplateNameDraft(
+            d.orderConfirmationTemplateName?.trim() ?? "",
+          );
+          setOrderConfirmationTemplateLangDraft(
+            d.orderConfirmationTemplateLanguage?.trim() ?? "",
+          );
         }
         if (whRes.ok) {
           const wj = await whRes.json();
@@ -1133,25 +1621,79 @@ export default function SettingsPage() {
     setSettingsMsg(null);
     setSettingsErr(null);
     try {
+      const secretTrim = n8nWebhookSecretDraft.trim();
+      const body: Record<string, unknown> = {
+        auto_create_shipment: autoShip,
+        create_shipment_stage: shipStage,
+        whatsappMessageTemplate: whTemplate.trim() || null,
+        orderLinkTemplate: orderLinkTemplateDraft.trim() || null,
+        whatsappAutomationEnabled,
+        n8nWebhookUrl: n8nWebhookUrlDraft.trim() || null,
+        orderConfirmationTemplateName:
+          orderConfirmationTemplateNameDraft.trim() || null,
+        orderConfirmationTemplateLanguage:
+          orderConfirmationTemplateLangDraft.trim() || null,
+        inlineReplyClassifier,
+      };
+      if (secretTrim.length >= 8) {
+        body.n8nWebhookSecret = secretTrim;
+      }
       const res = await fetch("/api/settings/automation", {
         method: "PATCH",
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
-        body: JSON.stringify({
-          auto_create_shipment: autoShip,
-          create_shipment_stage: shipStage,
-          whatsappMessageTemplate: whTemplate.trim() || null,
-          orderLinkTemplate: orderLinkTemplateDraft.trim() || null,
-        }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      if (json.data?.whatsappMessageTemplate) {
-        setWhTemplate(json.data.whatsappMessageTemplate);
+      const saved = json.data as {
+        whatsappMessageTemplate?: string;
+        orderLinkTemplate?: string;
+        n8nWebhookUrl?: string;
+        n8nWebhookSecret?: string;
+        orderConfirmationTemplateName?: string;
+        orderConfirmationTemplateLanguage?: string;
+        inlineReplyClassifier?: boolean;
+      };
+      if (saved.whatsappMessageTemplate) {
+        setWhTemplate(saved.whatsappMessageTemplate);
       }
-      setOrderLinkTemplateDraft(json.data?.orderLinkTemplate?.trim() ?? "");
-      setSettingsMsg("Shipment automation & confirmation WhatsApp saved.");
+      setOrderLinkTemplateDraft(saved.orderLinkTemplate?.trim() ?? "");
+      setN8nWebhookUrlDraft(saved.n8nWebhookUrl?.trim() ?? "");
+      setOrderConfirmationTemplateNameDraft(
+        saved.orderConfirmationTemplateName?.trim() ?? "",
+      );
+      setOrderConfirmationTemplateLangDraft(
+        saved.orderConfirmationTemplateLanguage?.trim() ?? "",
+      );
+      setInlineReplyClassifier(!!saved.inlineReplyClassifier);
+      if (secretTrim.length >= 8) {
+        setN8nWebhookSecretDraft("");
+        setN8nSecretConfigured(true);
+      } else if (saved.n8nWebhookSecret?.trim()) {
+        setN8nSecretConfigured(true);
+      }
+      setSettingsMsg("Shipment, confirmation WhatsApp, and inbox automation saved.");
     } catch (e) {
       setSettingsErr(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function clearN8nSecret() {
+    setSettingsMsg(null);
+    setSettingsErr(null);
+    try {
+      const res = await fetch("/api/settings/automation", {
+        method: "PATCH",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        body: JSON.stringify({ n8nWebhookSecret: null }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setN8nSecretConfigured(!!json.data?.n8nWebhookSecret?.trim());
+      setN8nWebhookSecretDraft("");
+      setSettingsMsg("n8n HMAC secret cleared.");
+    } catch (e) {
+      setSettingsErr(e instanceof Error ? e.message : "Clear failed");
     }
   }
 
@@ -1183,17 +1725,20 @@ export default function SettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="flex flex-col gap-1 rounded-xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-notion-subtle)] lg:sticky lg:top-4 lg:self-start">
+        <nav
+          className="flex flex-col gap-2 rounded-[var(--ds-radius-md)] bg-[color:var(--color-card)] p-2 shadow-none lg:sticky lg:top-4 lg:self-start"
+          aria-label="Settings navigation"
+        >
           {navItems.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => setSection(item.id)}
               className={cn(
-                "rounded-xl px-3 py-2.5 text-start text-sm font-medium transition-all",
+                "min-h-11 w-full rounded-[var(--ds-radius-md)] px-4 py-2 text-start text-base font-normal leading-6 transition-colors duration-150",
                 section === item.id
-                  ? "border-s-[3px] border-[color:var(--color-primary)] bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)]"
-                  : "border-s-[3px] border-transparent text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
+                  ? "bg-[color:var(--color-sidebar-nav-active-bg)] text-[color:var(--color-sidebar-nav-active-fg)]"
+                  : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
               )}
             >
               {item.label}
@@ -1228,7 +1773,7 @@ export default function SettingsPage() {
                 ) : null}
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2 flex items-center gap-4">
-                    <div className="flex size-16 items-center justify-center rounded-xl bg-[color:var(--color-muted-bg)] text-lg font-bold text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-well)]">
+                    <div className="flex size-16 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--color-muted-bg)] text-lg font-bold text-[color:var(--color-text-primary)] ring-1 ring-inset ring-[color:var(--color-border)]">
                       {firstName[0] || "?"}
                       {lastName[0] || ""}
                     </div>
@@ -1256,7 +1801,7 @@ export default function SettingsPage() {
                       Public bio
                     </label>
                     <textarea
-                      className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]"
+                      className="min-h-[100px] w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-3 text-sm leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
                       value={bio}
                       onChange={(e) => setProfile({ bio: e.target.value })}
                     />
@@ -1284,7 +1829,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              <Card className="border border-[color:var(--color-error)]/35 bg-[color:var(--color-error)]/5 shadow-[var(--shadow-neo-inset)]">
+              <Card className="border border-[color:var(--color-error)]/35 bg-[color:var(--color-error)]/5">
                 <CardHeader>
                   <CardTitle className="text-[color:var(--color-error)]">
                     Danger zone
@@ -1293,7 +1838,7 @@ export default function SettingsPage() {
                     Irreversible actions that affect your entire account access.
                   </p>
                 </CardHeader>
-                <CardContent className="rounded-xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]">
+                <CardContent className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-none">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-medium text-[color:var(--color-text-primary)]">
@@ -1338,6 +1883,23 @@ export default function SettingsPage() {
 
           {section === "api" && (
             <div className="space-y-6">
+              <Card className="border-[color:var(--color-primary)]/25 bg-[color:var(--color-primary)]/5">
+                <CardHeader>
+                  <CardTitle>روابط إعداد المنصات</CardTitle>
+                  <p className="text-sm font-normal text-[color:var(--color-text-secondary)]">
+                    افتح المنصة المناسبة، أنشئ المفاتيح أو الـ webhook، ثم انسخ القيم
+                    في الأقسام أدناه لربط المتجر والشحن وواتساب وn8n.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {PLATFORM_SETUP_LINKS.map((row) => (
+                      <PlatformSetupLinkRow key={row.href + row.label} {...row} />
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle>Session API secret</CardTitle>
@@ -1389,11 +1951,11 @@ export default function SettingsPage() {
                     .
                   </p>
                   <div className="space-y-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       Webhook delivery URL (paste in WooCommerce)
                     </span>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <code className="block flex-1 break-all rounded-xl bg-[color:var(--color-code-bg)] px-3 py-2 text-xs shadow-[var(--shadow-neo-inset)]">
+                      <code className="block flex-1 break-all rounded-[var(--ds-radius-md)] bg-[color:var(--color-code-bg)] px-3 py-2 text-xs">
                         {wooDisplayUrl ||
                           "…load this page in the browser to generate the link"}
                       </code>
@@ -1433,7 +1995,7 @@ export default function SettingsPage() {
                     ) : null}
                   </div>
                   <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
-                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       Webhook secret (per company)
                     </span>
                     <p className="text-[color:var(--color-text-secondary)]">
@@ -1505,7 +2067,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div className="space-y-2 border-t border-[color:var(--color-divider)] pt-4">
-                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       REST API — push order status to WooCommerce
                     </span>
                     <p className="text-[color:var(--color-text-secondary)]">
@@ -1613,7 +2175,7 @@ export default function SettingsPage() {
                       secret.
                     </p>
                     {wooWebhookSyncResults.length ? (
-                      <ul className="space-y-1 rounded-lg border border-[color:var(--color-border)] p-3 text-xs">
+                      <ul className="space-y-1 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] p-3 text-xs">
                         {wooWebhookSyncResults.map((r) => (
                           <li
                             key={`${r.topic}-${r.webhookId}`}
@@ -1643,11 +2205,11 @@ export default function SettingsPage() {
                     selected company.
                   </p>
                   <div className="space-y-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       Forwarded order API URL
                     </span>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <code className="block flex-1 break-all rounded-xl bg-[color:var(--color-code-bg)] px-3 py-2 text-xs shadow-[var(--shadow-neo-inset)]">
+                      <code className="block flex-1 break-all rounded-[var(--ds-radius-md)] bg-[color:var(--color-code-bg)] px-3 py-2 text-xs">
                         {storefrontOrderDisplayUrl ||
                           "…load this page in the browser to generate the link"}
                       </code>
@@ -1753,6 +2315,246 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <CardTitle>WhatsApp Cloud API</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm text-[color:var(--color-text-primary)]">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    Meta WhatsApp Business Platform: register this callback URL in
+                    your Meta app, then paste the verify token, phone number ID,
+                    and system user access token. Values are stored in Firestore
+                    for this company only (never shown again in full after save).
+                  </p>
+                  <div className="space-y-2">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                      Callback URL (Webhook)
+                    </span>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <code className="block flex-1 break-all rounded-[var(--ds-radius-md)] bg-[color:var(--color-code-bg)] px-3 py-2 text-xs">
+                        {waDisplayUrl ||
+                          "…load this page in the browser to generate the link"}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={!waDisplayUrl}
+                        onClick={() => void copyWaUrl()}
+                      >
+                        {waCopied ? (
+                          <>
+                            <Check className="size-4" aria-hidden />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-4" aria-hidden />
+                            Copy
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  {waSigDiag ? (
+                    <ul className="space-y-1 text-xs text-[color:var(--color-text-secondary)]">
+                      <li className="flex justify-between gap-2">
+                        <span>POST signature: server WHATSAPP_APP_SECRET</span>
+                        <span
+                          className={
+                            waSigDiag.hasGlobalAppSecret
+                              ? "font-medium text-[color:var(--color-success)]"
+                              : "text-[color:var(--color-text-muted)]"
+                          }
+                        >
+                          {waSigDiag.hasGlobalAppSecret ? "Set" : "—"}
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span>POST signature: per-company App secret</span>
+                        <span
+                          className={
+                            waSigDiag.hasTenantAppSecret
+                              ? "font-medium text-[color:var(--color-success)]"
+                              : "text-[color:var(--color-text-muted)]"
+                          }
+                        >
+                          {waSigDiag.hasTenantAppSecret ? "Set" : "—"}
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span>Webhook signature ready</span>
+                        <span
+                          className={
+                            waSigDiag.signatureReady
+                              ? "font-medium text-[color:var(--color-success)]"
+                              : "text-[color:var(--color-error)]"
+                          }
+                        >
+                          {waSigDiag.signatureReady ? "Yes" : "Configure env or App secret"}
+                        </span>
+                      </li>
+                    </ul>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input
+                      label="Phone number ID"
+                      placeholder="From Meta → WhatsApp → API setup"
+                      value={waPhoneIdDraft}
+                      onChange={(e) => setWaPhoneIdDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Business account ID (optional)"
+                      placeholder="waba-…"
+                      value={waBizDraft}
+                      onChange={(e) => setWaBizDraft(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                      Verify token
+                      {waVerifyConfigured ? (
+                        <span className="ms-2 font-normal text-[color:var(--color-success)]">
+                          (saved)
+                        </span>
+                      ) : null}
+                    </label>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={
+                        waVerifyConfigured
+                          ? "Enter new token to replace"
+                          : "Same token you enter in Meta webhook form"
+                      }
+                      value={waVerifyDraft}
+                      onChange={(e) => setWaVerifyDraft(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                      System user access token
+                      {waAccessLast4 ? (
+                        <span className="ms-2 font-normal text-[color:var(--color-text-muted)]">
+                          …{waAccessLast4}
+                        </span>
+                      ) : null}
+                    </label>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Long-lived token (EAA…)"
+                      value={waAccessDraft}
+                      onChange={(e) => setWaAccessDraft(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                      App secret (optional, overrides server env)
+                      {waAppSecretLast4 ? (
+                        <span className="ms-2 font-normal text-[color:var(--color-text-muted)]">
+                          …{waAppSecretLast4}
+                        </span>
+                      ) : null}
+                    </label>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Meta App secret for X-Hub-Signature-256"
+                      value={waAppSecretDraft}
+                      onChange={(e) => setWaAppSecretDraft(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={waSaving}
+                      onClick={() => void saveWhatsAppCloud()}
+                    >
+                      Save WhatsApp Cloud
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={waSaving}
+                      onClick={() =>
+                        void applyWhatsAppIntegrationsPatch(
+                          { whatsapp_verify_token: null },
+                          "Verify token removed.",
+                        )
+                      }
+                      disabled={!waVerifyConfigured}
+                    >
+                      Remove verify token
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={waSaving}
+                      onClick={() =>
+                        void applyWhatsAppIntegrationsPatch(
+                          { whatsapp_access_token: null },
+                          "Access token removed.",
+                        )
+                      }
+                      disabled={!waAccessLast4}
+                    >
+                      Remove access token
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={waSaving}
+                      onClick={() =>
+                        void applyWhatsAppIntegrationsPatch(
+                          { whatsapp_app_secret: null },
+                          "App secret removed.",
+                        )
+                      }
+                      disabled={!waAppSecretLast4}
+                    >
+                      Remove app secret
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={waSaving}
+                      onClick={() => void clearWhatsAppCloud()}
+                    >
+                      Clear all WhatsApp fields
+                    </Button>
+                  </div>
+                  {waMsg ? (
+                    <p className="text-xs font-medium text-[color:var(--color-success)]">
+                      {waMsg}
+                    </p>
+                  ) : null}
+                  {waErr ? (
+                    <p className="text-xs text-[color:var(--color-error)]">
+                      {waErr}
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-[color:var(--color-text-muted)]">
+                    Subscribe in Meta to{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                      messages
+                    </code>{" "}
+                    and{" "}
+                    <code className="rounded bg-[color:var(--color-code-bg)] px-1">
+                      message_status
+                    </code>
+                    . Order confirmation templates and n8n are configured under
+                    Workspace → Shipment &amp; confirmation.
+                  </p>
+                </CardContent>
+              </Card>
+
               {can(permissionSubject, "user:manage") ? (
                 <Card>
                   <CardHeader>
@@ -1805,8 +2607,8 @@ export default function SettingsPage() {
                             wooDiagnostic.effectiveSecretReady,
                           ],
                           [
-                            "FIREBASE_SERVICE_ACCOUNT_JSON (write orders in Firestore)",
-                            wooDiagnostic.hasFirebaseAdmin,
+                            "SUPABASE_SERVICE_ROLE_KEY (write orders in Supabase)",
+                            wooDiagnostic.hasSupabaseConfigured,
                           ],
                           [
                             "NEXT_PUBLIC_APP_URL (stable production link)",
@@ -1844,7 +2646,7 @@ export default function SettingsPage() {
                       </p>
                     )}
                     {wooDiagnostic?.warnings?.length ? (
-                      <div className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+                      <div className="space-y-1 rounded-[var(--ds-radius-md)] border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
                         {wooDiagnostic.warnings.map((w) => (
                           <p key={w}>{w}</p>
                         ))}
@@ -2022,7 +2824,7 @@ export default function SettingsPage() {
                     >
                       {staffApiKeyConfigured
                         ? `Key active (ends with …${staffApiKeyLast4 ?? "????"})`
-                        : "No tenant key record (use Firebase sign-in or staff API key)."}
+                        : "No tenant key record (use Supabase sign-in or staff API key)."}
                     </span>
                   </p>
                 </CardContent>
@@ -2125,7 +2927,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div className="space-y-3 border-t border-[color:var(--color-divider)] pt-4">
-                    <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                    <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                       Delivery address defaults (required for real AWBs)
                     </span>
                     <p className="text-xs text-[color:var(--color-text-muted)]">
@@ -2269,6 +3071,281 @@ export default function SettingsPage() {
                   ) : null}
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>J&amp;T Egypt</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    Configure the J&amp;T Egypt OpenAPI account used for AWB creation,
+                    tracking, cancellation, and waybill printing.
+                  </p>
+                  <p
+                    className={
+                      jntConfigured
+                        ? "text-xs font-medium text-[color:var(--color-success)]"
+                        : "text-xs text-[color:var(--color-text-muted)]"
+                    }
+                  >
+                    {jntConfigured
+                      ? "J&T credentials are stored for this tenant."
+                      : "Missing one or more J&T credentials."}
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="API account"
+                      placeholder="JT_API_ACCOUNT"
+                      value={jntApiAccountDraft}
+                      onChange={(e) => setJntApiAccountDraft(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Customer code"
+                      value={jntCustomerCodeDraft}
+                      onChange={(e) => setJntCustomerCodeDraft(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Customer password"
+                      value={jntPasswordDraft}
+                      onChange={(e) => setJntPasswordDraft(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Private/digest key"
+                      value={jntDigestDraft}
+                      onChange={(e) => setJntDigestDraft(e.target.value)}
+                    />
+                    <Select
+                      label="Environment"
+                      value={jntEnvironmentDraft}
+                      onChange={(e) =>
+                        setJntEnvironmentDraft(e.target.value as "test" | "prod")
+                      }
+                    >
+                      <option value="prod">Production</option>
+                      <option value="test">Demo / test</option>
+                    </Select>
+                    <Input
+                      label="Base URL override"
+                      placeholder="https://openapi.jtjms-eg.com"
+                      value={jntBaseDraft}
+                      onChange={(e) => setJntBaseDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Sender name"
+                      value={jntSenderNameDraft}
+                      onChange={(e) => setJntSenderNameDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Sender phone"
+                      value={jntSenderPhoneDraft}
+                      onChange={(e) => setJntSenderPhoneDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Sender city"
+                      value={jntSenderCityDraft}
+                      onChange={(e) => setJntSenderCityDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Sender area"
+                      value={jntSenderAreaDraft}
+                      onChange={(e) => setJntSenderAreaDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Default service code"
+                      placeholder="EZ"
+                      value={jntServiceDraft}
+                      onChange={(e) => setJntServiceDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Default weight KG"
+                      placeholder="1"
+                      value={jntWeightDraft}
+                      onChange={(e) => setJntWeightDraft(e.target.value)}
+                    />
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                        Sender address
+                      </label>
+                      <Input
+                        value={jntSenderAddressDraft}
+                        onChange={(e) => setJntSenderAddressDraft(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => void saveJntSettings()}>
+                      Save J&amp;T settings
+                    </Button>
+                    {jntConfigured ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void saveJntSettings(true)}
+                      >
+                        Remove credentials
+                      </Button>
+                    ) : null}
+                  </div>
+                  {jntMsg ? (
+                    <p className="text-xs font-medium text-[color:var(--color-success)]">
+                      {jntMsg}
+                    </p>
+                  ) : null}
+                  {jntErr ? (
+                    <p className="text-xs text-[color:var(--color-error)]">{jntErr}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>FedEx</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <p className="text-[color:var(--color-text-secondary)]">
+                    FedEx uses OAuth credentials and an account number. Labels are
+                    requested as PDF or ZPLII based on the shipment option.
+                  </p>
+                  <p
+                    className={
+                      fedexConfigured
+                        ? "text-xs font-medium text-[color:var(--color-success)]"
+                        : "text-xs text-[color:var(--color-text-muted)]"
+                    }
+                  >
+                    {fedexConfigured
+                      ? "FedEx credentials are stored for this tenant."
+                      : "Missing FedEx client credentials or account number."}
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Client ID"
+                      value={fedexClientIdDraft}
+                      onChange={(e) => setFedexClientIdDraft(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Client secret"
+                      value={fedexClientSecretDraft}
+                      onChange={(e) => setFedexClientSecretDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Account number"
+                      value={fedexAccountDraft}
+                      onChange={(e) => setFedexAccountDraft(e.target.value)}
+                    />
+                    <Select
+                      label="Environment"
+                      value={fedexEnvironmentDraft}
+                      onChange={(e) =>
+                        setFedexEnvironmentDraft(e.target.value as "test" | "prod")
+                      }
+                    >
+                      <option value="prod">Production</option>
+                      <option value="test">Sandbox</option>
+                    </Select>
+                    <Input
+                      label="Base URL override"
+                      placeholder="https://apis.fedex.com"
+                      value={fedexBaseDraft}
+                      onChange={(e) => setFedexBaseDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Default service"
+                      placeholder="INTERNATIONAL_PRIORITY"
+                      value={fedexServiceDraft}
+                      onChange={(e) => setFedexServiceDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Default packaging"
+                      placeholder="YOUR_PACKAGING"
+                      value={fedexPackagingDraft}
+                      onChange={(e) => setFedexPackagingDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Default weight KG"
+                      placeholder="1"
+                      value={fedexWeightDraft}
+                      onChange={(e) => setFedexWeightDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Shipper name"
+                      value={fedexShipperNameDraft}
+                      onChange={(e) => setFedexShipperNameDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Shipper phone"
+                      value={fedexShipperPhoneDraft}
+                      onChange={(e) => setFedexShipperPhoneDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Shipper city"
+                      value={fedexCityDraft}
+                      onChange={(e) => setFedexCityDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Postal code"
+                      value={fedexPostalDraft}
+                      onChange={(e) => setFedexPostalDraft(e.target.value)}
+                    />
+                    <Input
+                      label="Country code"
+                      value={fedexCountryDraft}
+                      onChange={(e) => setFedexCountryDraft(e.target.value)}
+                    />
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                        Shipper street
+                      </label>
+                      <Input
+                        value={fedexStreetDraft}
+                        onChange={(e) => setFedexStreetDraft(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void saveFedexSettings()}
+                    >
+                      Save FedEx settings
+                    </Button>
+                    {fedexConfigured ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void saveFedexSettings(true)}
+                      >
+                        Remove credentials
+                      </Button>
+                    ) : null}
+                  </div>
+                  {fedexMsg ? (
+                    <p className="text-xs font-medium text-[color:var(--color-success)]">
+                      {fedexMsg}
+                    </p>
+                  ) : null}
+                  {fedexErr ? (
+                    <p className="text-xs text-[color:var(--color-error)]">
+                      {fedexErr}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -2303,7 +3380,7 @@ export default function SettingsPage() {
                 ].map((row) => (
                   <div
                     key={row.id}
-                    className="flex items-center justify-between gap-4 rounded-xl bg-[color:var(--color-bg-subtle)] p-4 shadow-[var(--shadow-neo-raised-sm)]"
+                    className="flex items-center justify-between gap-4 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4 shadow-none"
                   >
                     <div>
                       <p className="font-medium" id={`${row.id}-label`}>
@@ -2339,7 +3416,7 @@ export default function SettingsPage() {
 
           {section === "advanced" && (
             <div className="space-y-4">
-              <div className="rounded-xl bg-[color:var(--color-card)] p-2 shadow-[var(--shadow-neo-well)]">
+              <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-card)] p-2 ring-1 ring-inset ring-[color:var(--color-border)]">
                 <Tabs
                   items={advTabs}
                   value={advTab}
@@ -2389,6 +3466,11 @@ export default function SettingsPage() {
                 </Card>
               )}
 
+              {advTab === "inbox_templates" &&
+                can(permissionSubject, "inbox:manage") && (
+                  <InboxTemplatesSettings />
+                )}
+
               {advTab === "kanban" && (
                 <Card>
                   <CardHeader>
@@ -2405,7 +3487,7 @@ export default function SettingsPage() {
                       </p>
                     ) : null}
                     <textarea
-                      className="min-h-[280px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 font-mono text-xs text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--color-bg)]"
+                      className="min-h-[280px] w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-3 font-mono text-xs leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
                       value={kanbanJson}
                       onChange={(e) => setKanbanJson(e.target.value)}
                       spellCheck={false}
@@ -2462,13 +3544,13 @@ export default function SettingsPage() {
                         رسالة واتساب الافتراضية (فريق التأكيد)
                       </span>
                       <textarea
-                        className="min-h-[100px] w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] p-3 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
+                        className="min-h-[100px] w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-3 text-sm leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
                         value={whTemplate}
                         onChange={(e) => setWhTemplate(e.target.value)}
                         placeholder="مثال: مرحباً {name} — طلب {orderId}"
                         spellCheck={false}
                       />
-                      <div className="space-y-2 rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-xs text-[color:var(--color-text-muted)] shadow-[var(--shadow-neo-inset)]">
+                      <div className="space-y-2 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-3 text-xs text-[color:var(--color-text-muted)]">
                         <p>
                           متغيرات سريعة: {`{name}`}، {`{orderId}`}،{" "}
                           {`{wooOrderId}`}، {`{awb}`}، {`{orderLink}`}،{" "}
@@ -2501,6 +3583,152 @@ export default function SettingsPage() {
                         لو الحقل فارغ، {`{orderLink}`} يتحول لنص فارغ.
                       </p>
                     </div>
+
+                    <div className="border-t border-[color:var(--color-border-subtle)] pt-4">
+                      <div className="text-xs font-medium uppercase text-[color:var(--color-text-secondary)]">
+                        Inbox / WhatsApp Cloud + n8n
+                      </div>
+                      <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
+                        When enabled, the server sends signed events to your n8n
+                        webhook (incoming messages, order confirmation, human
+                        takeover). Use the Inbox to take over from the bot.
+                      </p>
+                      <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        <a
+                          href="https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--color-primary)] hover:underline"
+                        >
+                          إنشاء Webhook في n8n
+                          <ExternalLink className="size-3 shrink-0" aria-hidden />
+                        </a>
+                        <a
+                          href="https://app.n8n.cloud/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--color-primary)] hover:underline"
+                        >
+                          n8n Cloud
+                          <ExternalLink className="size-3 shrink-0" aria-hidden />
+                        </a>
+                      </p>
+                      <div className="mt-3 flex items-center justify-between gap-4 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4">
+                        <div>
+                          <p className="font-medium" id="wa-auto-label">
+                            WhatsApp automation (Cloud API + n8n)
+                          </p>
+                          <p className="text-xs text-[color:var(--color-text-muted)]">
+                            Order confirmation template flow and webhook events to
+                            n8n.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={whatsappAutomationEnabled}
+                          onCheckedChange={setWhatsappAutomationEnabled}
+                          aria-labelledby="wa-auto-label"
+                        />
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-4 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4">
+                        <div>
+                          <p className="font-medium" id="inline-class-label">
+                            Inline keyword classifier (OMS)
+                          </p>
+                          <p className="text-xs text-[color:var(--color-text-muted)]">
+                            Classifies each incoming WhatsApp message on a linked order,
+                            writes <code className="text-[11px]">chat.classified</code> to
+                            the order, sends{" "}
+                            <code className="text-[11px]">chat.reply.classified</code> to
+                            n8n, and queues a human if confidence &lt; 80%.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={inlineReplyClassifier}
+                          onCheckedChange={setInlineReplyClassifier}
+                          aria-labelledby="inline-class-label"
+                        />
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                          n8n webhook URL
+                        </span>
+                        <Input
+                          value={n8nWebhookUrlDraft}
+                          onChange={(e) => setN8nWebhookUrlDraft(e.target.value)}
+                          placeholder="https://your-n8n.example.com/webhook/..."
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                          n8n HMAC secret ({`X-OMS-Signature`})
+                        </span>
+                        <Input
+                          type="password"
+                          value={n8nWebhookSecretDraft}
+                          onChange={(e) =>
+                            setN8nWebhookSecretDraft(e.target.value)
+                          }
+                          placeholder={
+                            n8nSecretConfigured
+                              ? "Leave blank to keep current secret"
+                              : "Min 8 characters"
+                          }
+                          autoComplete="new-password"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          {n8nSecretConfigured ? (
+                            <span className="text-xs text-[color:var(--color-success)]">
+                              Secret is configured
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[color:var(--color-text-muted)]">
+                              Required for signed POSTs to n8n (min 8 chars).
+                            </span>
+                          )}
+                          {n8nSecretConfigured ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => void clearN8nSecret()}
+                            >
+                              Clear secret
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                            Order confirmation template name (Meta)
+                          </span>
+                          <Input
+                            value={orderConfirmationTemplateNameDraft}
+                            onChange={(e) =>
+                              setOrderConfirmationTemplateNameDraft(e.target.value)
+                            }
+                            placeholder="e.g. order_confirm_v1"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-xs font-medium text-[color:var(--color-text-secondary)]">
+                            Template language code
+                          </span>
+                          <Input
+                            value={orderConfirmationTemplateLangDraft}
+                            onChange={(e) =>
+                              setOrderConfirmationTemplateLangDraft(e.target.value)
+                            }
+                            placeholder="ar or en"
+                            autoComplete="off"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <Button type="button" onClick={() => void saveAutomation()}>
                       حفظ الأتمتة وواتساب التأكيد
                     </Button>
@@ -2570,12 +3798,12 @@ export default function SettingsPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {outboundWebhookErr ? (
-                        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+                        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
                           {outboundWebhookErr}
                         </p>
                       ) : null}
                       {outboundWebhookDrafts.length === 0 ? (
-                        <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-4 text-sm text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                        <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4 text-sm text-[color:var(--color-text-secondary)]">
                           No outbound webhooks yet. Add one to notify Zapier,
                           Make, WordPress, or any custom platform when an order
                           reaches a status.
@@ -2584,7 +3812,7 @@ export default function SettingsPage() {
                       {outboundWebhookDrafts.map((webhook, index) => (
                         <div
                           key={webhook.id}
-                          className="space-y-4 rounded-xl bg-[color:var(--color-bg-subtle)] p-4 shadow-[var(--shadow-neo-raised-sm)]"
+                          className="space-y-4 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-4 shadow-none"
                         >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <label className="flex items-center gap-2 text-sm font-medium">
@@ -2666,14 +3894,14 @@ export default function SettingsPage() {
                             </label>
                           </div>
                           <div className="space-y-2">
-                            <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]">
+                            <span className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
                               Send when status becomes
                             </span>
                             <div className="flex flex-wrap gap-2">
                               {ORDER_STATUSES.map((status) => (
                                 <label
                                   key={`${webhook.id}-${status}`}
-                                  className="flex items-center gap-1.5 rounded-lg bg-[color:var(--color-card)] px-2 py-1 text-xs text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]"
+                                  className="flex items-center gap-1.5 rounded-[var(--ds-radius-md)] bg-[color:var(--color-card)] px-2 py-1 text-xs text-[color:var(--color-text-secondary)]"
                                 >
                                   <input
                                     type="checkbox"
@@ -2818,7 +4046,7 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent className="grid gap-3 sm:grid-cols-2">
                     {mockDataOn ? (
-                      <div className="sm:col-span-2 rounded-xl border-0 bg-[color:var(--color-dev-badge-bg)] p-3 text-sm text-[color:var(--color-dev-badge-text)] shadow-[var(--shadow-neo-raised-sm)]">
+                      <div className="sm:col-span-2 rounded-[var(--ds-radius-md)] border border-[color:var(--color-dev-badge-border)] bg-[color:var(--color-dev-badge-bg)] p-3 text-sm text-[color:var(--color-dev-badge-text)] shadow-none">
                         <strong>Mock data on.</strong> Set{" "}
                         <code className="rounded bg-[color:var(--color-code-bg)] px-1">
                           DEV_MOCK_DATA=true

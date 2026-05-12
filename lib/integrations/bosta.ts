@@ -16,6 +16,12 @@ export type BostaLocationOption = {
   name: string;
 };
 
+export type BostaShipmentEditInput = {
+  codAmount?: number;
+  allowOpening?: boolean;
+  notes?: string;
+};
+
 function splitCustomerName(name: string): { firstName: string; lastName: string } {
   const t = name.trim() || "Customer";
   const i = t.indexOf(" ");
@@ -486,4 +492,39 @@ export async function cancelBostaShipment(input: {
     });
   }
   return normalizeBostaTracking({ ...raw, status: "cancelled" });
+}
+
+export async function updateBostaShipment(input: {
+  tenantId: string;
+  awb: string;
+  externalId?: string;
+  changes: BostaShipmentEditInput;
+}): Promise<BostaTrackingResult> {
+  const { apiKey } = await resolveBostaCredentials(input.tenantId);
+  if (!apiKey) {
+    return { status: "updated", details: "Demo shipment updated" };
+  }
+
+  const body: Record<string, unknown> = {};
+  if (input.changes.codAmount !== undefined) {
+    body.cod = Math.max(0, Math.round(input.changes.codAmount));
+  }
+  if (input.changes.allowOpening !== undefined) {
+    body.allowToOpenPackage = input.changes.allowOpening;
+  }
+  if (input.changes.notes?.trim()) {
+    body.notes = input.changes.notes.trim().slice(0, 500);
+  }
+  if (Object.keys(body).length === 0) {
+    return { status: "unchanged", details: "No editable Bosta fields supplied" };
+  }
+
+  const deliveryId = await resolveBostaDeliveryId(input);
+  const raw = await bostaHttpRequest({
+    tenantId: input.tenantId,
+    path: `/deliveries/${encodeURIComponent(deliveryId)}`,
+    method: "PATCH",
+    body,
+  });
+  return normalizeBostaTracking({ ...raw, status: "updated" });
 }

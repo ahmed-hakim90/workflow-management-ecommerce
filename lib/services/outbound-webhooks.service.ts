@@ -1,6 +1,5 @@
 import { createHmac } from "crypto";
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   getTenantAutomation,
@@ -71,8 +70,20 @@ async function appendDeliveryLog(row: OutboundWebhookDeliveryLog) {
     mockAppendOutboundWebhookDeliveryLog(row);
     return;
   }
-  const db = getDb();
-  await db.collection(COLLECTIONS.outboundWebhookLogs).doc(row.id).set(row);
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("outbound_webhook_logs")
+    .insert({
+      id: row.id,
+      tenant_id: row.tenantId,
+      target_url: row.webhookId,
+      event_type: row.event,
+      status: row.success ? "success" : "failed",
+      http_status: row.httpStatus,
+      payload: row,
+      response_body: row.errorMessage,
+      created_at: row.createdAt,
+    });
+  if (error) throw error;
 }
 
 async function deliverWebhook(input: {
@@ -192,12 +203,12 @@ export async function listOutboundWebhookDeliveryLogs(
     );
     return mockListOutboundWebhookDeliveryLogs(tenantId, limit);
   }
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.outboundWebhookLogs)
-    .where("tenantId", "==", tenantId)
-    .orderBy("createdAt", "desc")
-    .limit(limit)
-    .get();
-  return snap.docs.map((d) => d.data() as OutboundWebhookDeliveryLog);
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("outbound_webhook_logs")
+    .select("payload")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.payload as OutboundWebhookDeliveryLog);
 }

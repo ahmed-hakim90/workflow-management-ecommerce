@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { getServerEnv } from "@/lib/config/env";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
@@ -7,6 +6,9 @@ import {
   mockGetTenantIntegrations,
   mockSetTenantAutomation,
   mockSetTenantBostaFields,
+  mockSetTenantFedExFields,
+  mockSetTenantJntEgyptFields,
+  mockSetTenantWhatsAppCloudFields,
   mockSetTenantStorefrontOrderFields,
   mockSetTenantWooCommerceRestFields,
   mockSetTenantWooCommerceWebhookSecret,
@@ -15,13 +17,42 @@ import {
   defaultTenantAutomation,
   defaultTenantWarehouse,
   type TenantAutomationSettings,
+  type TenantFedExIntegration,
   type TenantIntegrationsDoc,
+  type TenantJntEgyptIntegration,
   type TenantOutboundWebhook,
   type TenantStorefrontOrdersIntegration,
   type TenantWarehouseSettings,
+  type TenantWhatsAppCloudIntegration,
 } from "@/lib/types/models";
 
-/** Stored `automation` in Firestore / mock — no legacy `integrations.warehouse` merge. */
+type TenantSettingsRow = {
+  integrations?: TenantIntegrationsDoc | null;
+  automation?: TenantAutomationSettings | null;
+  kanban?: Record<string, unknown> | null;
+};
+
+async function getTenantSettingsRow(tenantId: string): Promise<TenantSettingsRow> {
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenant_settings")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? {}) as TenantSettingsRow;
+}
+
+async function upsertTenantSettings(
+  tenantId: string,
+  patch: Partial<TenantSettingsRow>,
+) {
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("tenant_settings")
+    .upsert({ tenant_id: tenantId, ...patch });
+  if (error) throw error;
+}
+
+/** Stored `automation` in Supabase / mock — no legacy `integrations.warehouse` merge. */
 export async function getRawTenantAutomationStored(
   tenantId: string,
 ): Promise<TenantAutomationSettings> {
@@ -31,12 +62,7 @@ export async function getRawTenantAutomationStored(
       ...mockGetTenantAutomationStore(tenantId),
     };
   }
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenantSettings)
-    .doc(tenantId)
-    .get();
-  const data = snap.data() as { automation?: TenantAutomationSettings } | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   return { ...defaultTenantAutomation, ...(data?.automation ?? {}) };
 }
 
@@ -71,12 +97,22 @@ export async function getTenantAutomation(
 type TenantAutomationPatch = Partial<
   Omit<
     TenantAutomationSettings,
-    "whatsappMessageTemplate" | "orderLinkTemplate" | "outboundWebhooks"
+    | "whatsappMessageTemplate"
+    | "orderLinkTemplate"
+    | "outboundWebhooks"
+    | "n8nWebhookUrl"
+    | "n8nWebhookSecret"
+    | "orderConfirmationTemplateName"
+    | "orderConfirmationTemplateLanguage"
   >
 > & {
   whatsappMessageTemplate?: string | null;
   orderLinkTemplate?: string | null;
   outboundWebhooks?: TenantOutboundWebhook[];
+  n8nWebhookUrl?: string | null;
+  n8nWebhookSecret?: string | null;
+  orderConfirmationTemplateName?: string | null;
+  orderConfirmationTemplateLanguage?: string | null;
 };
 
 function normalizeOutboundWebhooks(
@@ -124,6 +160,51 @@ function mergeTenantAutomationPatch(
   if ("outboundWebhooks" in updates) {
     next.outboundWebhooks = normalizeOutboundWebhooks(updates.outboundWebhooks);
   }
+  if ("n8nWebhookUrl" in updates) {
+    if (
+      updates.n8nWebhookUrl == null ||
+      (typeof updates.n8nWebhookUrl === "string" && !updates.n8nWebhookUrl.trim())
+    ) {
+      delete next.n8nWebhookUrl;
+    } else {
+      next.n8nWebhookUrl = updates.n8nWebhookUrl.trim();
+    }
+  }
+  if ("n8nWebhookSecret" in updates) {
+    if (
+      updates.n8nWebhookSecret == null ||
+      (typeof updates.n8nWebhookSecret === "string" &&
+        !updates.n8nWebhookSecret.trim())
+    ) {
+      delete next.n8nWebhookSecret;
+    } else {
+      next.n8nWebhookSecret = updates.n8nWebhookSecret.trim();
+    }
+  }
+  if ("orderConfirmationTemplateName" in updates) {
+    if (
+      updates.orderConfirmationTemplateName == null ||
+      (typeof updates.orderConfirmationTemplateName === "string" &&
+        !updates.orderConfirmationTemplateName.trim())
+    ) {
+      delete next.orderConfirmationTemplateName;
+    } else {
+      next.orderConfirmationTemplateName =
+        updates.orderConfirmationTemplateName.trim();
+    }
+  }
+  if ("orderConfirmationTemplateLanguage" in updates) {
+    if (
+      updates.orderConfirmationTemplateLanguage == null ||
+      (typeof updates.orderConfirmationTemplateLanguage === "string" &&
+        !updates.orderConfirmationTemplateLanguage.trim())
+    ) {
+      delete next.orderConfirmationTemplateLanguage;
+    } else {
+      next.orderConfirmationTemplateLanguage =
+        updates.orderConfirmationTemplateLanguage.trim();
+    }
+  }
   return next as unknown as TenantAutomationSettings;
 }
 
@@ -137,30 +218,16 @@ export async function setTenantAutomation(
     mockSetTenantAutomation(tenantId, final);
     return;
   }
-  const db = getDb();
   const current = await getRawTenantAutomationStored(tenantId);
   const final = mergeTenantAutomationPatch(current, updates);
-  await db
-    .collection(COLLECTIONS.tenantSettings)
-    .doc(tenantId)
-    .set(
-      { automation: final, updatedAt: new Date().toISOString() },
-      { merge: true },
-    );
+  await upsertTenantSettings(tenantId, { automation: final });
 }
 
 export async function getTenantIntegrations(
   tenantId: string,
 ): Promise<TenantIntegrationsDoc> {
   if (isDevMockDataEnabled()) return mockGetTenantIntegrations(tenantId);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenantSettings)
-    .doc(tenantId)
-    .get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   return { ...(data?.integrations ?? {}) };
 }
 
@@ -182,17 +249,7 @@ export async function getTenantIntegrationsAndAutomationBundled(
     ]);
     return { integrations, automation };
   }
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenantSettings)
-    .doc(tenantId)
-    .get();
-  const data = snap.data() as
-    | {
-        integrations?: TenantIntegrationsDoc;
-        automation?: TenantAutomationSettings;
-      }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations = { ...(data?.integrations ?? {}) };
   let automation: TenantAutomationSettings = {
     ...defaultTenantAutomation,
@@ -214,6 +271,13 @@ export async function getTenantWooCommerceWebhookSecret(
   const doc = await getTenantIntegrations(tenantId);
   const s = doc.woocommerce?.webhookSecret?.trim();
   return s || null;
+}
+
+export async function getTenantWhatsAppCloud(
+  tenantId: string,
+): Promise<TenantWhatsAppCloudIntegration> {
+  const doc = await getTenantIntegrations(tenantId);
+  return { ...(doc.whatsapp ?? {}) };
 }
 
 export type TenantStorefrontOrderWebhookSettings = {
@@ -285,12 +349,7 @@ export async function setTenantBostaFields(
     mockSetTenantBostaFields(tenantId, fields);
     return;
   }
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
-  const snap = await ref.get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
   const bosta = { ...(integrations.bosta ?? {}) };
 
@@ -316,13 +375,197 @@ export async function setTenantBostaFields(
   } else {
     integrations.bosta = bosta;
   }
-  await ref.set(
-    {
-      integrations,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
+  await upsertTenantSettings(tenantId, { integrations });
+}
+
+function applyStringPatch(
+  target: Record<string, string | undefined>,
+  fields: Record<string, string | null | undefined>,
+) {
+  for (const [key, val] of Object.entries(fields)) {
+    if (val === undefined) continue;
+    if (val === null || val.trim() === "") {
+      delete target[key];
+    } else {
+      target[key] = val.trim();
+    }
+  }
+}
+
+export async function setTenantJntEgyptFields(
+  tenantId: string,
+  fields: {
+    [K in keyof TenantJntEgyptIntegration]?: TenantJntEgyptIntegration[K] | null;
+  },
+): Promise<void> {
+  if (isDevMockDataEnabled()) {
+    mockSetTenantJntEgyptFields(tenantId, fields);
+    return;
+  }
+  const data = await getTenantSettingsRow(tenantId);
+  const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
+  const jntEgypt: TenantJntEgyptIntegration = {
+    ...(integrations.jntEgypt ?? {}),
+  };
+  applyStringPatch(
+    jntEgypt as Record<string, string | undefined>,
+    fields as Record<string, string | null | undefined>,
   );
+  if (Object.keys(jntEgypt).length === 0) {
+    delete integrations.jntEgypt;
+  } else {
+    integrations.jntEgypt = jntEgypt;
+  }
+  await upsertTenantSettings(tenantId, { integrations });
+}
+
+export async function setTenantFedExFields(
+  tenantId: string,
+  fields: {
+    [K in keyof TenantFedExIntegration]?: TenantFedExIntegration[K] | null;
+  },
+): Promise<void> {
+  if (isDevMockDataEnabled()) {
+    mockSetTenantFedExFields(tenantId, fields);
+    return;
+  }
+  const data = await getTenantSettingsRow(tenantId);
+  const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
+  const fedex: TenantFedExIntegration = {
+    ...(integrations.fedex ?? {}),
+  };
+  applyStringPatch(
+    fedex as Record<string, string | undefined>,
+    fields as Record<string, string | null | undefined>,
+  );
+  if (Object.keys(fedex).length === 0) {
+    delete integrations.fedex;
+  } else {
+    integrations.fedex = fedex;
+  }
+  await upsertTenantSettings(tenantId, { integrations });
+}
+
+export async function resolveJntEgyptCredentials(tenantId: string): Promise<{
+  apiAccount: string | null;
+  customerCode: string | null;
+  customerPassword: string | null;
+  privateKey: string | null;
+  baseUrl: string;
+  settings: TenantJntEgyptIntegration;
+}> {
+  const doc = await getTenantIntegrations(tenantId);
+  const env = getServerEnv();
+  const settings = doc.jntEgypt ?? {};
+  const environment = settings.environment ?? "prod";
+  const fallbackBase =
+    environment === "test"
+      ? "https://demoopenapi.jtjms-eg.com"
+      : "https://openapi.jtjms-eg.com";
+  return {
+    apiAccount:
+      settings.apiAccount?.trim() ||
+      env.JNT_EGYPT_API_ACCOUNT?.trim() ||
+      settings.customerCode?.trim() ||
+      env.JNT_EGYPT_CUSTOMER_CODE?.trim() ||
+      null,
+    customerCode:
+      settings.customerCode?.trim() ||
+      env.JNT_EGYPT_CUSTOMER_CODE?.trim() ||
+      null,
+    customerPassword:
+      settings.password?.trim() ||
+      env.JNT_EGYPT_PASSWORD?.trim() ||
+      null,
+    privateKey:
+      settings.digestSecret?.trim() ||
+      env.JNT_EGYPT_DIGEST_SECRET?.trim() ||
+      null,
+    baseUrl: normalizeBostaBaseUrlForSdk(
+      settings.baseUrl?.trim() ||
+        env.JNT_EGYPT_BASE_URL?.trim() ||
+        fallbackBase,
+    ),
+    settings,
+  };
+}
+
+export async function resolveFedExCredentials(tenantId: string): Promise<{
+  clientId: string | null;
+  clientSecret: string | null;
+  accountNumber: string | null;
+  baseUrl: string;
+  settings: TenantFedExIntegration;
+}> {
+  const doc = await getTenantIntegrations(tenantId);
+  const env = getServerEnv();
+  const settings = doc.fedex ?? {};
+  const environment = settings.environment ?? "prod";
+  const fallbackBase =
+    environment === "test"
+      ? "https://apis-sandbox.fedex.com"
+      : "https://apis.fedex.com";
+  return {
+    clientId: settings.clientId?.trim() || env.FEDEX_CLIENT_ID?.trim() || null,
+    clientSecret:
+      settings.clientSecret?.trim() ||
+      env.FEDEX_CLIENT_SECRET?.trim() ||
+      null,
+    accountNumber:
+      settings.accountNumber?.trim() ||
+      env.FEDEX_ACCOUNT_NUMBER?.trim() ||
+      null,
+    baseUrl: normalizeBostaBaseUrlForSdk(
+      settings.baseUrl?.trim() || env.FEDEX_BASE_URL?.trim() || fallbackBase,
+    ),
+    settings,
+  };
+}
+
+export async function setTenantWhatsAppCloudFields(
+  tenantId: string,
+  fields: {
+    verifyToken?: string | null;
+    accessToken?: string | null;
+    phoneNumberId?: string | null;
+    businessAccountId?: string | null;
+    appSecret?: string | null;
+  },
+): Promise<void> {
+  if (isDevMockDataEnabled()) {
+    mockSetTenantWhatsAppCloudFields(tenantId, fields);
+    return;
+  }
+  const data = await getTenantSettingsRow(tenantId);
+  const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
+  const whatsapp: TenantWhatsAppCloudIntegration = {
+    ...(integrations.whatsapp ?? {}),
+  };
+
+  const apply = (
+    key: keyof TenantWhatsAppCloudIntegration,
+    val: string | null | undefined,
+  ) => {
+    if (val === undefined) return;
+    if (val === null || val.trim() === "") {
+      delete whatsapp[key];
+    } else {
+      (whatsapp as Record<string, string>)[key as string] = val.trim();
+    }
+  };
+
+  apply("verifyToken", fields.verifyToken);
+  apply("accessToken", fields.accessToken);
+  apply("phoneNumberId", fields.phoneNumberId);
+  apply("businessAccountId", fields.businessAccountId);
+  apply("appSecret", fields.appSecret);
+
+  if (Object.keys(whatsapp).length === 0) {
+    delete integrations.whatsapp;
+  } else {
+    integrations.whatsapp = whatsapp;
+  }
+  await upsertTenantSettings(tenantId, { integrations });
 }
 
 export async function setTenantStorefrontOrderFields(
@@ -343,12 +586,7 @@ export async function setTenantStorefrontOrderFields(
     });
     return;
   }
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
-  const snap = await ref.get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
   const storefrontOrders: TenantStorefrontOrdersIntegration = {
     ...(integrations.storefrontOrders ?? {}),
@@ -374,13 +612,7 @@ export async function setTenantStorefrontOrderFields(
   } else {
     integrations.storefrontOrders = storefrontOrders;
   }
-  await ref.set(
-    {
-      integrations,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  await upsertTenantSettings(tenantId, { integrations });
 }
 
 export async function setTenantWooCommerceWebhookSecret(
@@ -391,12 +623,7 @@ export async function setTenantWooCommerceWebhookSecret(
     mockSetTenantWooCommerceWebhookSecret(tenantId, secret);
     return;
   }
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
-  const snap = await ref.get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
   const woo = { ...(integrations.woocommerce ?? {}) };
   if (secret === null || secret.trim() === "") {
@@ -409,13 +636,7 @@ export async function setTenantWooCommerceWebhookSecret(
   } else {
     integrations.woocommerce = woo;
   }
-  await ref.set(
-    {
-      integrations,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  await upsertTenantSettings(tenantId, { integrations });
 }
 
 export async function setTenantWooCommerceRestFields(
@@ -430,12 +651,7 @@ export async function setTenantWooCommerceRestFields(
     mockSetTenantWooCommerceRestFields(tenantId, fields);
     return;
   }
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
-  const snap = await ref.get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
   const woo = { ...(integrations.woocommerce ?? {}) };
 
@@ -459,13 +675,7 @@ export async function setTenantWooCommerceRestFields(
   } else {
     integrations.woocommerce = woo;
   }
-  await ref.set(
-    {
-      integrations,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  await upsertTenantSettings(tenantId, { integrations });
 }
 
 export type EffectiveWarehouseSettings = {
@@ -504,12 +714,7 @@ export async function setTenantWarehouseSettings(
     mockSetTenantWarehouse(tenantId, fields);
     return;
   }
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantSettings).doc(tenantId);
-  const snap = await ref.get();
-  const data = snap.data() as
-    | { integrations?: TenantIntegrationsDoc }
-    | undefined;
+  const data = await getTenantSettingsRow(tenantId);
   const integrations: TenantIntegrationsDoc = { ...(data?.integrations ?? {}) };
   const prev: TenantWarehouseSettings = { ...(integrations.warehouse ?? {}) };
 
@@ -529,11 +734,5 @@ export async function setTenantWarehouseSettings(
   } else {
     integrations.warehouse = prev;
   }
-  await ref.set(
-    {
-      integrations,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  await upsertTenantSettings(tenantId, { integrations });
 }

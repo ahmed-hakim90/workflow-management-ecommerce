@@ -13,7 +13,7 @@ import {
   setTenantWooCommerceWebhookSecret,
 } from "../services/tenant-settings.service";
 import { listRecentWebhookIngestLogs } from "../services/webhook-ingest-logs.service";
-import { omitUndefinedForFirestore } from "../util/json-snapshot";
+import { omitUndefinedForPersistence } from "../util/json-snapshot";
 import { mapWooCommerceOrder } from "./woocommerce-map";
 import { resolveWooCommerceDeliveryId } from "./woocommerce-webhook";
 import { POST as postWooCommerceWebhook } from "../../app/api/webhooks/woocommerce/route";
@@ -301,7 +301,7 @@ describe("WooCommerce webhook order flow", () => {
     const payload = wooPayload("woo-6");
     const mapped = mapWooCommerceOrder(payload);
 
-    const order = await upsertOrderFromWooCommerce({
+    const { order } = await upsertOrderFromWooCommerce({
       tenantId: "default",
       wooOrderId: mapped.wooOrderId,
       customer: mapped.customer,
@@ -319,8 +319,8 @@ describe("WooCommerce webhook order flow", () => {
     expect(order.customer.name).toBe("Sara Ali");
   });
 
-  it("drops undefined optional fields before writing Firestore documents", () => {
-    const clean = omitUndefinedForFirestore({
+  it("drops undefined optional fields before writing JSON payloads", () => {
+    const clean = omitUndefinedForPersistence({
       id: "order-1",
       notes: undefined,
       customer: {
@@ -371,7 +371,7 @@ describe("WooCommerce webhook order flow", () => {
   it("updates the same WooCommerce order without moving an internal status backward", async () => {
     const payload = wooPayload("woo-7", "120.00");
     const mapped = mapWooCommerceOrder(payload);
-    const created = await upsertOrderFromWooCommerce({
+    const { order: created } = await upsertOrderFromWooCommerce({
       tenantId: "default",
       wooOrderId: mapped.wooOrderId,
       customer: mapped.customer,
@@ -395,7 +395,7 @@ describe("WooCommerce webhook order flow", () => {
       billing: { ...payload.billing, first_name: "Mona" },
     };
     const changedMapped = mapWooCommerceOrder(changedPayload);
-    const updated = await upsertOrderFromWooCommerce({
+    const { order: updated } = await upsertOrderFromWooCommerce({
       tenantId: "default",
       wooOrderId: changedMapped.wooOrderId,
       customer: changedMapped.customer,
@@ -419,7 +419,7 @@ describe("WooCommerce webhook order flow", () => {
       payment_method: "card",
     };
     const mapped = mapWooCommerceOrder(payload);
-    const created = await upsertOrderFromWooCommerce({
+    const { order: created } = await upsertOrderFromWooCommerce({
       tenantId: "default",
       wooOrderId: mapped.wooOrderId,
       customer: mapped.customer,

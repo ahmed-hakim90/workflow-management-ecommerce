@@ -63,7 +63,7 @@ export function AwbBarcodeScanner({
     <div className="space-y-2">
       <div
         id={ELEM_ID}
-        className="w-full min-h-0 max-w-sm overflow-hidden rounded-lg bg-[color:var(--color-code-bg)]"
+        className="w-full min-h-0 max-w-sm overflow-hidden rounded-[var(--ds-radius-md)] border border-[color:var(--color-code-border)] bg-[color:var(--color-code-bg)]"
       />
       {err ? (
         <p className="text-sm text-[color:var(--color-error)]">{err}</p>

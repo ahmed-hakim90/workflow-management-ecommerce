@@ -1,13 +1,21 @@
 import type { OrderStatus } from "@/lib/types/models";
 
-/** Pipeline statuses shown on dashboard / Kanban stage metrics. */
+/**
+ * Pipeline statuses tracked by the dashboard rollup + Kanban stage metrics.
+ * Terminal/cancellation/return statuses are NOT counted here — they appear
+ * elsewhere (analytics_daily) so the running pipeline view stays clean.
+ */
 export const DASHBOARD_ORDER_STAGE_KEYS = [
+  "new",
   "pending_confirmation",
   "confirmed",
-  "invoicing",
-  "ready_for_warehouse",
-  "packed",
-  "shipped",
+  "invoice_required",
+  "invoiced",
+  "ready_for_shipping",
+  "awb_created",
+  "warehouse_picking",
+  "warehouse_packed",
+  "out_for_shipping",
 ] as const;
 
 export type DashboardOrderStageKey = (typeof DASHBOARD_ORDER_STAGE_KEYS)[number];

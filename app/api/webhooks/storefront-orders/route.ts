@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { jsonOk, jsonError } from "@/lib/http/json";
-import { mapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
+import { tryMapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
 import { upsertOrderFromWooCommerce } from "@/lib/services/orders.service";
 import {
   claimIntegrationEvent,
@@ -74,6 +74,8 @@ export async function POST(req: Request) {
     return jsonError("Unknown tenant in webhook URL", 404, { tenant: tenantKey });
   }
   const tenantId = tenant.id;
+  const receivedAt = new Date().toISOString();
+  const eventType = "storefront.order.created";
 
   const settings = await getTenantStorefrontOrderWebhookSettings(tenantId);
   if (!settings.webhookSecret) {
@@ -84,6 +86,8 @@ export async function POST(req: Request) {
       outcome: "no_secret_503",
       httpStatus: 503,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Storefront order webhook secret not configured", 503);
   }
@@ -97,6 +101,8 @@ export async function POST(req: Request) {
       outcome: "invalid_secret_401",
       httpStatus: 401,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Invalid storefront order secret", 401);
   }
@@ -112,6 +118,8 @@ export async function POST(req: Request) {
       outcome: "invalid_json_400",
       httpStatus: 400,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Invalid JSON", 400);
   }
@@ -129,6 +137,8 @@ export async function POST(req: Request) {
       errorMessage: msg,
       wooOrderId: wooOrderIdFromForwardedBody(body),
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError(msg, 400);
   }
@@ -156,6 +166,8 @@ export async function POST(req: Request) {
       errorMessage: msg,
       wooOrderId: wooOrderIdFromForwardedBody(body),
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Could not process forwarded order; retry later.", 500);
   }
@@ -169,13 +181,40 @@ export async function POST(req: Request) {
       httpStatus: 200,
       wooOrderId: wooOrderIdFromForwardedBody(body),
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonOk({ duplicate: true });
   }
 
   try {
-    const mapped = mapWooCommerceOrder(parsed.data.order);
-    const order = await upsertOrderFromWooCommerce({
+    const mappedResult = tryMapWooCommerceOrder(parsed.data.order);
+    if (!mappedResult.ok) {
+      try {
+        await releaseIntegrationEventClaim({
+          tenantId,
+          source: SOURCE,
+          deliveryId,
+        });
+      } catch {
+        /* ignore */
+      }
+      await appendWebhookIngestLog({
+        tenantId,
+        source: SOURCE,
+        deliveryId,
+        outcome: "invalid_payload_400",
+        httpStatus: 400,
+        errorMessage: mappedResult.message,
+        wooOrderId: wooOrderIdFromForwardedBody(body),
+        requestBodyBytes,
+        eventType,
+        receivedAt,
+      });
+      return jsonError(mappedResult.message, 400);
+    }
+    const mapped = mappedResult.mapped;
+    const { order, outcome } = await upsertOrderFromWooCommerce({
       tenantId,
       wooOrderId: mapped.wooOrderId,
       customer: mapped.customer,
@@ -185,7 +224,14 @@ export async function POST(req: Request) {
       shipping: mapped.shipping,
       notes: mapped.notes,
       woocommerceOrderSnapshot: parsed.data.order,
+      deliveryId,
     });
+    if (outcome === "created") {
+      const { onNewOrderWhatsAppConfirmationFlow } = await import(
+        "@/lib/services/chat/order-whatsapp-confirmation.service"
+      );
+      void onNewOrderWhatsAppConfirmationFlow({ tenantId, order });
+    }
     await appendWebhookIngestLog({
       tenantId,
       source: SOURCE,
@@ -194,7 +240,10 @@ export async function POST(req: Request) {
       httpStatus: 200,
       orderId: order.id,
       wooOrderId: mapped.wooOrderId,
+      externalOrderId: mapped.wooOrderId,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonOk({ orderId: order.id });
   } catch (e) {
@@ -220,6 +269,8 @@ export async function POST(req: Request) {
       errorMessage: errDetail,
       wooOrderId: wooId,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     console.error(
       JSON.stringify({

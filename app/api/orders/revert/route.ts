@@ -7,7 +7,7 @@ import { revertOrderStage } from "@/lib/services/orders.service";
 
 const bodySchema = z.object({
   orderId: z.string().min(1),
-  to: z.enum(["invoicing", "ready_for_warehouse"]),
+  to: z.enum(["ready_for_shipping", "awb_created", "warehouse_picking"]),
   reason: z.string().min(1).max(2000),
 });
 

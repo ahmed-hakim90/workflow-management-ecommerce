@@ -37,8 +37,8 @@ export function PageHeaderSkeleton({
       </div>
       {showActions ? (
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Skeleton className="h-9 w-24 rounded-xl" />
-          <Skeleton className="h-9 w-28 rounded-xl" />
+          <Skeleton className="h-9 w-24 rounded-[var(--ds-radius-md)]" />
+          <Skeleton className="h-9 w-28 rounded-[var(--ds-radius-md)]" />
         </div>
       ) : null}
     </header>
@@ -49,7 +49,7 @@ export function CardSkeleton({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]",
+        "rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-none",
         className,
       )}
     >
@@ -68,7 +68,7 @@ export function TableSkeleton({
   cols?: number;
 }) {
   return (
-    <div className="overflow-auto rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-card)]">
+    <div className="overflow-auto rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-none">
       <table className="w-full min-w-[640px] border-collapse text-sm">
         <thead>
           <tr>
@@ -105,14 +105,14 @@ export function TableSkeleton({
 
 export function KpiCardSkeleton() {
   return (
-    <div className="rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]">
+    <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-none">
       <div className="flex items-start justify-between gap-2">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="h-5 w-14 rounded-full" />
       </div>
       <Skeleton className="mt-3 h-8 w-32" />
       <Skeleton className="mt-2 h-3 w-40" />
-      <Skeleton className="mt-3 h-9 w-full rounded-lg" />
+      <Skeleton className="mt-3 h-9 w-full rounded-[var(--ds-radius-md)]" />
     </div>
   );
 }
@@ -129,7 +129,7 @@ export function KanbanSkeleton({
       {Array.from({ length: columns }).map((_, ci) => (
         <div
           key={ci}
-          className="flex min-h-[280px] flex-col gap-3 rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-muted-bg)]/30 p-3"
+          className="flex min-h-[280px] flex-col gap-3 rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-muted-bg)]/30 p-3"
         >
           <div className="flex items-center justify-between gap-2">
             <Skeleton className="h-4 w-28" />
@@ -139,7 +139,7 @@ export function KanbanSkeleton({
             {Array.from({ length: cardsPerColumn }).map((_, ki) => (
               <div
                 key={ki}
-                className="rounded-xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-3 shadow-[var(--shadow-neo-raised-sm)]"
+                className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-3 shadow-none"
               >
                 <Skeleton className="h-3 w-20" />
                 <Skeleton className="mt-2 h-4 w-full" />
@@ -165,7 +165,7 @@ export function PageSkeleton() {
         <CardSkeleton />
         <CardSkeleton className="md:col-span-2 lg:col-span-1" />
       </div>
-      <Skeleton className="h-48 w-full rounded-2xl" />
+      <Skeleton className="h-48 w-full rounded-[var(--ds-radius-md)]" />
     </div>
   );
 }
@@ -174,12 +174,12 @@ export function OrderDetailSkeleton() {
   return (
     <div className="space-y-6" aria-busy aria-live="polite">
       <div className="flex flex-wrap items-center gap-3">
-        <Skeleton className="h-9 w-24 rounded-xl" />
+        <Skeleton className="h-9 w-24 rounded-[var(--ds-radius-md)]" />
         <Skeleton className="h-8 w-40" />
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="space-y-4 lg:col-span-7">
-          <div className="rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-5 shadow-[var(--shadow-neo-raised)]">
+          <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-5 shadow-none">
             <Skeleton className="h-6 w-48" />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -190,14 +190,14 @@ export function OrderDetailSkeleton() {
               ))}
             </div>
           </div>
-          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-40 w-full rounded-[var(--ds-radius-md)]" />
         </div>
         <div className="space-y-4 lg:col-span-5">
-          <div className="rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised)]">
+          <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-none">
             <Skeleton className="h-5 w-32" />
             <div className="mt-3 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                <Skeleton key={i} className="h-12 w-full rounded-[var(--ds-radius-md)]" />
               ))}
             </div>
           </div>
@@ -213,18 +213,18 @@ export function SettingsLayoutSkeleton() {
       <aside className="hidden w-52 shrink-0 lg:block">
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full rounded-xl" />
+            <Skeleton key={i} className="h-10 w-full rounded-[var(--ds-radius-md)]" />
           ))}
         </div>
       </aside>
       <div className="min-w-0 flex-1 space-y-4">
         <PageHeaderSkeleton showActions={false} />
-        <div className="rounded-2xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-5 shadow-[var(--shadow-neo-raised)]">
+        <div className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-5 shadow-none">
           <Skeleton className="h-5 w-36" />
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Skeleton className="h-11 w-full rounded-xl" />
-            <Skeleton className="h-11 w-full rounded-xl" />
-            <Skeleton className="h-24 w-full rounded-xl sm:col-span-2" />
+            <Skeleton className="h-11 w-full rounded-[var(--ds-radius-md)]" />
+            <Skeleton className="h-11 w-full rounded-[var(--ds-radius-md)]" />
+            <Skeleton className="h-24 w-full rounded-[var(--ds-radius-md)] sm:col-span-2" />
           </div>
         </div>
       </div>
@@ -243,7 +243,7 @@ export function ShipmentsPageSkeleton() {
         </div>
         <div className="flex flex-col gap-4 lg:col-span-7">
           <CardSkeleton />
-          <Skeleton className="h-56 w-full rounded-2xl" />
+          <Skeleton className="h-56 w-full rounded-[var(--ds-radius-md)]" />
         </div>
       </div>
     </div>
@@ -270,17 +270,17 @@ export function AnalyticsPageSkeleton() {
   return (
     <div className="space-y-6 pb-20" aria-busy aria-live="polite">
       <PageHeaderSkeleton />
-      <Skeleton className="h-24 w-full rounded-2xl" />
+      <Skeleton className="h-24 w-full rounded-[var(--ds-radius-md)]" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <KpiCardSkeleton key={i} />
         ))}
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <Skeleton className="h-72 rounded-2xl lg:col-span-8" />
+        <Skeleton className="h-72 rounded-[var(--ds-radius-md)] lg:col-span-8" />
         <div className="flex flex-col gap-4 lg:col-span-4">
-          <Skeleton className="h-48 rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-48 rounded-[var(--ds-radius-md)]" />
+          <Skeleton className="h-40 rounded-[var(--ds-radius-md)]" />
         </div>
       </div>
     </div>
@@ -293,10 +293,10 @@ export function AdminPageSkeleton() {
       <PageHeaderSkeleton showActions={false} />
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-6">
-          <Skeleton className="h-72 w-full rounded-2xl" />
+          <Skeleton className="h-72 w-full rounded-[var(--ds-radius-md)]" />
         </div>
         <div className="col-span-12 lg:col-span-6">
-          <Skeleton className="h-72 w-full rounded-2xl" />
+          <Skeleton className="h-72 w-full rounded-[var(--ds-radius-md)]" />
         </div>
         <div className="col-span-12">
           <Skeleton className="mb-3 h-5 w-24" />
@@ -323,7 +323,7 @@ export function OrderCardListSkeleton({ count = 5 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-neo-raised-sm)]"
+          className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-divider)] bg-[color:var(--color-card)] p-4 shadow-none"
         >
           <Skeleton className="h-4 w-28" />
           <div className="mt-3 flex items-center gap-2">
@@ -335,7 +335,7 @@ export function OrderCardListSkeleton({ count = 5 }: { count?: number }) {
             <Skeleton className="h-6 w-20 rounded-full" />
             <Skeleton className="h-6 w-24 rounded-full" />
           </div>
-          <Skeleton className="mt-4 h-9 w-full rounded-xl" />
+          <Skeleton className="mt-4 h-9 w-full rounded-[var(--ds-radius-md)]" />
         </div>
       ))}
     </div>

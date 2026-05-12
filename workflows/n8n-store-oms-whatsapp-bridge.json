@@ -1,0 +1,489 @@
+{
+  "name": "Store OMS — WhatsApp / n8n Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "store-oms-events",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-oms-inbound",
+      "name": "Webhook — OMS events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 400],
+      "webhookId": "store-oms-events"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify X-OMS-Signature when OMS_N8N_HMAC_SECRET is set (same value as tenant n8nWebhookSecret or N8N_HMAC_SECRET).\n// Requires Webhook option \"Raw Body\" = true (set above).\nconst crypto = require('crypto');\nconst root = $input.first().json;\nconst headers = root.headers || {};\nconst sig = headers['x-oms-signature'] || headers['X-OMS-Signature'];\nconst secret = $env.OMS_N8N_HMAC_SECRET || '';\n\nif (secret && sig && typeof root.rawBody === 'string') {\n  const expected = crypto.createHmac('sha256', secret).update(root.rawBody, 'utf8').digest('hex');\n  if (expected !== sig) {\n    throw new Error('Invalid X-OMS-Signature');\n  }\n}\n\nconst b = root.body;\nif (!b || typeof b !== 'object') {\n  throw new Error('Missing JSON body');\n}\nreturn [{ json: b }];"
+      },
+      "id": "code-verify-parse",
+      "name": "Verify HMAC + parse body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-960, 400]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "whatsapp.message.received",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "msg_received"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "chat.reply.classified",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reply_classified"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "order.confirmation.requested",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "order_confirm_requested"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "order.confirmed",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "order_confirmed"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "order.cancelled",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "order_cancelled"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "conversation.needs_human",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "needs_human"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "ticket.created",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ticket_created"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "whatsapp.message.sent",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "msg_sent"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "switch-by-event",
+      "name": "Switch — by event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-720, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keyword routing for inbound WhatsApp (fallback if you do not use LLM).\n// Uses metadata.linkedOrderId from OMS when the thread is linked to an order.\nconst j = $input.first().json;\nconst orderId = j.metadata?.linkedOrderId || j.orderId || '';\nconst text = String(j.body || '').toLowerCase();\nlet action = null;\nif (/موافق|تمام|yes|ok|okay|أكد|اكد|confirm/.test(text)) action = 'confirm';\nelse if (/إلغاء|الغاء|cancel|الغي|ألغي/.test(text)) action = 'cancel';\nif (!orderId || !action) {\n  return [{ json: { ...j, _omsAutomation: 'skip', _reason: !orderId ? 'no_linked_order' : 'no_keyword_match' } }];\n}\nreturn [{ json: { ...j, _omsAutomation: 'call_oms', action, orderId } }];"
+      },
+      "id": "code-route-incoming-text",
+      "name": "Route incoming text (keywords)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-480, 120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "if-call-oms",
+              "leftValue": "={{ $json._omsAutomation }}",
+              "rightValue": "call_oms",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-incoming-should-call-oms",
+      "name": "IF — call OMS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-240, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OMS_BASE_URL || 'https://YOUR-OMS-DOMAIN').replace(/\\/$/, '') + '/api/internal/automation/order-confirmation' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AUTOMATION_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, orderId: $json.orderId, action: $json.action, conversationId: $json.conversationId, reason: 'n8n_keyword_inbound' }) }}",
+        "options": {}
+      },
+      "id": "http-order-confirmation-from-inbound",
+      "name": "HTTP — OMS order-confirmation (inbound)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 40]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.metadata.intent }}",
+                    "rightValue": "confirm",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "intent_confirm"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.metadata.intent }}",
+                    "rightValue": "cancel",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "intent_cancel"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "switch-classified-intent",
+      "name": "Switch — classified intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-480, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.orderId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-confirm-has-order",
+      "name": "IF — confirm path has orderId?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-240, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.orderId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-cancel-has-order",
+      "name": "IF — cancel path has orderId?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-240, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.orderId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-human-has-order",
+      "name": "IF — needs_human has orderId?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-240, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OMS_BASE_URL || 'https://YOUR-OMS-DOMAIN').replace(/\\/$/, '') + '/api/internal/automation/order-confirmation' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AUTOMATION_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, orderId: $json.orderId, action: 'confirm', conversationId: $json.conversationId, reason: 'n8n_classified_confirm' }) }}",
+        "options": {}
+      },
+      "id": "http-confirm-classified",
+      "name": "HTTP — confirm (classified)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OMS_BASE_URL || 'https://YOUR-OMS-DOMAIN').replace(/\\/$/, '') + '/api/internal/automation/order-confirmation' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AUTOMATION_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, orderId: $json.orderId, action: 'cancel', conversationId: $json.conversationId, reason: 'n8n_classified_cancel' }) }}",
+        "options": {}
+      },
+      "id": "http-cancel-classified",
+      "name": "HTTP — cancel (classified)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OMS_BASE_URL || 'https://YOUR-OMS-DOMAIN').replace(/\\/$/, '') + '/api/internal/automation/order-confirmation' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AUTOMATION_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, orderId: $json.orderId, action: 'needs_human', conversationId: $json.conversationId, reason: String($json.metadata?.intent || 'classified_fallback') }) }}",
+        "options": {}
+      },
+      "id": "http-needs-human-classified-fallback",
+      "name": "HTTP — needs_human (other intent)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 620]
+    },
+    {
+      "parameters": {},
+      "id": "noop-stub",
+      "name": "NoOp — extend (CRM / Slack)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-240, 680]
+    }
+  ],
+  "connections": {
+    "Webhook — OMS events": {
+      "main": [[{ "node": "Verify HMAC + parse body", "type": "main", "index": 0 }]]
+    },
+    "Verify HMAC + parse body": {
+      "main": [[{ "node": "Switch — by event", "type": "main", "index": 0 }]]
+    },
+    "Switch — by event": {
+      "main": [
+        [{ "node": "Route incoming text (keywords)", "type": "main", "index": 0 }],
+        [{ "node": "Switch — classified intent", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }],
+        [{ "node": "NoOp — extend (CRM / Slack)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route incoming text (keywords)": {
+      "main": [[{ "node": "IF — call OMS?", "type": "main", "index": 0 }]]
+    },
+    "IF — call OMS?": {
+      "main": [
+        [{ "node": "HTTP — OMS order-confirmation (inbound)", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Switch — classified intent": {
+      "main": [
+        [{ "node": "IF — confirm path has orderId?", "type": "main", "index": 0 }],
+        [{ "node": "IF — cancel path has orderId?", "type": "main", "index": 0 }],
+        [{ "node": "IF — needs_human has orderId?", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF — confirm path has orderId?": {
+      "main": [
+        [{ "node": "HTTP — confirm (classified)", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "IF — cancel path has orderId?": {
+      "main": [
+        [{ "node": "HTTP — cancel (classified)", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "IF — needs_human has orderId?": {
+      "main": [
+        [{ "node": "HTTP — needs_human (other intent)", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

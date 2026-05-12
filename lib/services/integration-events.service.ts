@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockClaimIntegrationEvent,
@@ -17,19 +16,18 @@ export async function claimIntegrationEvent(input: {
   payloadSummary?: Record<string, unknown>;
 }): Promise<"new" | "duplicate"> {
   if (isDevMockDataEnabled()) return mockClaimIntegrationEvent(input);
-  const db = getDb();
-  const id = `${input.tenantId}_${input.source}_${input.deliveryId}`;
-  const ref = db.collection(COLLECTIONS.integrationEvents).doc(id);
-  const snap = await ref.get();
-  if (snap.exists) return "duplicate";
-  await ref.set({
-    id,
-    tenantId: input.tenantId,
-    source: input.source,
-    deliveryId: input.deliveryId,
-    payloadSummary: input.payloadSummary ?? {},
-    createdAt: new Date().toISOString(),
-  });
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("integration_events")
+    .insert({
+      tenant_id: input.tenantId,
+      source: input.source,
+      delivery_id: input.deliveryId,
+      payload_hash: JSON.stringify(input.payloadSummary ?? {}),
+    });
+  if (error) {
+    if (error.code === "23505") return "duplicate";
+    throw error;
+  }
   return "new";
 }
 
@@ -46,7 +44,11 @@ export async function releaseIntegrationEventClaim(input: {
     mockReleaseIntegrationEventClaim(input);
     return;
   }
-  const db = getDb();
-  const id = `${input.tenantId}_${input.source}_${input.deliveryId}`;
-  await db.collection(COLLECTIONS.integrationEvents).doc(id).delete();
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("integration_events")
+    .delete()
+    .eq("tenant_id", input.tenantId)
+    .eq("source", input.source)
+    .eq("delivery_id", input.deliveryId);
+  if (error) throw error;
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ChevronDown, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -127,14 +128,14 @@ function CreateTicketForm({
             placeholder="Search by WooCommerce order ID, customer, or phone"
           />
           {dropdownOpen ? (
-            <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl bg-[color:var(--color-card)] p-1 shadow-[var(--shadow-neo-raised)] ring-1 ring-[color:var(--color-border)]">
+            <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-[var(--ds-radius-md)] bg-[color:var(--color-card)] p-1 shadow-none ring-1 ring-[color:var(--color-border)]">
               {matches.length > 0 ? (
                 matches.map((order) => (
                   <button
                     key={order.id}
                     type="button"
                     className={cn(
-                      "w-full rounded-lg px-3 py-2 text-start hover:bg-[color:var(--color-hover-bg)]",
+                      "w-full rounded-[var(--ds-radius-md)] px-3 py-2 text-start hover:bg-[color:var(--color-hover-bg)]",
                       selectedOrderId === order.id &&
                         "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)]",
                     )}
@@ -189,7 +190,7 @@ function CreateTicketForm({
           Customer says
         </label>
         <textarea
-          className="min-h-24 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 py-2 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
+          className="min-h-24 w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="اكتب كلام العميل أو سبب التذكرة..."
@@ -208,6 +209,7 @@ function CreateTicketForm({
 }
 
 export default function TicketsPage() {
+  const pathname = usePathname();
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
   const tenantId = useSessionStore((s) => s.tenantId);
@@ -247,6 +249,17 @@ export default function TicketsPage() {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#app-page-filters") return;
+    const id = window.requestAnimationFrame(() => {
+      document
+        .getElementById("app-page-filters")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [pathname]);
 
   async function refreshOrders(): Promise<Order[]> {
     try {
@@ -340,7 +353,10 @@ export default function TicketsPage() {
         description="Triage support work across new, in-progress, and pending response queues."
       />
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div
+        id="app-page-filters"
+        className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+      >
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -356,8 +372,8 @@ export default function TicketsPage() {
               className={cn(
                 "rounded-full px-4 py-2 text-sm font-medium transition-all",
                 chip === id
-                  ? "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)] shadow-[var(--shadow-neo-raised-sm)] ring-1 ring-[color:var(--color-primary)]/25"
-                  : "bg-[color:var(--color-card)] text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)]",
+                  ? "bg-[color:var(--color-nav-active-bg)] text-[color:var(--color-primary)] shadow-none ring-1 ring-[color:var(--color-primary)]/25"
+                  : "bg-[color:var(--color-card)] text-[color:var(--color-text-secondary)] shadow-none hover:shadow-none",
               )}
             >
               {label}
@@ -391,12 +407,12 @@ export default function TicketsPage() {
       </div>
 
       {!listLoading && err ? (
-        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}
       {ok ? (
-        <p className="rounded-xl bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-none">
           {ok}
         </p>
       ) : null}
@@ -412,7 +428,7 @@ export default function TicketsPage() {
             const pr = priorityForTicket(t);
             const order = t.order ?? ordersById.get(t.order_id);
             return (
-              <Card key={t.id} className="shadow-[var(--shadow-neo-raised-sm)]">
+              <Card key={t.id} className="shadow-none">
                 <CardContent className="space-y-2 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <Link
@@ -446,7 +462,7 @@ export default function TicketsPage() {
                     {order?.customer.phone ? ` · ${order.customer.phone}` : ""}
                   </p>
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <span className="rounded-md bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+                    <span className="rounded-md bg-[color:var(--color-muted-bg)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--color-text-secondary)]">
                       {TYPE_TAG[t.type]}
                     </span>
                     <div className="flex items-center gap-1 text-xs text-[color:var(--color-text-muted)]">

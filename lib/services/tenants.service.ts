@@ -1,6 +1,5 @@
 import { randomBytes } from "crypto";
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockCreateTenant,
@@ -12,7 +11,33 @@ import {
 } from "@/lib/dev/mock-backend";
 import { slugify } from "@/lib/string/slugify";
 import type { Tenant, TenantStatus } from "@/lib/types/models";
-import { omitUndefinedForFirestore } from "@/lib/util/json-snapshot";
+
+type TenantRow = {
+  id: string;
+  name: string;
+  slug: string;
+  owner_profile_id: string | null;
+  staff_api_key: string | null;
+  status: TenantStatus | null;
+  metadata?: { suspendedAt?: string; suspendedReason?: string } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapTenant(row: TenantRow): Tenant {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    ownerUserId: row.owner_profile_id ?? "",
+    status: row.status ?? undefined,
+    suspendedAt: row.metadata?.suspendedAt,
+    suspendedReason: row.metadata?.suspendedReason,
+    staffApiKey: row.staff_api_key ?? "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 function duplicateTenantSlugError(slug: string) {
   const e = new Error("Company name is already registered") as Error & {
@@ -26,33 +51,35 @@ function duplicateTenantSlugError(slug: string) {
 
 export async function getTenant(tenantId: string): Promise<Tenant | null> {
   if (isDevMockDataEnabled()) return mockGetTenant(tenantId);
-  const db = getDb();
-  const snap = await db.collection(COLLECTIONS.tenants).doc(tenantId).get();
-  if (!snap.exists) return null;
-  return snap.data() as Tenant;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenants")
+    .select("*")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapTenant(data as TenantRow) : null;
 }
 
 export async function listTenants(): Promise<Tenant[]> {
   if (isDevMockDataEnabled()) return mockListTenants();
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenants)
-    .orderBy("createdAt", "desc")
-    .get();
-  return snap.docs.map((d) => d.data() as Tenant);
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenants")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => mapTenant(row as TenantRow));
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   const normalizedSlug = slugify(slug);
   if (isDevMockDataEnabled()) return mockGetTenantBySlug(normalizedSlug);
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenants)
-    .where("slug", "==", normalizedSlug)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  return snap.docs[0].data() as Tenant;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenants")
+    .select("*")
+    .eq("slug", normalizedSlug)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapTenant(data as TenantRow) : null;
 }
 
 export async function resolveTenantByIdOrSlug(
@@ -68,9 +95,6 @@ export async function resolveTenantByIdOrSlug(
 /** Creates a tenant row; set owner via `setTenantOwner` after the admin user exists. */
 export async function createTenantRecord(name: string): Promise<Tenant> {
   if (isDevMockDataEnabled()) return mockCreateTenant(name);
-  const db = getDb();
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
   const staffApiKey = randomBytes(32).toString("hex");
   const slug = slugify(name);
 
@@ -78,28 +102,30 @@ export async function createTenantRecord(name: string): Promise<Tenant> {
     throw duplicateTenantSlugError(slug);
   }
 
-  const tenant: Tenant = {
-    id,
-    name: name.trim(),
-    slug,
-    ownerUserId: "",
-    staffApiKey,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const batch = db.batch();
-  batch.create(db.collection(COLLECTIONS.tenantSlugs).doc(slug), {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("tenants")
+    .insert({
+      name: name.trim(),
       slug,
-      tenantId: id,
-      createdAt: now,
-  });
-  batch.set(db.collection(COLLECTIONS.tenants).doc(id), tenant);
+      staff_api_key: staffApiKey,
+      status: "active",
+    })
+    .select("*")
+    .single();
+  if (error) {
+    throw duplicateTenantSlugError(slug);
+  }
+
   try {
-    await batch.commit();
+    await supabase.from("tenant_slugs").insert({
+      slug,
+      tenant_id: data.id,
+    });
   } catch {
     throw duplicateTenantSlugError(slug);
   }
-  return tenant;
+  return mapTenant(data as TenantRow);
 }
 
 export async function setTenantOwner(
@@ -110,12 +136,11 @@ export async function setTenantOwner(
     mockSetTenantOwner(tenantId, ownerUserId);
     return;
   }
-  const db = getDb();
-  const now = new Date().toISOString();
-  await db
-    .collection(COLLECTIONS.tenants)
-    .doc(tenantId)
-    .set({ ownerUserId, updatedAt: now }, { merge: true });
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("tenants")
+    .update({ owner_profile_id: ownerUserId })
+    .eq("id", tenantId);
+  if (error) throw error;
 }
 
 export async function setTenantStatus(input: {
@@ -124,24 +149,28 @@ export async function setTenantStatus(input: {
   reason?: string | null;
 }): Promise<Tenant> {
   if (isDevMockDataEnabled()) return mockSetTenantStatus(input);
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenants).doc(input.tenantId);
-  const snap = await ref.get();
-  const tenant = snap.data() as Tenant | undefined;
+  const tenant = await getTenant(input.tenantId);
   if (!tenant) {
     const e = new Error("Tenant not found") as Error & { status: number };
     e.status = 404;
     throw e;
   }
   const now = new Date().toISOString();
-  const next: Tenant = {
-    ...tenant,
-    status: input.status,
-    suspendedAt: input.status === "suspended" ? now : undefined,
-    suspendedReason:
-      input.status === "suspended" ? input.reason?.trim() || undefined : undefined,
-    updatedAt: now,
-  };
-  await ref.set(omitUndefinedForFirestore(next));
-  return next;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenants")
+    .update({
+      status: input.status,
+      metadata:
+        input.status === "suspended"
+          ? {
+              suspendedAt: now,
+              suspendedReason: input.reason?.trim() || undefined,
+            }
+          : {},
+    })
+    .eq("id", input.tenantId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapTenant(data as TenantRow);
 }

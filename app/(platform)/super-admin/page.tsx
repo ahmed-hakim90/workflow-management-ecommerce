@@ -132,7 +132,7 @@ export default function SuperAdminPage() {
       </Card>
 
       {err ? (
-        <p className="rounded-xl bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}

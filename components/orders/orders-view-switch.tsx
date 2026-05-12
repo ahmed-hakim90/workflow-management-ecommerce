@@ -14,7 +14,7 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "inline-flex rounded-xl bg-[color:var(--color-bg-subtle)] p-1 shadow-[var(--shadow-neo-inset)]",
+        "inline-flex rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-1",
         className,
       )}
       role="group"
@@ -23,10 +23,10 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
       <Link
         href="/orders"
         className={cn(
-          "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+          "inline-flex items-center gap-2 rounded-[var(--ds-radius-md)] px-3 py-2 text-sm font-medium transition-all",
           !isBoard
-            ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-            : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised-sm)]",
+            ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-none"
+            : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-none",
         )}
       >
         <List className="size-4 shrink-0" aria-hidden />
@@ -35,10 +35,10 @@ export function OrdersViewSwitch({ className }: { className?: string }) {
       <Link
         href="/orders/kanban"
         className={cn(
-          "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+          "inline-flex items-center gap-2 rounded-[var(--ds-radius-md)] px-3 py-2 text-sm font-medium transition-all",
           isBoard
-            ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)]"
-            : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-[var(--shadow-neo-raised-sm)]",
+            ? "bg-[color:var(--color-primary)] text-[color:var(--color-primary-contrast)] shadow-none"
+            : "text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:shadow-none",
         )}
       >
         <LayoutGrid className="size-4 shrink-0" aria-hidden />

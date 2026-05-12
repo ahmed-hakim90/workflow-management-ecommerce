@@ -1,9 +1,8 @@
 import { z } from "zod";
 import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
-import { getServerEnv } from "@/lib/config/env";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
-import { getFirebaseAuth } from "@/lib/db/firebase-admin";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { jsonOk, jsonError } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
 import { normalizePermissionOverrides } from "@/lib/auth/rbac";
@@ -22,6 +21,7 @@ const createSchema = z.object({
     "invoicing",
     "warehouse",
     "support",
+    "viewer",
   ]),
   permissions: z.array(z.string()).optional(),
   daily_target: z.number().nonnegative().optional(),
@@ -31,13 +31,13 @@ function httpError(message: string, status: number) {
   return Object.assign(new Error(message), { status });
 }
 
-function firebaseAuthErrorCode(err: unknown) {
-  return typeof err === "object" && err !== null && "code" in err
-    ? String((err as { code?: unknown }).code)
+function supabaseAuthErrorMessage(err: unknown) {
+  return typeof err === "object" && err !== null && "message" in err
+    ? String((err as { message?: unknown }).message)
     : "";
 }
 
-async function createLinkedFirebaseAccount(body: z.infer<typeof createSchema>) {
+async function createLinkedSupabaseAccount(body: z.infer<typeof createSchema>) {
   if (!body.password) return undefined;
   if (!body.email) {
     throw httpError("Email is required when creating a login account", 422);
@@ -47,22 +47,18 @@ async function createLinkedFirebaseAccount(body: z.infer<typeof createSchema>) {
     return `mock:${body.email.toLowerCase()}`;
   }
 
-  const env = getServerEnv();
-  if (!env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim()) {
-    throw httpError("Creating login accounts requires Firebase Admin on the server", 503);
-  }
-
   try {
-    const account = await getFirebaseAuth().createUser({
+    const { data, error } = await getSupabaseServiceRoleClient().auth.admin.createUser({
       email: body.email,
       password: body.password,
-      displayName: body.name,
-      emailVerified: false,
+      email_confirm: true,
+      user_metadata: { name: body.name },
     });
-    return account.uid;
+    if (error) throw error;
+    return data.user.id;
   } catch (err) {
-    if (firebaseAuthErrorCode(err) === "auth/email-already-exists") {
-      throw httpError("A Firebase account with this email already exists", 409);
+    if (supabaseAuthErrorMessage(err).toLowerCase().includes("already")) {
+      throw httpError("A Supabase account with this email already exists", 409);
     }
     throw err;
   }
@@ -79,6 +75,7 @@ const patchSchema = z.object({
       "invoicing",
       "warehouse",
       "support",
+      "viewer",
     ])
     .optional(),
   permissions: z.array(z.string()).optional(),
@@ -104,22 +101,24 @@ export async function POST(req: Request) {
     const json = await req.json();
     const body = createSchema.parse(json);
     await assertTenantCanCreateUser(ctx.tenantId);
-    const firebaseUid = await createLinkedFirebaseAccount(body);
+    const supabaseUserId = await createLinkedSupabaseAccount(body);
     let user;
     try {
       user = await createUser({
         tenantId: ctx.tenantId,
         name: body.name,
         email: body.email,
-        firebaseUid,
+        supabaseUserId,
         role: body.role as UserRole,
         permissions: normalizePermissionOverrides(body.permissions),
         daily_target: body.daily_target,
         actorUserId: ctx.userId,
       });
     } catch (err) {
-      if (firebaseUid && body.password && !isDevMockDataEnabled()) {
-        await getFirebaseAuth().deleteUser(firebaseUid).catch(() => undefined);
+      if (supabaseUserId && body.password && !isDevMockDataEnabled()) {
+        await getSupabaseServiceRoleClient()
+          .auth.admin.deleteUser(supabaseUserId)
+          .catch(() => undefined);
       }
       throw err;
     }

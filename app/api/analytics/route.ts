@@ -2,19 +2,31 @@ import { requireTenant } from "@/lib/auth/context";
 import { assertCan } from "@/lib/auth/rbac";
 import { jsonError, jsonOk } from "@/lib/http/json";
 import { handleRouteError } from "@/lib/http/with-api";
-import { aggregateAnalyticsRange } from "@/lib/services/analytics-daily.service";
+import {
+  aggregateAnalyticsRange,
+  aggregateCarrierFinancials,
+} from "@/lib/services/analytics-daily.service";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 366;
 
+function grossProfitFromRow(row: {
+  orders_value: number;
+  cogs_value: number;
+}) {
+  return row.orders_value - row.cogs_value;
+}
+
 function profitFromRow(row: {
   orders_value: number;
+  cogs_value: number;
   shipping_cost: number;
   returns_value: number;
   exchanges_value: number;
 }) {
   return (
     row.orders_value -
+    row.cogs_value -
     row.shipping_cost -
     row.returns_value -
     row.exchanges_value
@@ -43,13 +55,21 @@ export async function GET(req: Request) {
       return jsonError(`Range too large (max ${MAX_RANGE_DAYS} days)`, 400);
     }
 
-    const { totals, series } = await aggregateAnalyticsRange({
-      tenantId: ctx.tenantId,
-      from,
-      to,
-    });
+    const [{ totals, series }, carrierFinancials] = await Promise.all([
+      aggregateAnalyticsRange({
+        tenantId: ctx.tenantId,
+        from,
+        to,
+      }),
+      aggregateCarrierFinancials({
+        tenantId: ctx.tenantId,
+        from,
+        to,
+      }),
+    ]);
 
     const profit = profitFromRow(totals);
+    const grossProfit = grossProfitFromRow(totals);
     const costPerOrder =
       totals.orders_count > 0 ? totals.shipping_cost / totals.orders_count : 0;
     const returnRate =
@@ -63,8 +83,11 @@ export async function GET(req: Request) {
       date: row.date,
       orders_count: row.orders_count,
       orders_value: row.orders_value,
+      cogs_value: row.cogs_value,
       shipping_cost: row.shipping_cost,
       returns_count: row.returns_count,
+      refunds_value: row.refunds_value,
+      gross_profit: grossProfitFromRow(row),
       profit: profitFromRow(row),
     }));
 
@@ -73,16 +96,17 @@ export async function GET(req: Request) {
       to,
       totals: {
         ...totals,
+        gross_profit: grossProfit,
         profit,
       },
       series: seriesOut,
+      carrierFinancials,
       kpi: {
         costPerOrder,
         returnRate,
         conversionRate,
+        grossProfit,
         profit,
-        exchangesValueNote:
-          "exchanges_value is reserved; replacement order delta is not stored yet.",
       },
     });
   } catch (e) {

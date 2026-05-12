@@ -3,12 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Package,
   Truck,
   Ticket,
+  MessageSquare,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -16,16 +17,18 @@ import {
   LogOut,
   Warehouse,
   Users,
+  UserRound,
   Shield,
   ChevronDown,
+  Landmark,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 import { useMediaQuery } from "@/lib/ui/use-media-query";
 import { useUiStore } from "@/store/zustand/ui-store";
-import { firebaseClientSignOut } from "@/lib/firebase/client-sign-out";
-import { useSessionStore } from "@/store/zustand/session-store";
-import { canAccessPage, type PagePermission } from "@/lib/auth/rbac";
+import { supabaseClientSignOut } from "@/lib/supabase/client-sign-out";
+import { buildAuthHeaders, useSessionStore } from "@/store/zustand/session-store";
+import { can, canAccessPage, type PagePermission } from "@/lib/auth/rbac";
 import { useLocale } from "@/components/i18n/LocaleProvider";
 
 const navItems: {
@@ -35,9 +38,17 @@ const navItems: {
   permission: PagePermission;
 }[] = [
   { href: "/analytics", label: "Analytics", icon: BarChart3, permission: "page:analytics" },
+  { href: "/accounts", label: "Accounts", icon: Landmark, permission: "page:accounts" },
   { href: "/orders", label: "Orders", icon: Package, permission: "page:orders" },
+  {
+    href: "/customers",
+    label: "Customers",
+    icon: UserRound,
+    permission: "page:orders",
+  },
   { href: "/shipments", label: "Shipments", icon: Truck, permission: "page:shipments" },
   { href: "/tickets", label: "Tickets", icon: Ticket, permission: "page:tickets" },
+  { href: "/inbox", label: "Inbox", icon: MessageSquare, permission: "page:inbox" },
   {
     href: "/warehouse",
     label: "Warehouse",
@@ -70,6 +81,7 @@ const ROLE_TITLE: Record<string, string> = {
   invoicing: "Invoicing",
   warehouse: "Warehouse",
   support: "Support",
+  viewer: "Viewer",
 };
 
 export function Sidebar() {
@@ -81,6 +93,10 @@ export function Sidebar() {
   const userId = useSessionStore((s) => s.userId);
   const role = useSessionStore((s) => s.role);
   const permissions = useSessionStore((s) => s.permissions);
+  const apiSecret = useSessionStore((s) => s.apiSecret);
+  const idToken = useSessionStore((s) => s.idToken);
+  const tenantId = useSessionStore((s) => s.tenantId);
+  const authReady = useSessionStore((s) => s.authReady);
   const { t } = useLocale();
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
@@ -100,10 +116,70 @@ export function Sidebar() {
   const primaryNav = navItems.filter((item) =>
     canAccessPage({ role, permissions }, item.permission),
   );
+  const canReadInbox = can({ role, permissions }, "inbox:read");
+  const [unreadInboxCount, setUnreadInboxCount] = useState(0);
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
+
+  useEffect(() => {
+    if (!authReady || !canReadInbox) {
+      setUnreadInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadUnread = async () => {
+      try {
+        const res = await fetch("/api/inbox/conversations?filter=unread&limit=50", {
+          headers: buildAuthHeaders({
+            apiSecret,
+            idToken,
+            tenantId,
+            userId,
+            role,
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as
+          | {
+              data?:
+                | { conversations?: unknown[] }
+                | unknown[];
+            }
+          | null;
+        if (!res.ok || cancelled) return;
+        const data = json?.data;
+        const rows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.conversations)
+            ? data.conversations
+            : [];
+        setUnreadInboxCount(rows.length);
+      } catch {
+        if (!cancelled) setUnreadInboxCount(0);
+      }
+    };
+
+    void loadUnread();
+    const timer = window.setInterval(() => {
+      void loadUnread();
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [
+    authReady,
+    canReadInbox,
+    apiSecret,
+    idToken,
+    tenantId,
+    userId,
+    role,
+  ]);
 
   const userNameLine = displayName?.trim() || userId || t("User");
   const userInitials =
@@ -115,7 +191,7 @@ export function Sidebar() {
       .toUpperCase() || "?";
 
   async function onSignOut() {
-    await firebaseClientSignOut();
+    await supabaseClientSignOut();
     signOut();
     setMobileNavOpen(false);
     router.push("/login");
@@ -133,7 +209,7 @@ export function Sidebar() {
         isLgUp && "w-[var(--app-sidebar-w)]",
         !isLgUp &&
           isMdUp &&
-          (sidebarTabletExpanded ? "w-[var(--app-sidebar-w)]" : "w-[72px]"),
+          (sidebarTabletExpanded ? "w-[var(--app-sidebar-w)]" : "w-[68px]"),
         !isMdUp && mobileNavOpen && "w-[min(288px,88vw)]",
       )}
       aria-label={t("Main navigation")}
@@ -141,30 +217,30 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "flex shrink-0 flex-col gap-2 border-b border-[color:var(--color-divider)] py-4 pb-4",
+          "flex shrink-0 flex-col gap-1.5 border-b border-[color:var(--color-divider)] py-3 pb-3",
           isIconRail ? "items-center px-2" : "px-[var(--app-sidebar-pad)]",
         )}
       >
         <Link
           href="/analytics"
           className={cn(
-            "flex min-h-11 items-center rounded-lg text-[color:var(--color-text-primary)] transition-colors hover:bg-[color:var(--color-hover-bg)]",
-            isIconRail ? "justify-center px-0" : "gap-2 px-2",
+            "flex min-h-9 items-center rounded-[var(--ds-radius-md)] text-[color:var(--color-text-primary)] transition-colors hover:bg-[color:var(--color-hover-bg)]",
+            isIconRail ? "justify-center px-0" : "gap-2 px-1.5",
           )}
           onClick={() => setMobileNavOpen(false)}
         >
-          <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[color:var(--color-primary)]">
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)]">
             <Image
               src="/brand-mark.png"
               alt=""
-              width={36}
-              height={36}
-              className="size-9 object-cover"
+              width={32}
+              height={32}
+              className="size-8 object-cover"
               priority
             />
           </span>
           {showNavLabels ? (
-            <span className="truncate text-sm font-semibold text-[color:var(--color-text-primary)]">
+            <span className="truncate text-[13px] font-semibold leading-tight tracking-tight text-[color:var(--color-text-primary)]">
               Store OMS
             </span>
           ) : null}
@@ -172,7 +248,7 @@ export function Sidebar() {
         {showNavLabels ? (
           <Link
             href="/settings"
-            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start text-sm text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
+            className="flex min-h-8 w-full items-center gap-2 rounded-[var(--ds-radius-md)] px-2 py-1 text-start text-[13px] text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
             onClick={() => setMobileNavOpen(false)}
           >
             <span className="min-w-0 flex-1 truncate font-medium text-[color:var(--color-text-primary)]">
@@ -184,7 +260,7 @@ export function Sidebar() {
       </div>
       <nav
         className={cn(
-          "flex flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-[var(--app-sidebar-pad)] pb-5 pt-3",
+          "flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-[var(--app-sidebar-pad)] pb-4 pt-2",
           isIconRail && "items-center px-2",
         )}
         aria-label={t("Primary")}
@@ -198,8 +274,8 @@ export function Sidebar() {
               href={item.href}
               title={t(item.label)}
               className={cn(
-                "flex min-h-11 items-center gap-2 rounded-lg text-base font-normal leading-6 transition-colors duration-150",
-                isIconRail ? "w-11 justify-center px-0" : "px-4 py-2",
+                "relative flex min-h-8 items-center gap-2 rounded-[var(--ds-radius-md)] text-[13px] font-medium leading-snug transition-colors duration-100",
+                isIconRail ? "w-9 justify-center px-0" : "px-2 py-1.5",
                 active
                   ? "bg-[color:var(--color-sidebar-nav-active-bg)] text-[color:var(--color-sidebar-nav-active-fg)]"
                   : "text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
@@ -208,24 +284,35 @@ export function Sidebar() {
             >
               <Icon
                 className={cn(
-                  "size-5 shrink-0",
+                  "size-[18px] shrink-0 stroke-[1.75]",
                   active
-                    ? "text-[color:var(--color-sidebar-nav-active-fg)]"
-                    : "opacity-90",
+                    ? "text-[color:var(--color-primary)]"
+                    : "opacity-[0.85]",
                 )}
                 aria-hidden
               />
               <span className={cn(!showNavLabels && "sr-only")}>
                 {t(item.label)}
               </span>
+              {item.href === "/inbox" && unreadInboxCount > 0 ? (
+                <span
+                  className={cn(
+                    "flex h-5 min-w-5 items-center justify-center rounded-full bg-[color:var(--color-error)] px-1.5 text-[10px] font-semibold leading-none text-white",
+                    isIconRail ? "absolute end-0 top-0" : "ms-auto",
+                  )}
+                  aria-label={`${unreadInboxCount} unread inbox conversations`}
+                >
+                  {unreadInboxCount > 99 ? "99+" : unreadInboxCount}
+                </span>
+              ) : null}
             </Link>
           );
         })}
       </nav>
       <div
         className={cn(
-          "mt-auto flex flex-col gap-3.5 border-t border-[color:var(--color-divider)] p-[var(--app-sidebar-pad)] pb-5 pt-4",
-          isIconRail && "items-center gap-3.5 px-2",
+          "mt-auto flex flex-col gap-2 border-t border-[color:var(--color-divider)] p-[var(--app-sidebar-pad)] pb-4 pt-3",
+          isIconRail && "items-center gap-2 px-2",
         )}
       >
         {isMdUp && !isLgUp ? (
@@ -233,10 +320,10 @@ export function Sidebar() {
             type="button"
             onClick={toggleSidebarTabletExpanded}
             className={cn(
-              "flex min-h-11 items-center rounded-lg text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
+              "flex min-h-8 items-center rounded-[var(--ds-radius-md)] text-[13px] text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
               isIconRail
-                ? "w-11 justify-center"
-                : "w-full justify-start gap-2 px-4 py-2",
+                ? "w-9 justify-center"
+                : "w-full justify-start gap-2 px-2 py-1.5",
             )}
             aria-expanded={sidebarTabletExpanded}
             aria-label={
@@ -244,27 +331,27 @@ export function Sidebar() {
             }
           >
             {sidebarTabletExpanded ? (
-              <PanelLeftClose className="size-5 shrink-0" aria-hidden />
+              <PanelLeftClose className="size-[18px] shrink-0 opacity-90" aria-hidden />
             ) : (
-              <PanelLeft className="size-5 shrink-0" aria-hidden />
+              <PanelLeft className="size-[18px] shrink-0 opacity-90" aria-hidden />
             )}
             {showNavLabels ? (
-              <span className="text-sm font-medium">
+              <span className="text-[13px] font-medium">
                 {sidebarTabletExpanded ? "Collapse" : "Expand"}
               </span>
             ) : null}
           </button>
         ) : null}
         {showSidebarUserFull ? (
-          <div className="flex w-full min-w-0 items-center gap-3 rounded-lg bg-[color:var(--color-muted-bg)] px-3 py-2.5">
+          <div className="flex w-full min-w-0 items-center gap-2.5 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-muted-bg)] px-2.5 py-2">
             <span
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-primary)]"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-shell)] text-[11px] font-semibold text-[color:var(--color-primary)] ring-1 ring-[color:var(--color-border)]"
               aria-hidden
             >
               {userInitials}
             </span>
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-medium text-[color:var(--color-text-primary)]">
+              <p className="truncate text-[13px] font-medium leading-tight text-[color:var(--color-text-primary)]">
                 {userNameLine}
               </p>
               <p className="truncate text-[11px] text-[color:var(--color-text-muted)]">
@@ -274,11 +361,11 @@ export function Sidebar() {
           </div>
         ) : isIconRail ? (
           <div
-            className="flex w-11 justify-center"
+            className="flex w-9 justify-center"
             title={`${userNameLine} - ${t(ROLE_TITLE[role] ?? role)}`}
           >
             <span
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-[11px] font-semibold text-[color:var(--color-primary)]"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-[11px] font-semibold text-[color:var(--color-primary)] ring-1 ring-[color:var(--color-border)]"
               aria-label={userNameLine}
             >
               {userInitials}
@@ -288,23 +375,23 @@ export function Sidebar() {
         <a
           href="https://wa.me/+201069005019"
           className={cn(
-            "flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-base font-normal text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
-            isIconRail && "w-11 justify-center px-0",
+            "flex min-h-8 items-center gap-2 rounded-[var(--ds-radius-md)] px-2 py-1.5 text-[13px] font-medium text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]",
+            isIconRail && "w-9 justify-center px-0",
           )}
           title={t("Support")}
         >
-          <HelpCircle className="size-5 shrink-0" aria-hidden />
+          <HelpCircle className="size-[18px] shrink-0 opacity-90" aria-hidden />
           <span className={cn(!showNavLabels && "sr-only")}>{t("Support")}</span>
         </a>
         <button
           type="button"
           onClick={() => void onSignOut()}
           className={cn(
-            "flex min-h-11 w-full items-center gap-2 rounded-lg px-4 py-2 text-start text-base font-normal text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
-            isIconRail && "w-11 justify-center px-0",
+            "flex min-h-8 w-full items-center gap-2 rounded-[var(--ds-radius-md)] px-2 py-1.5 text-start text-[13px] font-medium text-[color:var(--color-text-secondary)] transition-colors hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)] focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:outline-none",
+            isIconRail && "w-9 justify-center px-0",
           )}
         >
-          <LogOut className="size-5 shrink-0" aria-hidden />
+          <LogOut className="size-[18px] shrink-0 opacity-90" aria-hidden />
           <span className={cn(!showNavLabels && "sr-only")}>{t("Sign out")}</span>
         </button>
       </div>

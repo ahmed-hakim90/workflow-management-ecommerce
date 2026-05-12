@@ -13,7 +13,7 @@ export function TableWrap({
   return (
     <div
       className={cn(
-        "overflow-auto rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-card)]",
+        "overflow-auto rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-none",
         className,
       )}
     >
@@ -36,7 +36,7 @@ export function Th({
   return (
     <th
       className={cn(
-        "sticky top-0 z-10 border-b border-[color:var(--color-border)] bg-[color:var(--color-card)] px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)]",
+        "sticky top-0 z-10 border-b border-[color:var(--color-border)] bg-[color:var(--color-card)] px-3 py-2.5 text-start text-[11px] font-medium text-[color:var(--color-text-muted)]",
         className,
       )}
     >
@@ -85,12 +85,20 @@ export function Td({
 export function Tr({
   className,
   children,
+  onClick,
 }: {
   className?: string;
   children: React.ReactNode;
+  onClick?: React.MouseEventHandler<HTMLTableRowElement>;
 }) {
   return (
-    <tr className={cn("transition-colors hover:bg-[color:var(--color-hover-bg)]", className)}>
+    <tr
+      className={cn(
+        "transition-colors hover:bg-[color:var(--color-hover-bg)]",
+        className,
+      )}
+      onClick={onClick}
+    >
       {children}
     </tr>
   );

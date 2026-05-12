@@ -13,11 +13,11 @@ export function Card({
     <section
       className={cn(
         variant === "default" &&
-          "rounded-xl border-0 bg-[color:var(--color-card)] shadow-[var(--shadow-notion-subtle)]",
+          "rounded-[var(--ds-radius-lg)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-none",
         variant === "subtle" &&
-          "rounded-lg border-0 bg-[color:var(--color-muted-bg)] shadow-none",
+          "rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-muted-bg)] shadow-none",
         variant === "feature" &&
-          "rounded-lg border border-[color:var(--color-primary)] bg-[color:var(--color-surface-tint-blue)] shadow-none",
+          "rounded-[var(--ds-radius-md)] border border-[color:var(--color-primary)]/35 bg-[color:var(--color-surface-tint-blue)] shadow-none",
         className,
       )}
     >
@@ -34,7 +34,7 @@ export function CardHeader({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("border-b border-[color:var(--color-divider)] px-6 py-3", className)}>
+    <div className={cn("border-b border-[color:var(--color-divider)] px-4 py-2.5 sm:px-5", className)}>
       {children}
     </div>
   );
@@ -48,7 +48,7 @@ export function CardTitle({
   children: React.ReactNode;
 }) {
   return (
-    <h3 className={cn("text-lg font-bold leading-7 text-[color:var(--color-text-primary)]", className)}>
+    <h3 className={cn("text-[15px] font-semibold leading-snug text-[color:var(--color-text-primary)]", className)}>
       {children}
     </h3>
   );
@@ -61,5 +61,5 @@ export function CardContent({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={cn("p-6", className)}>{children}</div>;
+  return <div className={cn("p-4 sm:p-5", className)}>{children}</div>;
 }

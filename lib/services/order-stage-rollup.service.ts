@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import type { Order, OrderStatus } from "@/lib/types/models";
 import {
   emptyDashboardStageValues,
@@ -22,7 +21,7 @@ export function orderValueForStageRollup(o: Order): number {
 }
 
 /**
- * Merges legacy Firestore documents that only have `stages` (no `stageValues` yet).
+ * Merges legacy rollup rows that only have `stages` (no `stageValues` yet).
  */
 function normalizeRollupData(
   raw: unknown,
@@ -50,82 +49,83 @@ export async function applyOrderStageRollupDelta(input: {
   if (from === null && to === null) return;
   if (from !== null && to !== null && from === to) return;
 
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.tenantOrderStageRollup).doc(tenantId);
   const now = new Date().toISOString();
+  const existing = await getTenantOrderStageRollup(tenantId);
+  const stages = { ...(existing?.stages ?? emptyDashboardStages()) };
+  const stageValues = { ...(existing?.stageValues ?? emptyDashboardStageValues()) };
 
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const { stages: s0, stageValues: v0 } = snap.exists
-      ? normalizeRollupData(snap.data())
-      : { stages: emptyDashboardStages(), stageValues: emptyDashboardStageValues() };
-    const stages = { ...s0 };
-    const stageValues = { ...v0 };
+  if (from && isDashboardOrderStage(from)) {
+    stages[from] = Math.max(0, (stages[from] ?? 0) - 1);
+    stageValues[from] = Math.max(0, (stageValues[from] ?? 0) - orderValue);
+  }
+  if (to && isDashboardOrderStage(to)) {
+    stages[to] = (stages[to] ?? 0) + 1;
+    stageValues[to] = (stageValues[to] ?? 0) + orderValue;
+  }
 
-    if (from && isDashboardOrderStage(from)) {
-      stages[from] = Math.max(0, (stages[from] ?? 0) - 1);
-      stageValues[from] = Math.max(0, (stageValues[from] ?? 0) - orderValue);
-    }
-    if (to && isDashboardOrderStage(to)) {
-      stages[to] = (stages[to] ?? 0) + 1;
-      stageValues[to] = (stageValues[to] ?? 0) + orderValue;
-    }
-
-    const payload: TenantOrderStageRollup = {
-      tenantId,
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("tenant_order_stage_stats")
+    .upsert({
+      tenant_id: tenantId,
       stages,
-      stageValues,
-      updatedAt: now,
-    };
-    tx.set(ref, payload);
-  });
+      totals: { stageValues },
+      updated_at: now,
+    });
+  if (error) throw error;
 }
 
 /** Full recompute when rollup doc is missing (e.g. first deploy). */
 export async function rebuildTenantOrderStageRollup(tenantId: string) {
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.orders)
-    .where("tenantId", "==", tenantId)
-    .limit(5000)
-    .get();
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("orders")
+    .select("status, payment")
+    .eq("tenant_id", tenantId)
+    .limit(5000);
+  if (error) throw error;
 
   const stages = emptyDashboardStages();
   const stageValues = emptyDashboardStageValues();
-  for (const doc of snap.docs) {
-    const o = doc.data() as Order;
+  for (const row of data ?? []) {
+    const o = row as Pick<Order, "status" | "payment">;
     if (isDashboardOrderStage(o.status)) {
       stages[o.status] += 1;
-      const v = orderValueForStageRollup(o);
+      const total = o.payment?.total_amount;
+      const v = typeof total === "number" && !Number.isNaN(total) ? total : 0;
       stageValues[o.status] += v;
     }
   }
 
   const now = new Date().toISOString();
-  const ref = db.collection(COLLECTIONS.tenantOrderStageRollup).doc(tenantId);
-  await ref.set({
-    tenantId,
-    stages,
-    stageValues,
-    updatedAt: now,
-  } satisfies TenantOrderStageRollup);
+  const { error: upsertError } = await getSupabaseServiceRoleClient()
+    .from("tenant_order_stage_stats")
+    .upsert({
+      tenant_id: tenantId,
+      stages,
+      totals: { stageValues },
+      rebuilt_at: now,
+      updated_at: now,
+    });
+  if (upsertError) throw upsertError;
 }
 
 export async function getTenantOrderStageRollup(
   tenantId: string,
 ): Promise<TenantOrderStageRollup | null> {
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.tenantOrderStageRollup)
-    .doc(tenantId)
-    .get();
-  if (!snap.exists) return null;
-  const { stages, stageValues } = normalizeRollupData(snap.data());
-  const d = snap.data() as Partial<TenantOrderStageRollup>;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenant_order_stage_stats")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const { stages, stageValues } = normalizeRollupData({
+    stages: data.stages,
+    stageValues: data.totals?.stageValues,
+  });
   return {
-    tenantId: d.tenantId ?? tenantId,
+    tenantId,
     stages,
     stageValues,
-    updatedAt: d.updatedAt ?? new Date().toISOString(),
+    updatedAt: data.updated_at ?? new Date().toISOString(),
   };
 }

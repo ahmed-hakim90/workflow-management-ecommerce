@@ -11,12 +11,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.105.4",
+    "@upstash/qstash": "^2.10.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "bosta": "^0.2.0",
     "bullmq": "^5.76.3",
-    "firebase": "^12.12.1",
-    "firebase-admin": "^13.8.0",
+    "cmdk": "^1.1.1",
     "html5-qrcode": "^2.3.8",
     "ioredis": "^5.10.1",
     "lucide-react": "^1.11.0",

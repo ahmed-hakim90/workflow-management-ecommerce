@@ -7,7 +7,7 @@ import type { UserRole } from "@/lib/types/models";
 export interface SessionState {
   /** Per-tenant staff key from onboarding, or a demo Bearer (used when `idToken` is empty). */
   apiSecret: string;
-  /** Firebase ID token (preferred when using Firebase Auth). */
+  /** Supabase access token (preferred for browser/API auth). */
   idToken: string;
   tenantId: string;
   userId: string;
@@ -18,8 +18,7 @@ export interface SessionState {
   role: UserRole;
   permissions: string[];
   /**
-   * True after Firebase Auth has emitted its first `onIdTokenChanged`, or immediately
-   * when Firebase client is not configured. Not persisted — avoids firing API calls
+   * True after Supabase Auth has emitted its first session state. Not persisted — avoids firing API calls
    * with an empty Bearer before auth resolves.
    */
   authReady: boolean;

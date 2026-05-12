@@ -20,10 +20,26 @@ import { OrderStatusBadge } from "@/lib/ui/order-badges";
 
 function warehouseRevertTo(
   status: OrderStatus,
-): "invoicing" | "ready_for_warehouse" | null {
-  if (status === "ready_for_warehouse") return "invoicing";
-  if (status === "packed") return "ready_for_warehouse";
+): "ready_for_shipping" | "awb_created" | "warehouse_picking" | null {
+  if (status === "warehouse_packed") return "warehouse_picking";
+  if (status === "warehouse_picking") return "awb_created";
+  if (status === "awb_created") return "ready_for_shipping";
   return null;
+}
+
+function revertTargetLabel(
+  to: NonNullable<ReturnType<typeof warehouseRevertTo>>,
+): string {
+  switch (to) {
+    case "warehouse_picking":
+      return "Warehouse picking";
+    case "awb_created":
+      return "AWB created";
+    case "ready_for_shipping":
+      return "Ready for shipping";
+    default:
+      return to;
+  }
 }
 
 export default function WarehousePage() {
@@ -359,8 +375,8 @@ export default function WarehousePage() {
                   <div
                     className={
                       msg.type === "ok"
-                        ? "mt-4 rounded-xl border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]"
-                        : "mt-4 rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]"
+                        ? "mt-4 rounded-[var(--ds-radius-md)] border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-none"
+                        : "mt-4 rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none"
                     }
                     role="status"
                   >
@@ -411,15 +427,9 @@ export default function WarehousePage() {
             <p className="text-[color:var(--color-text-secondary)]">
               This will move order{" "}
               <span className="font-mono">{revertFor.id.slice(0, 8)}…</span> from{" "}
-              <span className="font-medium">
-                {revertFor.status === "packed" ? "Packed" : "Ready for warehouse"}
-              </span>{" "}
+              <span className="font-medium">{revertFor.status.replace(/_/g, " ")}</span>{" "}
               to{" "}
-              <span className="font-medium">
-                {revertTo === "ready_for_warehouse"
-                  ? "Ready for warehouse (and void label/pack if applicable)"
-                  : "Invoicing / confirmation"}
-              </span>
+              <span className="font-medium">{revertTargetLabel(revertTo)}</span>
               .
             </p>
             <div className="space-y-1">
@@ -431,7 +441,7 @@ export default function WarehousePage() {
               </label>
               <textarea
                 id="revert-reason"
-                className="min-h-[88px] w-full rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-2 text-sm"
+                className="min-h-[88px] w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] p-2 text-sm leading-relaxed outline-none transition-[border-color,box-shadow] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
                 value={revertReason}
                 onChange={(e) => setRevertReason(e.target.value)}
                 placeholder="Short reason for supervisor / audit log"

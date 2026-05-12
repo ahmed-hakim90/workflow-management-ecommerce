@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockGetKanbanSettings,
@@ -14,9 +13,12 @@ export async function getKanbanSettings(
   if (isDevMockDataEnabled()) {
     return mergeKanbanSettings(mockGetKanbanSettings(tenantId));
   }
-  const db = getDb();
-  const snap = await db.collection(COLLECTIONS.tenantSettings).doc(tenantId).get();
-  const data = snap.data() as { kanban?: TenantKanbanSettings } | undefined;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("tenant_settings")
+    .select("kanban")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
   return mergeKanbanSettings(data?.kanban ?? null);
 }
 
@@ -29,9 +31,8 @@ export async function setKanbanSettings(
     mockSetKanbanSettings(tenantId, merged);
     return;
   }
-  const db = getDb();
-  await db
-    .collection(COLLECTIONS.tenantSettings)
-    .doc(tenantId)
-    .set({ kanban: merged, updatedAt: new Date().toISOString() }, { merge: true });
+  const { error } = await getSupabaseServiceRoleClient()
+    .from("tenant_settings")
+    .upsert({ tenant_id: tenantId, kanban: merged });
+  if (error) throw error;
 }

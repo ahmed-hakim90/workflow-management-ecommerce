@@ -12,13 +12,23 @@ describe("automation", () => {
     ).toBe(true);
   });
 
-  it("invoiced stage triggers on ready_for_warehouse", () => {
+  it("invoiced stage triggers on ready_for_shipping", () => {
     expect(
       shouldAutoCreateShipment(
-        "invoicing",
-        "ready_for_warehouse",
+        "invoiced",
+        "ready_for_shipping",
         { auto_create_shipment: true, create_shipment_stage: "invoiced" },
       ),
     ).toBe(true);
+  });
+
+  it("does not trigger when auto-create is disabled", () => {
+    expect(
+      shouldAutoCreateShipment(
+        "invoiced",
+        "ready_for_shipping",
+        { auto_create_shipment: false, create_shipment_stage: "invoiced" },
+      ),
+    ).toBe(false);
   });
 });

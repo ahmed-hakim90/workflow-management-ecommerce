@@ -1,43 +1,71 @@
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import {
   mockListUsers,
   mockCreateUser,
   mockGetUser,
-  mockGetUserByFirebaseUid,
+  mockGetUserBySupabaseUserId,
   mockUpdateUser,
 } from "@/lib/dev/mock-backend";
 import type { User, UserRole } from "@/lib/types/models";
-import { logActivity } from "@/lib/services/activity.service";
 import type { Locale } from "@/lib/i18n/config";
+
+type ProfileRow = {
+  id: string;
+  tenant_id: string;
+  user_id: string | null;
+  name: string;
+  email: string | null;
+  language: Locale | null;
+  role: UserRole;
+  permissions: string[] | null;
+  daily_target: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapProfile(row: ProfileRow): User {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    email: row.email ?? undefined,
+    supabaseUserId: row.user_id ?? undefined,
+    language: row.language ?? "en",
+    role: row.role,
+    permissions: row.permissions ?? [],
+    daily_target: row.daily_target ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 export async function listUsers(tenantId: string): Promise<User[]> {
   if (isDevMockDataEnabled()) return mockListUsers(tenantId);
-  const db = getDb();
-  const q = await db
-    .collection(COLLECTIONS.users)
-    .where("tenantId", "==", tenantId)
-    .get();
-  return q.docs.map((d) => d.data() as User);
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => mapProfile(row as ProfileRow));
 }
 
 export async function countUsers(tenantId: string): Promise<number> {
   if (isDevMockDataEnabled()) return mockListUsers(tenantId).length;
-  const db = getDb();
-  const snap = await db
-    .collection(COLLECTIONS.users)
-    .where("tenantId", "==", tenantId)
-    .count()
-    .get();
-  return snap.data().count;
+  const { count, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 export async function createUser(input: {
   tenantId: string;
   name: string;
   email?: string;
-  firebaseUid?: string;
+  supabaseUserId?: string;
   language?: Locale;
   role: UserRole;
   permissions?: string[];
@@ -45,32 +73,22 @@ export async function createUser(input: {
   actorUserId: string;
 }): Promise<User> {
   if (isDevMockDataEnabled()) return mockCreateUser(input);
-  const db = getDb();
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const user: User = {
-    id,
-    tenantId: input.tenantId,
-    name: input.name,
-    language: input.language ?? "en",
-    role: input.role,
-    permissions: input.permissions ?? [],
-    daily_target: input.daily_target ?? 0,
-    createdAt: now,
-    updatedAt: now,
-  };
-  if (input.email) user.email = input.email;
-  if (input.firebaseUid) user.firebaseUid = input.firebaseUid;
-  await db.collection(COLLECTIONS.users).doc(id).set(user);
-  await logActivity({
-    tenantId: input.tenantId,
-    action: "user.created",
-    entityType: "user",
-    entityId: id,
-    userId: input.actorUserId,
-    metadata: { role: input.role },
-  });
-  return user;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .insert({
+      tenant_id: input.tenantId,
+      name: input.name,
+      email: input.email,
+      user_id: input.supabaseUserId,
+      language: input.language ?? "en",
+      role: input.role,
+      permissions: input.permissions ?? [],
+      daily_target: input.daily_target ?? 0,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapProfile(data as ProfileRow);
 }
 
 export async function getUser(
@@ -78,25 +96,27 @@ export async function getUser(
   userId: string,
 ): Promise<User | null> {
   if (isDevMockDataEnabled()) return mockGetUser(tenantId, userId);
-  const db = getDb();
-  const snap = await db.collection(COLLECTIONS.users).doc(userId).get();
-  const u = snap.data() as User | undefined;
-  if (!u || u.tenantId !== tenantId) return null;
-  return u;
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapProfile(data as ProfileRow) : null;
 }
 
-export async function getUserByFirebaseUid(
-  firebaseUid: string,
+export async function getUserBySupabaseUserId(
+  supabaseUserId: string,
 ): Promise<User | null> {
-  if (isDevMockDataEnabled()) return mockGetUserByFirebaseUid(firebaseUid);
-  const db = getDb();
-  const q = await db
-    .collection(COLLECTIONS.users)
-    .where("firebaseUid", "==", firebaseUid)
-    .limit(1)
-    .get();
-  if (q.empty) return null;
-  return q.docs[0].data() as User;
+  if (isDevMockDataEnabled()) return mockGetUserBySupabaseUserId(supabaseUserId);
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .select("*")
+    .eq("user_id", supabaseUserId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapProfile(data as ProfileRow) : null;
 }
 
 export async function updateUser(input: {
@@ -110,16 +130,13 @@ export async function updateUser(input: {
   actorUserId: string;
 }): Promise<User> {
   if (isDevMockDataEnabled()) return mockUpdateUser(input);
-  const db = getDb();
-  const ref = db.collection(COLLECTIONS.users).doc(input.targetUserId);
-  const snap = await ref.get();
-  const prev = snap.data() as User | undefined;
-  if (!prev || prev.tenantId !== input.tenantId) {
+  const prev = await getUser(input.tenantId, input.targetUserId);
+  if (!prev) {
     throw new Error("User not found");
   }
-  const now = new Date().toISOString();
-  const next: User = {
-    ...prev,
+  const { data, error } = await getSupabaseServiceRoleClient()
+    .from("profiles")
+    .update({
     name: input.name ?? prev.name,
     language: input.language ?? prev.language ?? "en",
     role: input.role ?? prev.role,
@@ -127,20 +144,11 @@ export async function updateUser(input: {
       input.permissions !== undefined ? input.permissions : prev.permissions,
     daily_target:
       input.daily_target !== undefined ? input.daily_target : prev.daily_target,
-    updatedAt: now,
-  };
-  await ref.set(next);
-  await logActivity({
-    tenantId: input.tenantId,
-    action: "user.updated",
-    entityType: "user",
-    entityId: input.targetUserId,
-    userId: input.actorUserId,
-    metadata: {
-      role: next.role,
-      daily_target: next.daily_target,
-      permissions: next.permissions,
-    },
-  });
-  return next;
+    })
+    .eq("id", input.targetUserId)
+    .eq("tenant_id", input.tenantId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapProfile(data as ProfileRow);
 }

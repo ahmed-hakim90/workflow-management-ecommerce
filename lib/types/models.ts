@@ -1,28 +1,64 @@
-/** Order lifecycle per Store OMS spec */
+/**
+ * Order lifecycle per Store OMS production spec.
+ *
+ * Pipeline:
+ *   new → pending_confirmation → confirmed → invoice_required → invoiced
+ *     → ready_for_shipping → awb_created → warehouse_picking → warehouse_packed
+ *     → out_for_shipping → delivered → closed
+ *
+ * Branches:
+ *   * out_for_shipping → failed_delivery → {retry|returned|exchange_requested}
+ *   * delivered → returned | exchange_requested
+ *   * returned/exchange_requested → replacement_created → ready_for_shipping
+ *   * Any pre-invoice status → cancelled → closed
+ */
 export type OrderStatus =
+  | "new"
   | "pending_confirmation"
   | "confirmed"
-  | "invoicing"
-  | "ready_for_warehouse"
-  | "packed"
-  | "shipped"
+  | "cancelled"
+  | "invoice_required"
+  | "invoiced"
+  | "ready_for_shipping"
+  | "awb_created"
+  | "warehouse_picking"
+  | "warehouse_packed"
+  | "out_for_shipping"
   | "delivered"
-  | "follow_up"
-  | "cancelled";
+  | "failed_delivery"
+  | "returned"
+  | "exchange_requested"
+  | "replacement_created"
+  | "closed";
 
 export const ORDER_STATUSES: OrderStatus[] = [
+  "new",
   "pending_confirmation",
   "confirmed",
-  "invoicing",
-  "ready_for_warehouse",
-  "packed",
-  "shipped",
-  "delivered",
-  "follow_up",
   "cancelled",
+  "invoice_required",
+  "invoiced",
+  "ready_for_shipping",
+  "awb_created",
+  "warehouse_picking",
+  "warehouse_packed",
+  "out_for_shipping",
+  "delivered",
+  "failed_delivery",
+  "returned",
+  "exchange_requested",
+  "replacement_created",
+  "closed",
 ];
 
-export type PaymentStatus = "paid" | "partial" | "cod";
+/**
+ * Payment lifecycle:
+ * - `paid`     — fully prepaid online
+ * - `unpaid`   — prepay expected but not received yet
+ * - `partial`  — partial prepayment + cash on delivery for the rest
+ * - `cod`      — cash on delivery for the full amount
+ */
+export type PaymentStatus = "paid" | "unpaid" | "partial" | "cod";
 
 export interface Payment {
   payment_status: PaymentStatus;
@@ -54,6 +90,10 @@ export interface OrderLineItem {
   quantity: number;
   unit_price: number;
   line_total: number;
+  /** Merchant-side unit cost, if supplied by the store/catalog metadata. */
+  unit_cost?: number;
+  /** Merchant-side cost for this line (`unit_cost * quantity` unless explicitly supplied). */
+  line_cost?: number;
   product_url?: string;
   attributes?: Record<string, string>;
   meta?: Record<string, string>;
@@ -64,9 +104,12 @@ export interface OrderShipping {
   cost: number;
 }
 
+/** Inbound commerce source; extensible for multi-channel. */
+export type OrderSource = "woocommerce";
+
 /**
  * JSON-serializable value (WooCommerce payloads, snapshots).
- * Matches Firestore-supported scalars and nested structure.
+ * JSON-compatible scalars and nested structure.
  */
 export type JsonValue =
   | string
@@ -76,18 +119,47 @@ export type JsonValue =
   | { [key: string]: JsonValue }
   | JsonValue[];
 
+/**
+ * Fields loaded for order lists (API list).
+ * لا نضمّن lineItems ولا لقطة Woo الخام — لتخفيف القراءات.
+ */
+export type OrderListSummary = Omit<
+  Order,
+  "lineItems" | "woocommerceOrderSnapshot"
+> & {
+  lineItems?: undefined;
+  woocommerceOrderSnapshot?: undefined;
+};
+
+/** Full order for detail APIs (includes line items and optional raw snapshot ref). */
+export type OrderDetail = Order;
+
 export interface Order {
   id: string;
   tenantId: string;
   customer: OrderCustomer;
   payment: Payment;
   status: OrderStatus;
+  /** ISO timestamp of the most recent status change. Used for SLA + activity ordering. */
+  statusUpdatedAt?: string;
   invoice?: OrderInvoice;
   shipmentIds: string[];
   assigned_to?: string | null;
   cancelReason?: string;
   cancelledAt?: string;
   cancelledByUserId?: string;
+  /** Same as Woo order id when source is Woo; stable external key for idempotency. */
+  externalOrderId?: string;
+  /** Where the order was created (Woo, future channels). */
+  source?: OrderSource;
+  /** Last successful webhook/map persist for this order from the source. */
+  lastSyncedAt?: string;
+  /** Denormalized count for list UIs without reading lineItems. */
+  lineItemCount?: number;
+  /** Points to stored raw payload (e.g. subcollection doc id) when not inlined. */
+  webhookPayloadRef?: string;
+  /** SHA-256 of normalized ingest payload; skips redundant logs when unchanged. */
+  lastWebhookSyncFingerprint?: string;
   wooCommerceOrderId?: string;
   /** Computed API field for opening the source order in WooCommerce admin. */
   wooCommerceOrderAdminUrl?: string;
@@ -115,6 +187,10 @@ export interface Order {
 
 export type ShipmentType = "delivery" | "return" | "exchange";
 
+export type ShippingProvider = "bosta" | "jnt_egypt" | "fedex" | "mock";
+
+export type ShipmentLabelFormat = "pdf" | "zpl" | "thermal";
+
 export type ShipmentStatus =
   | "pending"
   | "created"
@@ -131,8 +207,20 @@ export interface Shipment {
   awb: string;
   type: ShipmentType;
   status: ShipmentStatus;
-  provider: "bosta" | "mock";
+  provider: ShippingProvider;
   externalId?: string;
+  serviceCode?: string;
+  labelFormat?: ShipmentLabelFormat;
+  labelUrl?: string;
+  labelData?: string;
+  thermalLabelUrl?: string;
+  thermalLabelData?: string;
+  carrierAccountRef?: string;
+  rawCarrierStatus?: string;
+  /** Cash amount requested from the carrier on delivery. */
+  cod_amount?: number;
+  /** Whether the carrier should allow package inspection/opening where supported. */
+  allow_opening?: boolean;
   /** Carrier / quoted fee for this shipment (falls back to order shipping cost in analytics). */
   shipping_fees?: number;
   /** Staff who created the shipment (Bosta / policy). */
@@ -203,15 +291,16 @@ export type UserRole =
   | "confirmation"
   | "invoicing"
   | "warehouse"
-  | "support";
+  | "support"
+  | "viewer";
 
 export interface User {
   id: string;
   tenantId: string;
   name: string;
   email?: string;
-  /** Set when the account signs in with Firebase Auth (onboarding / login). */
-  firebaseUid?: string;
+  /** Supabase Auth user id (`auth.users.id`). */
+  supabaseUserId?: string;
   language?: "en" | "ar";
   role: UserRole;
   permissions: string[];
@@ -220,7 +309,7 @@ export interface User {
   updatedAt: string;
 }
 
-/** One company / merchant (Firestore `tenants` document id = `id`). */
+/** One company / merchant. */
 export type TenantStatus = "active" | "suspended";
 
 export interface Tenant {
@@ -258,8 +347,12 @@ export interface PlatformPackageLimits {
 export interface PlatformPackageFeatures {
   woocommerce: boolean;
   bosta: boolean;
+  jntEgypt: boolean;
+  fedex: boolean;
   storefrontOrders: boolean;
   outboundWebhooks: boolean;
+  /** Meta WhatsApp Cloud API (tenant_settings.integrations.whatsapp). */
+  whatsapp: boolean;
 }
 
 export type PlatformSupportTier = "standard" | "priority" | "dedicated";
@@ -299,14 +392,24 @@ export interface AnalyticsDaily {
   date: string;
   orders_count: number;
   orders_value: number;
+  /** Cost of goods sold inferred from order line item cost fields. */
+  cogs_value: number;
   /** Orders moved to confirmed on this day (event-driven); rebuild uses activity logs when available. */
   confirmed_orders_count: number;
   shipments_count: number;
   shipping_cost: number;
+  delivery_shipments_count: number;
+  delivery_shipping_cost: number;
+  return_shipments_count: number;
+  return_shipping_cost: number;
+  exchange_shipments_count: number;
+  exchange_shipping_cost: number;
   returns_count: number;
   returns_value: number;
+  /** Cash refund amount captured when return/refund tickets are resolved. */
+  refunds_value: number;
   exchanges_count: number;
-  /** Replacement-order delta not modeled yet; kept for spec alignment. */
+  /** Replacement-order/refund delta captured from resolved exchange tickets. */
   exchanges_value: number;
   updatedAt: string;
 }
@@ -336,7 +439,21 @@ export interface ActivityLog {
   timestamp: string;
 }
 
+/** Append-only rows in `order_events` — order-scoped audit stream. */
+export interface OrderEvent {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  action: string;
+  userId: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export type WebhookIngestSource = "woocommerce" | "storefront_order_forwarding";
+
+/** Normalized lifecycle for dashboards (maps from legacy `outcome`). */
+export type WebhookIngestStatus = "received" | "processed" | "failed" | "duplicate";
 
 /**
  * Inbound webhook delivery outcome (for Settings diagnostics). No secrets; optional error text is truncated on write.
@@ -359,12 +476,24 @@ export interface WebhookIngestLog {
   source: WebhookIngestSource;
   /** WooCommerce `X-WC-Webhook-Delivery-Id` when present. */
   deliveryId: string;
+  /** Same as `deliveryId` for Woo; alias for generic “webhook id” wording. */
+  webhookId: string;
+  /** e.g. `X-WC-Webhook-Topic` when available. */
+  eventType?: string;
   outcome: WebhookIngestOutcome;
+  /** Derived from `outcome` for filtering (duplicate / processed / failed / received). */
+  status: WebhookIngestStatus;
   httpStatus: number;
   orderId?: string;
   wooOrderId?: string;
+  externalOrderId?: string;
   errorMessage?: string;
   requestBodyBytes: number;
+  /** When the HTTP handler accepted the request (start of processing). */
+  receivedAt: string;
+  /** When processing finished (success or failure). */
+  processedAt: string;
+  /** Legacy field; mirrors `receivedAt` for older readers. */
   createdAt: string;
 }
 
@@ -384,6 +513,30 @@ export interface TenantAutomationSettings {
   orderLinkTemplate?: string;
   /** Outbound HTTP webhooks fired after order status changes. */
   outboundWebhooks?: TenantOutboundWebhook[];
+  /** When true, new Woo orders trigger Cloud API template + n8n events (server-side only). */
+  whatsappAutomationEnabled?: boolean;
+  /** n8n workflow entry URL for OMS → automation events. */
+  n8nWebhookUrl?: string;
+  /** HMAC secret for `X-OMS-Signature` on posts to n8n. */
+  n8nWebhookSecret?: string;
+  /** WhatsApp approved template for order confirmation flow. */
+  orderConfirmationTemplateName?: string;
+  orderConfirmationTemplateLanguage?: string;
+  /**
+   * When true, incoming WhatsApp messages on a linked order run the built-in keyword classifier
+   * (still logged in OMS; n8n receives `chat.reply.classified`).
+   */
+  inlineReplyClassifier?: boolean;
+  /** SLA: دقائق لأول رد على رسالة عميل واردة (0 يعطل المؤقت). */
+  inboxSlaFirstResponseMinutes?: number;
+  /** SLA: ساعات خمول قبل متابعة (pending_followup). */
+  inboxSlaCustomerIdleHours?: number;
+  /** SLA: انتظار موافقة/إجراء داخلي قبل إشعار. */
+  inboxSlaInternalActionHours?: number;
+  /** تصنيف نوايا الرد: كلمات مفتاحية فقط، OpenRouter، Ollama، أو هجين. */
+  replyIntentClassifierProvider?: "heuristic" | "openrouter" | "ollama" | "hybrid";
+  /** عتبة الثقة للهجين قبل استدعاء LLM (افتراضي 0.72). */
+  replyIntentClassifierLlmThreshold?: number;
 }
 
 export const defaultTenantAutomation: TenantAutomationSettings = {
@@ -421,7 +574,7 @@ export interface OutboundWebhookDeliveryLog {
   createdAt: string;
 }
 
-/** Stored under Firestore `tenant_settings` doc field `integrations` (per tenant). */
+/** Stored under Supabase `tenant_settings.integrations` (per tenant). */
 export interface TenantWooCommerceIntegration {
   /** Same string as WooCommerce → Webhooks → Secret (HMAC). */
   webhookSecret?: string;
@@ -445,6 +598,48 @@ export interface TenantBostaIntegration {
   /** First address line when order has no structured address. */
   defaultAddressLine?: string;
   /** Package description / notes for Bosta specs. */
+  packageDescription?: string;
+}
+
+export interface TenantJntEgyptIntegration {
+  apiAccount?: string;
+  customerCode?: string;
+  password?: string;
+  digestSecret?: string;
+  baseUrl?: string;
+  environment?: "test" | "prod";
+  senderName?: string;
+  senderPhone?: string;
+  senderCity?: string;
+  senderArea?: string;
+  senderAddress?: string;
+  defaultServiceCode?: string;
+  defaultWeightKg?: string;
+  defaultLengthCm?: string;
+  defaultWidthCm?: string;
+  defaultHeightCm?: string;
+  packageDescription?: string;
+}
+
+export interface TenantFedExIntegration {
+  clientId?: string;
+  clientSecret?: string;
+  accountNumber?: string;
+  baseUrl?: string;
+  environment?: "test" | "prod";
+  shipperName?: string;
+  shipperPhone?: string;
+  shipperStreet?: string;
+  shipperCity?: string;
+  shipperStateOrProvinceCode?: string;
+  shipperPostalCode?: string;
+  shipperCountryCode?: string;
+  defaultServiceType?: string;
+  defaultPackagingType?: string;
+  defaultWeightKg?: string;
+  defaultLengthCm?: string;
+  defaultWidthCm?: string;
+  defaultHeightCm?: string;
   packageDescription?: string;
 }
 
@@ -473,12 +668,29 @@ export const defaultTenantWarehouse: Required<
   scanCooldownMs: 3500,
 };
 
+/** Meta WhatsApp Cloud API — tokens stay server-side; never return to clients. */
+export interface TenantWhatsAppCloudIntegration {
+  /** GET webhook verification (`hub.verify_token`). */
+  verifyToken?: string;
+  /** Long-lived system user token for Graph API. */
+  accessToken?: string;
+  /** Phone number id from Meta (messages endpoint). */
+  phoneNumberId?: string;
+  businessAccountId?: string;
+  /** Override global `WHATSAPP_APP_SECRET` for signature validation. */
+  appSecret?: string;
+}
+
 export interface TenantIntegrationsDoc {
   woocommerce?: TenantWooCommerceIntegration;
   bosta?: TenantBostaIntegration;
+  jntEgypt?: TenantJntEgyptIntegration;
+  fedex?: TenantFedExIntegration;
   storefrontOrders?: TenantStorefrontOrdersIntegration;
   /** سلوك المسح في المخزن (بدون واتساب). */
   warehouse?: TenantWarehouseSettings;
+  /** Cloud API for inbox + automation. */
+  whatsapp?: TenantWhatsAppCloudIntegration;
 }
 
 /** Fields shown on each Kanban card (tenant-configurable). */

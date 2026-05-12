@@ -2,13 +2,21 @@ import type { UserRole } from "@/lib/types/models";
 
 export type PagePermission =
   | "page:analytics"
+  | "page:accounts"
   | "page:orders"
   | "page:shipments"
   | "page:tickets"
   | "page:warehouse"
   | "page:admin"
   | "page:users"
-  | "page:settings";
+  | "page:settings"
+  | "page:inbox";
+
+export type InboxAction =
+  | "inbox:read"
+  | "inbox:write"
+  | "inbox:manage"
+  | "inbox:read_linked_order";
 
 export type OrderAction =
   | "order:read"
@@ -17,7 +25,18 @@ export type OrderAction =
   | "order:cancel"
   | "order:assign"
   | "order:revert"
-  | "order:delete";
+  | "order:delete"
+  | "order:request_invoice"
+  | "order:mark_ready"
+  | "order:warehouse_pick"
+  | "order:warehouse_pack"
+  | "order:dispatch"
+  | "order:mark_delivered"
+  | "order:mark_failed"
+  | "order:return"
+  | "order:exchange"
+  | "order:replacement"
+  | "order:close";
 
 export type ShipmentAction =
   | "shipment:create"
@@ -35,13 +54,17 @@ export type UserAction = "user:read" | "user:manage";
 
 export type FinanceAction = "finance:view";
 
+export type AccountAction = "account:read" | "account:manage";
+
 export type Permission =
   | PagePermission
   | OrderAction
   | ShipmentAction
   | TicketAction
   | UserAction
-  | FinanceAction;
+  | AccountAction
+  | FinanceAction
+  | InboxAction;
 
 export type PermissionOverride = Permission | `-${Permission}`;
 
@@ -54,6 +77,7 @@ export type PermissionSubject =
 
 export const PAGE_PERMISSIONS: PagePermission[] = [
   "page:analytics",
+  "page:accounts",
   "page:orders",
   "page:shipments",
   "page:tickets",
@@ -61,6 +85,7 @@ export const PAGE_PERMISSIONS: PagePermission[] = [
   "page:admin",
   "page:users",
   "page:settings",
+  "page:inbox",
 ];
 
 export const ACTION_PERMISSIONS: Permission[] = [
@@ -71,6 +96,17 @@ export const ACTION_PERMISSIONS: Permission[] = [
   "order:assign",
   "order:revert",
   "order:delete",
+  "order:request_invoice",
+  "order:mark_ready",
+  "order:warehouse_pick",
+  "order:warehouse_pack",
+  "order:dispatch",
+  "order:mark_delivered",
+  "order:mark_failed",
+  "order:return",
+  "order:exchange",
+  "order:replacement",
+  "order:close",
   "shipment:create",
   "shipment:scan",
   "shipment:read",
@@ -81,7 +117,13 @@ export const ACTION_PERMISSIONS: Permission[] = [
   "ticket:delete",
   "user:read",
   "user:manage",
+  "account:read",
+  "account:manage",
   "finance:view",
+  "inbox:read",
+  "inbox:write",
+  "inbox:manage",
+  "inbox:read_linked_order",
 ];
 
 export const ALL_PERMISSIONS: Permission[] = [
@@ -99,6 +141,7 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
   admin: ADMIN_OPERATIONAL_PERMISSIONS,
   moderator: [
     "page:analytics",
+    "page:accounts",
     "page:orders",
     "page:shipments",
     "page:tickets",
@@ -106,12 +149,27 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "page:admin",
     "page:users",
     "page:settings",
+    "page:inbox",
+    "inbox:read",
+    "inbox:write",
+    "inbox:manage",
     "order:read",
     "order:confirm",
     "order:invoice",
     "order:cancel",
     "order:assign",
     "order:revert",
+    "order:request_invoice",
+    "order:mark_ready",
+    "order:warehouse_pick",
+    "order:warehouse_pack",
+    "order:dispatch",
+    "order:mark_delivered",
+    "order:mark_failed",
+    "order:return",
+    "order:exchange",
+    "order:replacement",
+    "order:close",
     "shipment:create",
     "shipment:scan",
     "shipment:read",
@@ -121,13 +179,20 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "ticket:resolve",
     "user:read",
     "user:manage",
+    "account:read",
+    "account:manage",
   ],
   confirmation: [
     "page:orders",
+    "page:inbox",
+    "inbox:read",
+    "inbox:write",
     "page:settings",
     "order:read",
     "order:confirm",
+    "order:cancel",
     "order:assign",
+    "order:request_invoice",
     "shipment:create",
     "shipment:read",
   ],
@@ -137,14 +202,23 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "order:read",
     "order:invoice",
     "order:assign",
+    "order:mark_ready",
   ],
   warehouse: [
     "page:orders",
     "page:shipments",
     "page:warehouse",
+    "page:inbox",
+    "inbox:read_linked_order",
     "page:settings",
     "order:read",
     "order:revert",
+    "order:warehouse_pick",
+    "order:warehouse_pack",
+    "order:dispatch",
+    "order:mark_delivered",
+    "order:mark_failed",
+    "shipment:create",
     "shipment:read",
     "shipment:scan",
   ],
@@ -152,8 +226,15 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "page:orders",
     "page:shipments",
     "page:tickets",
+    "page:inbox",
+    "inbox:read",
+    "inbox:write",
     "page:settings",
     "order:read",
+    "order:return",
+    "order:exchange",
+    "order:replacement",
+    "order:mark_failed",
     "ticket:create",
     "ticket:read",
     "ticket:assign",
@@ -161,6 +242,7 @@ const ROLE_MATRIX: Record<UserRole, Permission[]> = {
     "shipment:create",
     "shipment:read",
   ],
+  viewer: ["page:inbox", "inbox:read"],
 };
 
 export function roleDefaultPermissions(role: UserRole): Permission[] {

@@ -32,6 +32,7 @@ const ROLES: UserRole[] = [
   "invoicing",
   "warehouse",
   "support",
+  "viewer",
 ];
 
 const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] = [
@@ -39,9 +40,11 @@ const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] = [
     title: "Pages",
     permissions: [
       "page:analytics",
+      "page:accounts",
       "page:orders",
       "page:shipments",
       "page:tickets",
+      "page:inbox",
       "page:warehouse",
       "page:admin",
       "page:users",
@@ -75,8 +78,23 @@ const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] = [
     ],
   },
   {
+    title: "Inbox (WhatsApp)",
+    permissions: [
+      "inbox:read",
+      "inbox:write",
+      "inbox:manage",
+      "inbox:read_linked_order",
+    ],
+  },
+  {
     title: "Users / Finance",
-    permissions: ["user:read", "user:manage", "finance:view"],
+    permissions: [
+      "user:read",
+      "user:manage",
+      "finance:view",
+      "account:read",
+      "account:manage",
+    ],
   },
 ];
 
@@ -86,6 +104,8 @@ function permissionLabel(permission: Permission) {
     .replace("order:", "Order: ")
     .replace("shipment:", "Shipment: ")
     .replace("ticket:", "Ticket: ")
+    .replace("account:", "Account: ")
+    .replace("inbox:", "Inbox: ")
     .replace("user:", "User: ")
     .replace("finance:", "Finance: ")
     .replaceAll("_", " ");
@@ -117,9 +137,9 @@ function PermissionEditor({
 }) {
   const selectedSet = new Set(selected);
   return (
-    <div className="space-y-3 rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
+    <div className="space-y-3 rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-3">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+        <p className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
           Permissions
         </p>
         <p className="text-xs text-[color:var(--color-text-secondary)]">
@@ -139,7 +159,7 @@ function PermissionEditor({
               return (
                 <label
                   key={permission}
-                  className="flex items-center gap-2 rounded-lg bg-[color:var(--color-card)] px-2 py-1.5 text-xs shadow-[var(--shadow-neo-raised-sm)]"
+                  className="flex items-center gap-2 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] px-2 py-1.5 text-xs shadow-none"
                 >
                   <input
                     type="checkbox"
@@ -295,7 +315,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
       ) : null}
 
       {!usersLoading && err ? (
-        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}
@@ -376,7 +396,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
 
       <ResponsiveTable
         desktop={
-          <TableWrap className="border-0 shadow-[var(--shadow-neo-raised)] md:rounded-2xl">
+          <TableWrap className="border-0 shadow-none md:rounded-[var(--ds-radius-md)]">
             <thead>
               <tr>
                 <Th>Name</Th>
@@ -444,7 +464,7 @@ export function UsersManagement({ createControl }: UsersManagementProps = {}) {
               users.map((u) => (
                 <ResponsiveCard
                   key={u.id}
-                  className="rounded-2xl border-0 shadow-[var(--shadow-neo-raised)]"
+                  className="rounded-[var(--ds-radius-md)] border-0 shadow-none"
                 >
                   <div className="space-y-3 text-sm">
                     <div className="text-base font-semibold text-[color:var(--color-text-primary)]">

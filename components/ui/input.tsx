@@ -11,7 +11,7 @@ function FieldMeta({ label, helperText, error }: FieldMetaProps) {
   return (
     <>
       {label ? (
-        <label className="text-sm font-semibold text-[color:var(--color-text-secondary)]">
+        <label className="text-[13px] font-medium text-[color:var(--color-text-secondary)]">
           {label}
         </label>
       ) : null}
@@ -36,7 +36,7 @@ export function Input({
       <FieldMeta label={label} />
       <input
         className={cn(
-          "h-11 min-h-11 w-full rounded-lg border border-[color:var(--color-border-strong)] bg-[color:var(--color-input-bg)] px-4 text-base leading-6 shadow-none",
+          "h-9 min-h-9 w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 text-[13px] leading-5 shadow-none sm:text-sm",
           "text-[color:var(--color-text-primary)] outline-none transition-[border-color,box-shadow]",
           "placeholder:text-[color:var(--color-text-muted)]",
           "focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0",
@@ -64,7 +64,7 @@ export function Select({
       <FieldMeta label={label} />
       <select
         className={cn(
-          "h-11 min-h-11 w-full rounded-lg border border-[color:var(--color-border-strong)] bg-[color:var(--color-input-bg)] px-4 text-base leading-6 shadow-none",
+          "h-9 min-h-9 w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 text-[13px] leading-5 shadow-none sm:text-sm",
           "text-[color:var(--color-text-primary)] outline-none transition-[border-color,box-shadow]",
           "focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0",
           "disabled:cursor-not-allowed disabled:bg-[color:var(--color-button-disabled-bg)] disabled:text-[color:var(--color-button-disabled-text)]",
@@ -92,7 +92,7 @@ export function Textarea({
       <FieldMeta label={label} />
       <textarea
         className={cn(
-          "min-h-[120px] w-full rounded-lg border border-[color:var(--color-border-strong)] bg-[color:var(--color-input-bg)] px-4 py-3 text-sm leading-5 shadow-none",
+          "min-h-[120px] w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 py-2.5 text-[13px] leading-relaxed shadow-none sm:text-sm",
           "text-[color:var(--color-text-primary)] outline-none transition-[border-color,box-shadow]",
           "placeholder:text-[color:var(--color-text-muted)]",
           "focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0",
@@ -125,7 +125,7 @@ export function Checkbox({
           id={inputId}
           type="checkbox"
           className={cn(
-            "mt-0.5 size-5 shrink-0 cursor-pointer rounded border-2 border-[color:var(--color-border-strong)] bg-[color:var(--color-input-bg)]",
+            "mt-0.5 size-[18px] shrink-0 cursor-pointer rounded-[var(--ds-radius-sm)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)]",
             "accent-[color:var(--color-primary)] outline-none",
             "focus-visible:shadow-[var(--shadow-focus-ring)] focus-visible:ring-0",
             "disabled:cursor-not-allowed disabled:opacity-50",
@@ -136,7 +136,7 @@ export function Checkbox({
         {label ? (
           <label
             htmlFor={inputId}
-            className="cursor-pointer text-base font-normal leading-6 text-[color:var(--color-text-primary)]"
+            className="cursor-pointer text-[13px] font-normal leading-snug text-[color:var(--color-text-primary)] sm:text-sm"
           >
             {label}
           </label>

@@ -20,8 +20,11 @@ type Package = {
   features: {
     woocommerce: boolean;
     bosta: boolean;
+    jntEgypt: boolean;
+    fedex: boolean;
     storefrontOrders: boolean;
     outboundWebhooks: boolean;
+    whatsapp: boolean;
   };
   supportTier: "standard" | "priority" | "dedicated";
 };
@@ -79,8 +82,11 @@ export default function PackagesPage() {
           features: {
             woocommerce: true,
             bosta: true,
+            jntEgypt: true,
+            fedex: true,
             storefrontOrders: true,
             outboundWebhooks: false,
+            whatsapp: true,
           },
           supportTier,
         }),
@@ -150,7 +156,7 @@ export default function PackagesPage() {
       </Card>
 
       {err ? (
-        <p className="rounded-xl bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}

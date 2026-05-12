@@ -16,7 +16,7 @@ export default function OfflinePage() {
       </div>
       <Link
         href="/"
-        className="rounded-xl bg-[color:var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[color:var(--color-primary-contrast)] shadow-[var(--shadow-neo-raised-sm)] hover:shadow-[var(--shadow-neo-raised)] active:shadow-[var(--shadow-neo-pressed-sm)]"
+        className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[color:var(--color-primary-contrast)] shadow-none hover:shadow-none"
       >
         Go to home
       </Link>

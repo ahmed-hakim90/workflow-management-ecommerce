@@ -25,7 +25,7 @@ export function Switch({
       disabled={disabled}
       className={cn(
         "relative h-7 w-12 shrink-0 rounded-full transition-all duration-200",
-        "shadow-[var(--shadow-neo-well)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg)]",
+        "ring-1 ring-inset ring-[color:var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg)]",
         "disabled:pointer-events-none disabled:opacity-50",
         checked
           ? "bg-[color:var(--color-primary)]"
@@ -35,7 +35,7 @@ export function Switch({
     >
       <span
         className={cn(
-          "absolute top-1 size-5 rounded-full bg-[color:var(--color-card)] shadow-[var(--shadow-neo-raised-sm)] transition-all duration-200",
+          "absolute top-1 size-5 rounded-full bg-[color:var(--color-card)] shadow-none transition-all duration-200",
           checked ? "end-1" : "start-1",
         )}
       />

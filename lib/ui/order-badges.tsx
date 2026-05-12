@@ -20,13 +20,17 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
   const tone =
     status === "cancelled"
       ? "danger"
-      : status === "shipped" ||
-          status === "delivered" ||
-          status === "follow_up"
+      : status === "delivered" ||
+          status === "closed" ||
+          status === "out_for_shipping"
         ? "success"
-        : status === "pending_confirmation"
+        : status === "pending_confirmation" || status === "new"
           ? "warning"
-          : "default";
+          : status === "failed_delivery" ||
+              status === "returned" ||
+              status === "exchange_requested"
+            ? "danger"
+            : "default";
   return <Badge tone={tone}>{status}</Badge>;
 }
 

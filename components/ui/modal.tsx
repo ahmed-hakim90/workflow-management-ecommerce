@@ -28,7 +28,7 @@ export function Modal({
       />
       <div
         className={cn(
-          "relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-notion-subtle)]",
+          "relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-none",
           "animate-in fade-in zoom-in-95 duration-200",
         )}
         role="dialog"
@@ -38,7 +38,7 @@ export function Modal({
           <h2 className="text-sm font-semibold text-[color:var(--color-text-primary)]">{title}</h2>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]"
+            className="rounded-[var(--ds-radius-md)] p-1.5 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]"
             onClick={onClose}
             aria-label="إغلاق"
           >

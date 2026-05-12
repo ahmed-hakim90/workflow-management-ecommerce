@@ -1,6 +1,4 @@
-import { FieldValue } from "firebase-admin/firestore";
-import { getDb } from "@/lib/db/firebase-admin";
-import { COLLECTIONS } from "@/lib/db/collections";
+import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
 import { isDevMockDataEnabled } from "@/lib/dev/mock-flag";
 import { mockIncrementUserStat } from "@/lib/dev/mock-backend";
 
@@ -17,19 +15,27 @@ export async function incrementUserStat(input: {
     mockIncrementUserStat(input);
     return;
   }
-  const db = getDb();
   const date = todayKey();
-  const id = `${input.tenantId}_${input.userId}_${date}`;
-  const ref = db.collection(COLLECTIONS.userStats).doc(id);
-  await ref.set(
-    {
-      id,
-      tenantId: input.tenantId,
-      userId: input.userId,
-      date,
-      [input.field]: FieldValue.increment(1),
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("user_stats")
+    .select("metrics")
+    .eq("tenant_id", input.tenantId)
+    .eq("profile_id", input.userId)
+    .eq("date", date)
+    .maybeSingle();
+  if (error) throw error;
+  const metrics = {
+    ...((data?.metrics as Record<string, number> | null) ?? {}),
+    [input.field]:
+      Number(((data?.metrics as Record<string, number> | null) ?? {})[input.field] ?? 0) +
+      1,
+  };
+  const { error: upsertError } = await supabase.from("user_stats").upsert({
+    tenant_id: input.tenantId,
+    profile_id: input.userId,
+    date,
+    metrics,
+  });
+  if (upsertError) throw upsertError;
 }

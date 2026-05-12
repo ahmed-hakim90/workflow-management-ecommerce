@@ -1,9 +1,14 @@
 import { assertTransition } from "@/lib/logic/order-state-machine";
 import type { OrderStatus } from "@/lib/types/models";
 
+/**
+ * استثناءات الرجوع خطوة في فلو المخزن.
+ * مش جزء من الـ FSM الأمامي علشان نحافظ على نقاء التحويلات الأمامية.
+ */
 const WAREHOUSE_REVERT: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  ready_for_warehouse: ["invoicing"],
-  packed: ["ready_for_warehouse"],
+  awb_created: ["ready_for_shipping"],
+  warehouse_picking: ["awb_created"],
+  warehouse_packed: ["awb_created", "warehouse_picking"],
 };
 
 /**
@@ -24,18 +29,26 @@ export function assertWarehouseRevert(from: OrderStatus, to: OrderStatus) {
 }
 
 /**
- * `single_fulfill` allows `ready_for_warehouse` → `shipped` in one scan (shipment only).
- * `per_step` only uses main forward FSM: ready→packed, packed→shipped.
+ * Single-scan vs per-step warehouse fulfilment.
+ *
+ * `single_fulfill` (الإعداد المختصر) — مسحة واحدة من awb_created → out_for_shipping.
+ * `per_step` (الافتراضي) — مسحة 1: awb_created → warehouse_packed، مسحة 2: warehouse_packed → out_for_shipping.
+ *
+ * NOTE: warehouse_picking مرحلة اختيارية بيدخلها الموظف يدوياً من واجهة الـ "Start picking"
+ * عشان نتفادى تعقيد الـ scan flow بدون فايدة.
  */
 export function assertWarehouseScanTransition(
   from: OrderStatus,
   to: OrderStatus,
   mode: "per_step" | "single_fulfill",
 ) {
-  if (mode === "single_fulfill" && from === "ready_for_warehouse" && to === "shipped")
+  if (mode === "single_fulfill" && from === "awb_created" && to === "out_for_shipping")
     return;
-  // packed → shipped in single_fulfill after manual packed state
-  if (mode === "single_fulfill" && from === "packed" && to === "shipped")
+  if (
+    mode === "single_fulfill" &&
+    from === "warehouse_packed" &&
+    to === "out_for_shipping"
+  )
     return;
   assertTransition(from, to);
 }

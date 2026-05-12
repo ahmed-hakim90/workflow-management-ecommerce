@@ -10,15 +10,23 @@ import {
 import type { KanbanCardField, OrderStatus } from "@/lib/types/models";
 
 const orderStatusZ = z.enum([
+  "new",
   "pending_confirmation",
   "confirmed",
-  "invoicing",
-  "ready_for_warehouse",
-  "packed",
-  "shipped",
-  "delivered",
-  "follow_up",
   "cancelled",
+  "invoice_required",
+  "invoiced",
+  "ready_for_shipping",
+  "awb_created",
+  "warehouse_picking",
+  "warehouse_packed",
+  "out_for_shipping",
+  "delivered",
+  "failed_delivery",
+  "returned",
+  "exchange_requested",
+  "replacement_created",
+  "closed",
 ]);
 
 const cardFieldZ = z.enum([

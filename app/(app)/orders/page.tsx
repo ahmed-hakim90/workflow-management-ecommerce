@@ -2,17 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
+import { usePathname } from "next/navigation";
 import {
   Download,
   ExternalLink,
+  Maximize2,
   MessageCircle,
   MoreHorizontal,
   Plus,
@@ -28,8 +22,16 @@ import { ResponsiveCard } from "@/components/responsive/ResponsiveCard";
 import { OrderCardListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useSessionStore, buildAuthHeaders } from "@/store/zustand/session-store";
 import { useUiStore } from "@/store/zustand/ui-store";
-import type { Order, PaymentStatus } from "@/lib/types/models";
+import type {
+  Order,
+  OrderStatus,
+  PaymentStatus,
+  ShipmentStatus,
+  User,
+} from "@/lib/types/models";
 import { OrderStatusBadge, PaymentBadge } from "@/lib/ui/order-badges";
+import { OrdersKanbanBoard } from "@/components/orders/orders-kanban-board";
+import { statusLabel, statusesByBucket } from "@/lib/logic/order-status-meta";
 import {
   arrangeOrdersByDuplicatePhoneClusters,
   duplicatePhoneCounts,
@@ -39,19 +41,57 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/ui/cn";
 import { OrdersViewSwitch } from "@/components/orders/orders-view-switch";
+import { OrderPeekPanel } from "@/components/orders/order-peek-panel";
 import { can } from "@/lib/auth/rbac";
-import { COLLECTIONS } from "@/lib/db/collections";
-import {
-  getFirebaseClientAuth,
-  getFirebaseClientDb,
-  isFirebaseClientConfigured,
-} from "@/lib/firebase/client";
 
 const PAGE_SIZE = 10;
-const PAYMENTS: (PaymentStatus | "")[] = ["", "paid", "partial", "cod"];
+const PAYMENTS: (PaymentStatus | "")[] = ["", "paid", "unpaid", "partial", "cod"];
+const SHIPMENT_STATUSES: (ShipmentStatus | "")[] = [
+  "",
+  "pending",
+  "created",
+  "packed",
+  "shipped",
+  "delivered",
+  "failed",
+  "cancelled",
+];
 
-type QuickTab = "all" | "pending" | "shipped" | "cancelled";
+type QuickTab =
+  | "all"
+  | "intake"
+  | "confirmation"
+  | "invoicing"
+  | "shipping_prep"
+  | "warehouse"
+  | "in_transit"
+  | "delivered"
+  | "returns"
+  | "cancelled";
 type DatePreset = "today" | "yesterday" | "custom";
+
+type OrdersSummaryPayload = {
+  stages: Record<string, number>;
+};
+
+type OrdersFinancialPayload = {
+  totals: {
+    orders_value: number;
+  };
+};
+
+const QUICK_TABS: { id: QuickTab; label: string }[] = [
+  { id: "all", label: "الكل" },
+  { id: "intake", label: "وارد" },
+  { id: "confirmation", label: "بانتظار التأكيد" },
+  { id: "invoicing", label: "الفاتورة" },
+  { id: "shipping_prep", label: "تجهيز الشحن" },
+  { id: "warehouse", label: "المخزن" },
+  { id: "in_transit", label: "خرج للشحن" },
+  { id: "delivered", label: "تم التسليم" },
+  { id: "returns", label: "الإرجاع/الاستبدال" },
+  { id: "cancelled", label: "ملغي" },
+];
 
 function initials(name: string) {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -78,11 +118,31 @@ function displayOrderId(order: Order) {
   return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
 }
 
-function statusesForQuickTab(tab: QuickTab) {
-  if (tab === "pending") return ["pending_confirmation"];
-  if (tab === "shipped") return ["shipped", "delivered", "follow_up"];
-  if (tab === "cancelled") return ["cancelled"];
-  return [];
+function statusesForQuickTab(tab: QuickTab): OrderStatus[] {
+  if (tab === "all") return [];
+  const buckets = statusesByBucket();
+  switch (tab) {
+    case "intake":
+      return buckets.intake;
+    case "confirmation":
+      return buckets.confirmation;
+    case "invoicing":
+      return buckets.invoicing;
+    case "shipping_prep":
+      return buckets.shipping_prep;
+    case "warehouse":
+      return buckets.warehouse;
+    case "in_transit":
+      return buckets.in_transit;
+    case "delivered":
+      return buckets.delivered;
+    case "returns":
+      return buckets.returns;
+    case "cancelled":
+      return [...buckets.cancelled, ...buckets.closed];
+    default:
+      return [];
+  }
 }
 
 function orderIsInsideDateRange(order: Order, fromDate: string, toDate: string) {
@@ -126,6 +186,7 @@ async function fetchOrderForList(
 }
 
 export default function OrdersPage() {
+  const pathname = usePathname();
   const apiSecret = useSessionStore((s) => s.apiSecret);
   const idToken = useSessionStore((s) => s.idToken);
   const tenantId = useSessionStore((s) => s.tenantId);
@@ -134,12 +195,19 @@ export default function OrdersPage() {
   const permissions = useSessionStore((s) => s.permissions);
   const authReady = useSessionStore((s) => s.authReady);
   const openDrawer = useUiStore((s) => s.openDrawer);
+  const drawerOpen = useUiStore((s) => s.drawerOpen);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [sidePeekOrderId, setSidePeekOrderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [payment, setPayment] = useState<PaymentStatus | "">("");
+  const [shippingFilter, setShippingFilter] = useState<ShipmentStatus | "">("");
+  const [assignedTo, setAssignedTo] = useState<string>("");
+  const [statusPills, setStatusPills] = useState<OrderStatus[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [showKanban, setShowKanban] = useState(true);
   const [page, setPage] = useState(0);
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [pageInfo, setPageInfo] = useState<{
@@ -157,29 +225,75 @@ export default function OrdersPage() {
     new Date().toISOString().slice(0, 10),
   );
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
+  const [ordersSummary, setOrdersSummary] = useState<OrdersSummaryPayload | null>(
+    null,
+  );
+  const [ordersFinancial, setOrdersFinancial] =
+    useState<OrdersFinancialPayload | null>(null);
   const canViewFinance = can({ role, permissions }, "finance:view");
+  const canViewAdminSummary =
+    can({ role, permissions }, "page:admin") &&
+    can({ role, permissions }, "user:read");
   const currentCursor = cursorStack[page] ?? null;
+
+  const headers = useMemo(
+    () => buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+    [apiSecret, idToken, tenantId, userId, role],
+  );
+
+  useEffect(() => {
+    if (!drawerOpen) setSidePeekOrderId(null);
+  }, [drawerOpen]);
 
   useEffect(() => {
     setPage(0);
     setCursorStack([null]);
-  }, [q, payment, quickTab, fromDate, toDate]);
+  }, [
+    q,
+    payment,
+    quickTab,
+    fromDate,
+    toDate,
+    shippingFilter,
+    assignedTo,
+    statusPills.join(","),
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#app-page-filters") return;
+    const id = window.requestAnimationFrame(() => {
+      document
+        .getElementById("app-page-filters")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [pathname]);
 
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
-    let unsubAuth: (() => void) | undefined;
-    let unsubFs: (() => void) | undefined;
+    let pollingTimer: number | undefined;
     const headers = buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role });
     const listenerSince = new Date().toISOString();
-    const activeStatuses = statusesForQuickTab(quickTab);
+    const tabStatuses = statusesForQuickTab(quickTab);
+    const effectiveStatuses = statusPills.length
+      ? statusPills
+      : tabStatuses;
 
     const orderMatchesCurrentFilters = (order: Order) => {
       if (!orderIsInsideDateRange(order, fromDate, toDate)) return false;
-      if (activeStatuses.length > 0 && !activeStatuses.includes(order.status)) {
+      if (
+        effectiveStatuses.length > 0 &&
+        !effectiveStatuses.includes(order.status)
+      ) {
         return false;
       }
       if (payment && order.payment.payment_status !== payment) return false;
+      if (shippingFilter && order.latestShipmentStatus !== shippingFilter) {
+        return false;
+      }
+      if (assignedTo && order.assigned_to !== assignedTo) return false;
       const needle = q.trim().toLowerCase();
       if (!needle) return true;
       return [
@@ -209,64 +323,28 @@ export default function OrdersPage() {
             : prev.filter((existing) => existing.id !== order.id),
         );
       } catch {
-        /* Keep the current row; the next Firestore change can retry this one-order refresh. */
+        /* Keep the current row; the next polling cycle can retry this one-order refresh. */
       }
     };
 
     const startRealtimeUpdates = () => {
-      if (!idToken?.trim() || !isFirebaseClientConfigured()) return;
-      const auth = getFirebaseClientAuth();
-      const db = getFirebaseClientDb();
-      const qo = query(
-        collection(db, COLLECTIONS.orders),
-        where("tenantId", "==", tenantId),
-        where("updatedAt", ">", listenerSince),
-        orderBy("updatedAt", "desc"),
-      );
-
-      unsubAuth = onAuthStateChanged(auth, (user) => {
-        unsubFs?.();
-        unsubFs = undefined;
-        if (cancelled || !user) return;
+      if (!idToken?.trim()) return;
+      pollingTimer = window.setInterval(() => {
         try {
-          unsubFs = onSnapshot(
-            qo,
-            (snap) => {
+          void fetch("/api/orders/recent?limit=20", { headers })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((json: { data?: { orders?: Order[] } } | null) => {
               if (cancelled) return;
-              for (const change of snap.docChanges()) {
-                if (change.type === "removed") {
-                  setOrders((prev) =>
-                    prev.filter((order) => order.id !== change.doc.id),
-                  );
-                  continue;
-                }
-
-                const rawOrder = {
-                  id: change.doc.id,
-                  ...change.doc.data(),
-                } as Order;
+              for (const rawOrder of json?.data?.orders ?? []) {
                 if (rawOrder.tenantId !== tenantId) continue;
+                if (rawOrder.updatedAt <= listenerSince) continue;
                 void mergeChangedOrder(rawOrder.id, rawOrder);
               }
-            },
-            (listenerErr) => {
-              const code =
-                listenerErr && typeof listenerErr === "object" && "code" in listenerErr
-                  ? String((listenerErr as { code?: string }).code)
-                  : "";
-              if (code === "permission-denied") {
-                console.warn(
-                  "[orders] Firestore realtime: permission-denied — allow authenticated reads on `orders` for this tenant in Firestore rules (e.g. match tenant via custom claims), or rely on API refresh only.",
-                );
-              } else {
-                console.warn("[orders] Firestore listener:", listenerErr);
-              }
-            },
-          );
+            });
         } catch {
-          /* Firestore listener unavailable; avoid falling back to repeated full-list fetches. */
+          /* polling is best-effort; the next interval can retry */
         }
-      });
+      }, 10000);
     };
 
     (async () => {
@@ -276,8 +354,12 @@ export default function OrdersPage() {
         const params = new URLSearchParams();
         if (fromDate) params.set("from", fromDate);
         if (toDate) params.set("to", toDate);
-        if (activeStatuses.length > 0) params.set("status", activeStatuses.join(","));
+        if (effectiveStatuses.length > 0) {
+          params.set("status", effectiveStatuses.join(","));
+        }
         if (payment) params.set("payment", payment);
+        if (shippingFilter) params.set("shipping", shippingFilter);
+        if (assignedTo) params.set("assignedTo", assignedTo);
         if (q.trim()) params.set("q", q.trim());
         if (currentCursor) params.set("cursor", currentCursor);
         params.set("limit", String(PAGE_SIZE));
@@ -316,8 +398,7 @@ export default function OrdersPage() {
     })();
     return () => {
       cancelled = true;
-      unsubAuth?.();
-      unsubFs?.();
+      if (pollingTimer) window.clearInterval(pollingTimer);
     };
   }, [
     authReady,
@@ -330,10 +411,33 @@ export default function OrdersPage() {
     toDate,
     quickTab,
     payment,
+    shippingFilter,
+    assignedTo,
+    statusPills.join(","),
     q,
     page,
     currentCursor,
   ]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    let cancelled = false;
+    fetch("/api/users", {
+      headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const list = (j?.data ?? []) as User[];
+        setUsers(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -355,16 +459,53 @@ export default function OrdersPage() {
     };
   }, [authReady, apiSecret, idToken, tenantId, userId, role]);
 
-  const counts = useMemo(() => {
-    return {
-      all: orders.length,
-      pending: orders.filter((o) => o.status === "pending_confirmation")
-        .length,
-      shipped: orders.filter((o) =>
-        ["shipped", "delivered", "follow_up"].includes(o.status),
-      ).length,
-      cancelled: orders.filter((o) => o.status === "cancelled").length,
+  useEffect(() => {
+    if (!authReady || !canViewAdminSummary) {
+      setOrdersSummary(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/admin/summary", { headers })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { data?: OrdersSummaryPayload } | null) => {
+        if (!cancelled) setOrdersSummary(j?.data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setOrdersSummary(null);
+      });
+    return () => {
+      cancelled = true;
     };
+  }, [authReady, canViewAdminSummary, headers]);
+
+  useEffect(() => {
+    if (!authReady || !canViewFinance) {
+      setOrdersFinancial(null);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({ from: fromDate, to: toDate });
+    fetch(`/api/analytics?${params.toString()}`, { headers })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { data?: OrdersFinancialPayload } | null) => {
+        if (!cancelled) setOrdersFinancial(j?.data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setOrdersFinancial(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, canViewFinance, fromDate, toDate, headers]);
+
+  const counts = useMemo(() => {
+    const result: Partial<Record<QuickTab, number>> = { all: orders.length };
+    for (const tab of QUICK_TABS) {
+      if (tab.id === "all") continue;
+      const set = new Set(statusesForQuickTab(tab.id));
+      result[tab.id] = orders.filter((o) => set.has(o.status)).length;
+    }
+    return result;
   }, [orders]);
 
   const phoneDupCounts = useMemo(() => duplicatePhoneCounts(orders), [orders]);
@@ -382,6 +523,9 @@ export default function OrdersPage() {
   function resetFilters() {
     setQ("");
     setPayment("");
+    setShippingFilter("");
+    setAssignedTo("");
+    setStatusPills([]);
     setQuickTab("all");
     setDatePreset("custom");
     const t = new Date();
@@ -390,6 +534,12 @@ export default function OrdersPage() {
     setFromDate(f.toISOString().slice(0, 10));
     setToDate(t.toISOString().slice(0, 10));
     setPage(0);
+  }
+
+  function toggleStatusPill(status: OrderStatus) {
+    setStatusPills((cur) =>
+      cur.includes(status) ? cur.filter((s) => s !== status) : [...cur, status],
+    );
   }
 
   function exportCsv() {
@@ -415,44 +565,43 @@ export default function OrdersPage() {
     URL.revokeObjectURL(url);
   }
 
-  function openOrderDrawer(o: Order) {
-    openDrawer("Order summary", () => (
-      <div className="space-y-3 text-sm">
-        <div>
-          <span className="text-[color:var(--color-text-muted)]">ID</span>
-          <div className="font-mono text-xs break-all">{o.id}</div>
-        </div>
-        <div>
-          <span className="text-[color:var(--color-text-muted)]">Customer</span>
-          <div>{o.customer.name}</div>
-        </div>
-        <div>
-          <span className="text-[color:var(--color-text-muted)]">Phone</span>
-          <div>{o.customer.phone ?? "—"}</div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <OrderStatusBadge status={o.status} />
-          <PaymentBadge status={o.payment.payment_status} />
-        </div>
-      </div>
-    ));
+  function openOrderPeek(o: Order) {
+    setSidePeekOrderId(o.id);
+    openDrawer(
+      `Order #${displayOrderId(o)}`,
+      () => (
+        <OrderPeekPanel
+          initial={o}
+          headers={headers}
+          canViewFinance={canViewFinance}
+        />
+      ),
+      {
+        panelClassName: "md:max-w-[min(600px,46vw)] lg:max-w-[640px]",
+        contentClassName: "p-0",
+      },
+    );
   }
 
   const activeOrders = useMemo(
-    () =>
-      orders.filter(
-        (o) =>
-          o.status !== "cancelled" &&
-          o.status !== "delivered",
-      ).length,
-    [orders],
+    () => {
+      if (ordersSummary?.stages) {
+        return Object.entries(ordersSummary.stages)
+          .filter(([stage]) => stage !== "warehouse")
+          .reduce((sum, [, count]) => sum + (Number(count) || 0), 0);
+      }
+      return orders.filter(
+        (o) => o.status !== "cancelled" && o.status !== "delivered",
+      ).length;
+    },
+    [orders, ordersSummary],
   );
 
   const revenueMtd = useMemo(
     () =>
-      orders
-        .reduce((s, o) => s + (o.payment.total_amount ?? 0), 0),
-    [orders],
+      ordersFinancial?.totals.orders_value ??
+      orders.reduce((s, o) => s + (o.payment.total_amount ?? 0), 0),
+    [orders, ordersFinancial],
   );
 
   function applyPreset(preset: DatePreset) {
@@ -488,14 +637,15 @@ export default function OrdersPage() {
             <Button
               type="button"
               size="sm"
-              onClick={() =>
+              onClick={() => {
+                setSidePeekOrderId(null);
                 openDrawer("Create order", () => (
                   <p className="text-sm text-[color:var(--color-text-secondary)]">
                     Order creation from the UI is not wired yet. Use your
                     storefront or API.
                   </p>
-                ))
-              }
+                ));
+              }}
             >
               <Plus className="size-4" aria-hidden />
               Create Order
@@ -505,17 +655,57 @@ export default function OrdersPage() {
       />
 
       {!loading && err ? (
-        <p className="rounded-xl border-0 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
+        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
           {err}
         </p>
       ) : null}
 
-      <div className="rounded-xl border-0 bg-[color:var(--color-card)] p-4 shadow-[var(--shadow-notion-subtle)]">
+      {showKanban ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[color:var(--color-text-secondary)]">
+              لوحة الطلبات (اسحب الكارت لتغيير الحالة)
+            </h2>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowKanban(false)}
+            >
+              إخفاء اللوحة
+            </Button>
+          </div>
+          <OrdersKanbanBoard
+            orders={orders}
+            subject={{ role, permissions }}
+            headers={headers}
+            onOrderUpdated={(next) =>
+              setOrders((prev) => upsertOrder(prev, next))
+            }
+          />
+        </div>
+      ) : (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowKanban(true)}
+          >
+            عرض اللوحة
+          </Button>
+        </div>
+      )}
+
+      <div
+        id="app-page-filters"
+        className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 shadow-none"
+      >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-          <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                Date range — from
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                من تاريخ
               </label>
               <Input
                 type="date"
@@ -528,8 +718,8 @@ export default function OrdersPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                Date range — to
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                إلى تاريخ
               </label>
               <Input
                 type="date"
@@ -542,8 +732,8 @@ export default function OrdersPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                Payment status
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                حالة الدفع
               </label>
               <Select
                 value={payment}
@@ -552,7 +742,7 @@ export default function OrdersPage() {
                   setPage(0);
                 }}
               >
-                <option value="">All Payments</option>
+                <option value="">كل الدفعات</option>
                 {PAYMENTS.filter(Boolean).map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -561,11 +751,49 @@ export default function OrdersPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                Search
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                حالة الشحنة
+              </label>
+              <Select
+                value={shippingFilter}
+                onChange={(e) => {
+                  setShippingFilter(e.target.value as ShipmentStatus | "");
+                  setPage(0);
+                }}
+              >
+                <option value="">كل الشحنات</option>
+                {SHIPMENT_STATUSES.filter(Boolean).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                المُسند إليه
+              </label>
+              <Select
+                value={assignedTo}
+                onChange={(e) => {
+                  setAssignedTo(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="">الكل</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name || u.email || u.id}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-[color:var(--color-text-muted)]">
+                بحث
               </label>
               <Input
-                placeholder="Order, customer, or phone…"
+                placeholder="رقم طلب، عميل، أو هاتف…"
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
@@ -581,16 +809,16 @@ export default function OrdersPage() {
             onClick={resetFilters}
           >
             <RotateCcw className="size-4" aria-hidden />
-            Reset
+            إعادة ضبط
           </Button>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-1 border-t border-[color:var(--color-divider)] pt-3">
           {(
             [
-              ["today", "Today"],
-              ["yesterday", "Yesterday"],
-              ["custom", "Custom range"],
+              ["today", "اليوم"],
+              ["yesterday", "أمس"],
+              ["custom", "تاريخ مخصص"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -609,32 +837,60 @@ export default function OrdersPage() {
           ))}
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-1 border-t border-[color:var(--color-divider)] pt-3">
-          {(
-            [
-              ["all", `All Orders (${counts.all})`],
-              ["pending", `Pending (${counts.pending})`],
-              ["shipped", `Shipped (${counts.shipped})`],
-              ["cancelled", `Cancelled (${counts.cancelled})`],
-            ] as const
-          ).map(([id, label]) => (
+        <div className="mt-2 flex flex-wrap gap-1 overflow-x-auto border-t border-[color:var(--color-divider)] pt-3">
+          {QUICK_TABS.map((tab) => (
             <button
-              key={id}
+              key={tab.id}
               type="button"
               onClick={() => {
-                setQuickTab(id);
+                setQuickTab(tab.id);
+                setStatusPills([]);
                 setPage(0);
               }}
               className={cn(
-                "border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-                quickTab === id
+                "shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                quickTab === tab.id
                   ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
                   : "border-transparent text-[color:var(--color-text-secondary)] hover:border-[color:var(--color-divider)] hover:text-[color:var(--color-text-primary)]",
               )}
             >
-              {label}
+              {tab.label}
+              {typeof counts[tab.id] === "number"
+                ? ` (${counts[tab.id]})`
+                : ""}
             </button>
           ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[color:var(--color-divider)] pt-3">
+          <span className="me-2 text-[11px] font-medium text-[color:var(--color-text-muted)]">
+            تصفية متعددة:
+          </span>
+          {statusesForQuickTab(
+            quickTab === "all" ? "all" : quickTab,
+          ).length > 0 || quickTab === "all"
+            ? (quickTab === "all"
+                ? Object.values(statusesByBucket()).flat()
+                : statusesForQuickTab(quickTab)
+              ).map((status) => {
+                const active = statusPills.includes(status);
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => toggleStatusPill(status)}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                      active
+                        ? "bg-[color:var(--color-primary)] text-white"
+                        : "bg-[color:var(--color-muted-bg)] text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]",
+                    )}
+                  >
+                    {statusLabel(status, "ar")}
+                  </button>
+                );
+              })
+            : null}
         </div>
       </div>
 
@@ -649,7 +905,7 @@ export default function OrdersPage() {
                 {canViewFinance ? <Th>Total</Th> : null}
                 <Th>Payment</Th>
                 <Th>Fulfillment</Th>
-                <Th>Bosta</Th>
+                <Th>Carrier</Th>
                 <Th className="w-12">Actions</Th>
               </tr>
             </thead>
@@ -689,23 +945,34 @@ export default function OrdersPage() {
                   <Tr
                     key={o.id}
                     className={cn(
+                      "cursor-pointer transition-colors hover:bg-[color:var(--color-hover-bg)]",
+                      sidePeekOrderId === o.id &&
+                        "bg-[color:var(--color-nav-active-bg)] ring-1 ring-inset ring-[color:var(--color-primary)]/25",
                       dupPhone &&
                         "border-l-2 border-[color:var(--color-info)] bg-[color:var(--color-info)]/[0.06]",
                     )}
+                    onClick={() => openOrderPeek(o)}
                   >
                     <Td>
                       <div className="inline-flex flex-wrap items-center gap-1">
+                        <span className="font-mono text-sm font-semibold text-[color:var(--color-primary)]">
+                          #{displayOrderId(o)}
+                        </span>
                         <Link
                           href={`/orders/${o.id}`}
-                          className="font-mono text-sm font-semibold text-[color:var(--color-primary)] hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex shrink-0 rounded-[var(--ds-radius-md)] p-1 text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-muted-bg)] hover:text-[color:var(--color-primary)]"
+                          title="Open full order page"
+                          aria-label="Open full order page"
                         >
-                          #{displayOrderId(o)}
+                          <Maximize2 className="size-3.5" aria-hidden />
                         </Link>
                         {wooOrderUrl ? (
                           <a
                             href={wooOrderUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="inline-flex shrink-0 text-[color:var(--color-primary)] hover:text-[color:var(--color-text-primary)]"
                             title="Open in WooCommerce"
                             aria-label={
@@ -721,7 +988,7 @@ export default function OrdersPage() {
                     </Td>
                     <Td>
                       <div className="flex items-center gap-2">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)]">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold text-[color:var(--color-text-primary)]">
                           {initials(o.customer.name)}
                         </span>
                         <div className="min-w-0">
@@ -791,7 +1058,10 @@ export default function OrdersPage() {
                         size="sm"
                         className="px-2"
                         aria-label="Row actions"
-                        onClick={() => openOrderDrawer(o)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openOrderPeek(o);
+                        }}
                       >
                         <MoreHorizontal className="size-4" />
                       </Button>
@@ -826,24 +1096,34 @@ export default function OrdersPage() {
                 return (
                 <ResponsiveCard
                   key={o.id}
+                  onClick={() => openOrderPeek(o)}
                   className={cn(
+                    sidePeekOrderId === o.id &&
+                      "ring-1 ring-inset ring-[color:var(--color-primary)]/25",
                     dupPhoneM &&
                       "border-l-2 border-[color:var(--color-info)] bg-[color:var(--color-info)]/[0.06]",
                   )}
                 >
                   <div className="space-y-3">
                     <div className="inline-flex flex-wrap items-center gap-1">
+                      <span className="font-mono text-sm font-semibold text-[color:var(--color-primary)]">
+                        #{displayOrderId(o)}
+                      </span>
                       <Link
                         href={`/orders/${o.id}`}
-                        className="font-mono text-sm font-semibold text-[color:var(--color-primary)]"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex shrink-0 rounded-[var(--ds-radius-md)] p-1 text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-muted-bg)] hover:text-[color:var(--color-primary)]"
+                        title="Open full order page"
+                        aria-label="Open full order page"
                       >
-                        #{displayOrderId(o)}
+                        <Maximize2 className="size-3.5" aria-hidden />
                       </Link>
                       {wooOrderUrl ? (
                         <a
                           href={wooOrderUrl}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="inline-flex shrink-0 text-[color:var(--color-primary)]"
                           title="Open in WooCommerce"
                           aria-label={
@@ -857,7 +1137,7 @@ export default function OrdersPage() {
                       ) : null}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="flex size-9 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold shadow-[var(--shadow-neo-inset)]">
+                      <span className="flex size-9 items-center justify-center rounded-full bg-[color:var(--color-muted-bg)] text-xs font-semibold">
                         {initials(o.customer.name)}
                       </span>
                       <div className="min-w-0 flex-1 space-y-1">
@@ -890,8 +1170,8 @@ export default function OrdersPage() {
                       <OrderStatusBadge status={o.status} />
                       <PaymentBadge status={o.payment.payment_status} />
                     </div>
-                    <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-2 text-xs text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
-                      Bosta:{" "}
+                    <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-2 text-xs text-[color:var(--color-text-secondary)]">
+                      Carrier:{" "}
                       <span className="font-mono">
                         {o.latestShipmentAwb ?? "—"}
                       </span>{" "}
@@ -905,9 +1185,12 @@ export default function OrdersPage() {
                       variant="secondary"
                       size="sm"
                       className="w-full"
-                      onClick={() => openOrderDrawer(o)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openOrderPeek(o);
+                      }}
                     >
-                      Quick view
+                      Summary
                     </Button>
                   </div>
                 </ResponsiveCard>
@@ -933,7 +1216,7 @@ export default function OrdersPage() {
           >
             Previous
           </Button>
-          <span className="rounded-xl bg-[color:var(--color-bg-subtle)] px-3 py-2 text-xs font-medium text-[color:var(--color-text-secondary)] shadow-[var(--shadow-neo-inset)]">
+          <span className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] px-3 py-2 text-xs font-medium text-[color:var(--color-text-secondary)]">
             Page {currentPage + 1}
           </span>
           <Button
@@ -957,8 +1240,10 @@ export default function OrdersPage() {
               Active orders
             </p>
             <p className="text-2xl font-bold tabular-nums">{activeOrders}</p>
-            <p className="text-xs font-medium text-[color:var(--color-success)]">
-              +12.5% from last week
+            <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
+              {ordersSummary
+                ? "Current pipeline stages"
+                : "Current page fallback"}
             </p>
           </CardContent>
         </Card>
@@ -966,7 +1251,7 @@ export default function OrdersPage() {
           <Card>
             <CardContent className="space-y-1 p-4">
               <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
-                Revenue (MTD)
+                Revenue in range
               </p>
               <p className="text-2xl font-bold tabular-nums">
                 {revenueMtd.toLocaleString("ar-EG-u-nu-latn", {
@@ -974,8 +1259,10 @@ export default function OrdersPage() {
                   currency: "EGP",
                 })}
               </p>
-              <p className="text-xs font-medium text-[color:var(--color-success)]">
-                +8.2% vs prior period (demo)
+              <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
+                {ordersFinancial
+                  ? `${fromDate} to ${toDate}`
+                  : "Current page fallback"}
               </p>
             </CardContent>
           </Card>
@@ -988,8 +1275,8 @@ export default function OrdersPage() {
             <p className="text-2xl font-bold tabular-nums">
               {pendingTickets ?? "—"}
             </p>
-            <p className="text-xs font-medium text-[color:var(--color-error)]">
-              Urgent actions may be waiting in support
+            <p className="text-xs font-medium text-[color:var(--color-text-muted)]">
+              Open support tickets
             </p>
           </CardContent>
         </Card>

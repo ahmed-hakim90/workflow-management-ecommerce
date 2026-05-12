@@ -9,6 +9,8 @@ export function AppDrawer() {
   const drawerOpen = useUiStore((s) => s.drawerOpen);
   const drawerTitle = useUiStore((s) => s.drawerTitle);
   const drawerRender = useUiStore((s) => s.drawerRender);
+  const drawerPanelClassName = useUiStore((s) => s.drawerPanelClassName);
+  const drawerContentClassName = useUiStore((s) => s.drawerContentClassName);
   const closeDrawer = useUiStore((s) => s.closeDrawer);
 
   useEffect(() => {
@@ -32,7 +34,8 @@ export function AppDrawer() {
       />
       <div
         className={cn(
-          "absolute inset-y-0 end-0 flex w-full max-w-none flex-col border-s border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-notion-subtle)] motion-reduce:transition-none md:max-w-md",
+          "absolute inset-y-0 end-0 flex w-full max-w-none flex-col border-s border-[color:var(--color-border)] bg-[color:var(--color-card)] shadow-[var(--shadow-notion-dropdown)] motion-reduce:transition-none",
+          drawerPanelClassName,
         )}
       >
         <div className="flex h-14 items-center justify-between gap-2 border-b border-[color:var(--color-border)] px-4">
@@ -41,14 +44,16 @@ export function AppDrawer() {
           </h2>
           <button
             type="button"
-            className="rounded-lg p-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]"
+            className="rounded-[var(--ds-radius-md)] p-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)]"
             onClick={closeDrawer}
             aria-label="إغلاق"
           >
             <X className="size-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto p-4">
+        <div
+          className={cn("flex-1 overflow-auto p-4", drawerContentClassName)}
+        >
           {drawerRender ? drawerRender() : null}
         </div>
       </div>

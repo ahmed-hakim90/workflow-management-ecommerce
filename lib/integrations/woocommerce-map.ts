@@ -127,23 +127,50 @@ function lineItemMetaRecords(
   };
 }
 
-export function mapWooCommerceOrder(body: unknown): {
+const COST_META_KEYS = new Set([
+  "_wc_cog_item_cost",
+  "_wc_cog_item_total_cost",
+  "_alg_wc_cog_item_cost",
+  "cost",
+  "unit_cost",
+  "unit cost",
+  "cogs",
+  "product_cost",
+  "purchase_price",
+]);
+
+function costFromLineItemMeta(
+  metaData: z.infer<typeof wcLineItemSchema>["meta_data"],
+  quantity: number,
+): Pick<OrderLineItem, "unit_cost" | "line_cost"> {
+  if (!metaData?.length) return {};
+  for (const entry of metaData) {
+    const rawKey = (entry.key ?? entry.display_key ?? "").trim().toLowerCase();
+    if (!COST_META_KEYS.has(rawKey)) continue;
+    const value = toNum(entry.value ?? entry.display_value, Number.NaN);
+    if (!Number.isFinite(value) || value < 0) continue;
+    const isTotal = rawKey.includes("total");
+    const lineCost = isTotal ? value : value * quantity;
+    return {
+      unit_cost: isTotal ? lineCost / Math.max(quantity, 1) : value,
+      line_cost: lineCost,
+    };
+  }
+  return {};
+}
+
+export type MappedWooOrder = {
   wooOrderId: string;
   customer: OrderCustomer;
   payment: Payment;
   lineItems?: OrderLineItem[];
   shipping?: OrderShipping;
   notes?: string;
-} {
-  const parsed = wcOrderSchema.safeParse(body);
-  if (!parsed.success) {
-    const [issue] = parsed.error.issues;
-    const at = issue?.path?.length
-      ? `${issue.path.join(".")}: ${issue.message}`
-      : parsed.error.issues[0]?.message;
-    throw new Error(at ?? "Invalid WooCommerce order payload (schema)");
-  }
-  const w = parsed.data;
+};
+
+function mapWooCommerceOrderParsed(
+  w: z.infer<typeof wcOrderSchema>,
+): MappedWooOrder {
   const billing = w.billing ?? undefined;
 
   const wooOrderId = String(w.id);
@@ -198,6 +225,7 @@ export function mapWooCommerceOrder(body: unknown): {
           li.product_permalink?.trim() ||
           undefined;
         const metaRecords = lineItemMetaRecords(li.meta_data);
+        const costs = costFromLineItemMeta(li.meta_data, qty);
         return {
           id: li.id !== undefined ? String(li.id) : undefined,
           product_id:
@@ -213,6 +241,7 @@ export function mapWooCommerceOrder(body: unknown): {
           quantity: qty,
           unit_price: unit,
           line_total: lineTotal,
+          ...costs,
           product_url: productUrl,
           attributes: metaRecords.attributes,
           meta: metaRecords.meta,
@@ -236,4 +265,31 @@ export function mapWooCommerceOrder(body: unknown): {
     : undefined;
 
   return { wooOrderId, customer, payment, lineItems, shipping, notes };
+}
+
+/** للمسار الآمن في الويب هوك — بدون throw حتى نُسجّل `invalid_payload` بشكل موحّد. */
+export function tryMapWooCommerceOrder(body: unknown):
+  | { ok: true; mapped: MappedWooOrder }
+  | { ok: false; message: string } {
+  const parsed = wcOrderSchema.safeParse(body);
+  if (!parsed.success) {
+    const [issue] = parsed.error.issues;
+    const at = issue?.path?.length
+      ? `${issue.path.join(".")}: ${issue.message}`
+      : parsed.error.issues[0]?.message;
+    return { ok: false, message: at ?? "Invalid WooCommerce order payload (schema)" };
+  }
+  return { ok: true, mapped: mapWooCommerceOrderParsed(parsed.data) };
+}
+
+export function mapWooCommerceOrder(body: unknown): MappedWooOrder {
+  const parsed = wcOrderSchema.safeParse(body);
+  if (!parsed.success) {
+    const [issue] = parsed.error.issues;
+    const at = issue?.path?.length
+      ? `${issue.path.join(".")}: ${issue.message}`
+      : parsed.error.issues[0]?.message;
+    throw new Error(at ?? "Invalid WooCommerce order payload (schema)");
+  }
+  return mapWooCommerceOrderParsed(parsed.data);
 }

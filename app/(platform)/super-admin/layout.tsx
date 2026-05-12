@@ -16,7 +16,7 @@ export default async function SuperAdminLayout({
     <LocaleProvider initialLocale={locale} preferInitialLocale>
       <LocalizedDom>
         <div className="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-text-primary)]">
-          <header className="border-b border-[color:var(--color-border)] bg-[color:var(--color-card)]/80 px-4 py-4 shadow-[var(--shadow-neo-raised-sm)]">
+          <header className="border-b border-[color:var(--color-border)] bg-[color:var(--color-card)]/80 px-4 py-4 shadow-none">
             <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.25em] text-[color:var(--color-text-secondary)]">
@@ -27,13 +27,13 @@ export default async function SuperAdminLayout({
               <nav className="flex gap-2 text-sm">
                 <Link
                   href="/super-admin"
-                  className="rounded-xl px-3 py-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
+                  className="rounded-[var(--ds-radius-md)] px-3 py-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
                 >
                   Companies
                 </Link>
                 <Link
                   href="/super-admin/packages"
-                  className="rounded-xl px-3 py-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
+                  className="rounded-[var(--ds-radius-md)] px-3 py-2 text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-hover-bg)] hover:text-[color:var(--color-text-primary)]"
                 >
                   Packages
                 </Link>

@@ -3,13 +3,17 @@ import {
   resolveWooCommerceDeliveryId,
   verifyWooCommerceSignature,
 } from "@/lib/integrations/woocommerce-webhook";
-import { mapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
+import { tryMapWooCommerceOrder } from "@/lib/integrations/woocommerce-map";
 import { upsertOrderFromWooCommerce } from "@/lib/services/orders.service";
 import {
   claimIntegrationEvent,
   releaseIntegrationEventClaim,
 } from "@/lib/services/integration-events.service";
 import { appendWebhookIngestLog } from "@/lib/services/webhook-ingest-logs.service";
+import {
+  clientIp,
+  enforceRateLimitResponse,
+} from "@/lib/http/upstash-ratelimit";
 import { getServerEnv } from "@/lib/config/env";
 import { getTenantWooCommerceWebhookSecret } from "@/lib/services/tenant-settings.service";
 import { resolveTenantByIdOrSlug } from "@/lib/services/tenants.service";
@@ -33,6 +37,8 @@ export async function POST(req: Request) {
   const requestBodyBytes = rawBody.length;
   const sig = req.headers.get("x-wc-webhook-signature");
   const deliveryId = resolveWooCommerceDeliveryId(req, rawBody);
+  const eventType =
+    req.headers.get("x-wc-webhook-topic")?.trim() || "order";
   const env = getServerEnv();
   const url = new URL(req.url);
   const tenantKey = url.searchParams.get("tenant")?.trim() || "default";
@@ -42,6 +48,13 @@ export async function POST(req: Request) {
     return jsonError("Unknown tenant in webhook URL", 404, { tenant: tenantKey });
   }
   const tenantId = tenant.id;
+  const rl = await enforceRateLimitResponse(req, {
+    name: "woocommerce_webhook",
+    max: 200,
+    window: "1 m",
+    identifier: `${tenantId}:${clientIp(req)}`,
+  });
+  if (rl) return rl;
   try {
     await assertTenantCanUseIntegration(tenantId, "woocommerce");
   } catch (e) {
@@ -57,6 +70,8 @@ export async function POST(req: Request) {
     ""
   ).trim();
 
+  const receivedAt = new Date().toISOString();
+
   if (!secretForVerify) {
     await appendWebhookIngestLog({
       tenantId,
@@ -65,6 +80,8 @@ export async function POST(req: Request) {
       outcome: "no_secret_503",
       httpStatus: 503,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Webhook secret not configured for this tenant", 503);
   }
@@ -77,6 +94,8 @@ export async function POST(req: Request) {
       outcome: "invalid_signature_401",
       httpStatus: 401,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Invalid webhook signature", 401);
   }
@@ -92,6 +111,8 @@ export async function POST(req: Request) {
       outcome: "invalid_json_400",
       httpStatus: 400,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonError("Invalid JSON", 400);
   }
@@ -115,11 +136,12 @@ export async function POST(req: Request) {
       errorMessage: msg,
       wooOrderId: wooOrderIdFromBody(body),
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
-    
+
     return jsonError("Could not process webhook (idempotency); retry from WooCommerce.", 500);
   }
-  console.log("CLAIM RESULT:", claim);
 
   if (claim === "duplicate") {
     await appendWebhookIngestLog({
@@ -130,6 +152,8 @@ export async function POST(req: Request) {
       httpStatus: 200,
       wooOrderId: wooOrderIdFromBody(body),
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     console.info(
       JSON.stringify({
@@ -144,7 +168,32 @@ export async function POST(req: Request) {
   }
 
   try {
-    const mapped = mapWooCommerceOrder(body);
+    const mappedResult = tryMapWooCommerceOrder(body);
+    if (!mappedResult.ok) {
+      try {
+        await releaseIntegrationEventClaim({
+          tenantId,
+          source: "woocommerce",
+          deliveryId,
+        });
+      } catch {
+        /* ignore */
+      }
+      await appendWebhookIngestLog({
+        tenantId,
+        source: "woocommerce",
+        deliveryId,
+        outcome: "invalid_payload_400",
+        httpStatus: 400,
+        errorMessage: mappedResult.message,
+        wooOrderId: wooOrderIdFromBody(body),
+        requestBodyBytes,
+        eventType,
+        receivedAt,
+      });
+      return jsonError(mappedResult.message, 400);
+    }
+    const mapped = mappedResult.mapped;
     if (isDiagnostic) {
       await appendWebhookIngestLog({
         tenantId,
@@ -153,12 +202,15 @@ export async function POST(req: Request) {
         outcome: "diagnostic_200",
         httpStatus: 200,
         wooOrderId: mapped.wooOrderId,
+        externalOrderId: mapped.wooOrderId,
         requestBodyBytes,
+        eventType,
+        receivedAt,
       });
       return jsonOk({ diagnostic: true, wooOrderId: mapped.wooOrderId });
     }
     await assertTenantCanIngestOrder(tenantId);
-    const order = await upsertOrderFromWooCommerce({
+    const { order, outcome } = await upsertOrderFromWooCommerce({
       tenantId,
       wooOrderId: mapped.wooOrderId,
       customer: mapped.customer,
@@ -168,7 +220,14 @@ export async function POST(req: Request) {
       shipping: mapped.shipping,
       notes: mapped.notes,
       woocommerceOrderSnapshot: body,
+      deliveryId,
     });
+    if (outcome === "created") {
+      const { onNewOrderWhatsAppConfirmationFlow } = await import(
+        "@/lib/services/chat/order-whatsapp-confirmation.service"
+      );
+      void onNewOrderWhatsAppConfirmationFlow({ tenantId, order });
+    }
     await appendWebhookIngestLog({
       tenantId,
       source: "woocommerce",
@@ -177,7 +236,10 @@ export async function POST(req: Request) {
       httpStatus: 200,
       orderId: order.id,
       wooOrderId: mapped.wooOrderId,
+      externalOrderId: mapped.wooOrderId,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     return jsonOk({ orderId: order.id });
   } catch (e) {
@@ -203,12 +265,14 @@ export async function POST(req: Request) {
       errorMessage: errDetail,
       wooOrderId: wooId,
       requestBodyBytes,
+      eventType,
+      receivedAt,
     });
     console.error(
       JSON.stringify({
         event: "woocommerce_webhook_order_not_persisted",
         message:
-          "HMAC OK and integration idempotency slot was taken, but order mapping/upsert failed. Slot released so WooCommerce can retry. Check payload shape (Order topic) and Firestore below.",
+          "HMAC OK and integration idempotency slot was taken, but order mapping/upsert failed. Slot released so WooCommerce can retry. Check payload shape (Order topic) and Supabase logs below.",
         tenantId,
         deliveryId,
         error: errDetail,

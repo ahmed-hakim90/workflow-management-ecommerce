@@ -19,9 +19,11 @@ export async function GET(req: Request) {
     assertCan(ctx, "ticket:read");
     const url = new URL(req.url);
     const status = url.searchParams.get("status") as TicketStatus | null;
+    const orderId = url.searchParams.get("order_id");
     const includeOrderSummary = url.searchParams.get("includeOrderSummary") === "1";
     const tickets = await listTickets(ctx.tenantId, {
       status: status ?? undefined,
+      orderId: orderId ?? undefined,
     });
     if (includeOrderSummary) {
       const enriched = await Promise.all(
