@@ -1,0 +1,10 @@
+# Copy to .dev.vars for `npm run preview` / local Workers runtime.
+# Wrangler loads .dev.vars automatically (gitignored via .env*).
+NEXTJS_ENV=development
+
+# Paste production-like secrets from .env.local, e.g.:
+# NEXT_PUBLIC_APP_URL=http://localhost:8788
+# SUPABASE_URL=
+# SUPABASE_SERVICE_ROLE_KEY=
+# NEXT_PUBLIC_SUPABASE_URL=
+# NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=

@@ -15,7 +15,6 @@ const orderStatusSchema = z.enum([
   "new",
   "pending_confirmation",
   "confirmed",
-  "cancelled",
   "invoice_required",
   "invoiced",
   "ready_for_shipping",
@@ -29,6 +28,7 @@ const orderStatusSchema = z.enum([
   "exchange_requested",
   "replacement_created",
   "closed",
+  "cancelled",
 ]);
 
 const webhookSchema = z.object({

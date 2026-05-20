@@ -22,8 +22,6 @@ const patchSchema = z
       .object({
         woocommerce: z.boolean().optional(),
         bosta: z.boolean().optional(),
-        jntEgypt: z.boolean().optional(),
-        fedex: z.boolean().optional(),
         storefrontOrders: z.boolean().optional(),
         outboundWebhooks: z.boolean().optional(),
         whatsapp: z.boolean().optional(),

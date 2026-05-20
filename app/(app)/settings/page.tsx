@@ -64,9 +64,35 @@ type OutboundWebhookDraft = {
 
 type WooWebhookSyncResult = {
   topic: string;
-  action: "created" | "updated" | "already_active";
-  webhookId: number;
+  webhookId?: number;
+  deliveryUrl?: string;
+  action?: "already_active" | "reactivated";
+};
+
+type WooWebhookRecipeState = {
+  topic: string;
+  name: string;
+  label: string;
+  status: "active" | "inactive" | "missing";
+  webhookId?: number;
+  webhookStatus?: "active" | "paused" | "disabled";
+  deliveryUrl?: string;
+};
+
+type WooWebhookSyncFailure = {
+  topic: string;
+  message: string;
+};
+
+type WooWebhookStatusResponse = {
   deliveryUrl: string;
+  hasWebhookSecret: boolean;
+  allCount: number;
+  matchedCount: number;
+  recipes: WooWebhookRecipeState[];
+  created?: WooWebhookSyncResult[];
+  skipped?: WooWebhookSyncResult[];
+  failed?: WooWebhookSyncFailure[];
 };
 
 type BostaLocationOption = {
@@ -303,11 +329,13 @@ export default function SettingsPage() {
   const [wooCkLast4, setWooCkLast4] = useState<string | null>(null);
   const [wooCsLast4, setWooCsLast4] = useState<string | null>(null);
   const [wooWebhookSyncing, setWooWebhookSyncing] = useState(false);
+  const [wooWebhookRefreshing, setWooWebhookRefreshing] = useState(false);
+  const [wooWebhookStatus, setWooWebhookStatus] =
+    useState<WooWebhookStatusResponse | null>(null);
   const [wooWebhookTesting, setWooWebhookTesting] = useState(false);
-  const [wooWebhookSyncResults, setWooWebhookSyncResults] = useState<
-    WooWebhookSyncResult[]
-  >([]);
+  const [wooWebhookFiring, setWooWebhookFiring] = useState(false);
   const [wooWebhookTestMsg, setWooWebhookTestMsg] = useState<string | null>(null);
+  const [wooWebhookFireMsg, setWooWebhookFireMsg] = useState<string | null>(null);
 
   const [bostaCityDraft, setBostaCityDraft] = useState("");
   const [bostaZoneDraft, setBostaZoneDraft] = useState("");
@@ -397,6 +425,46 @@ export default function SettingsPage() {
       waWebhookCanonical?.trim() ||
       `${(appOrigin || "").replace(/\/$/, "")}/api/webhooks/whatsapp?tenant=${encodeURIComponent(tenantId)}`,
     [waWebhookCanonical, appOrigin, tenantId],
+  );
+
+  const refreshWooWebhookStatus = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setWooMsg(null);
+        setWooErr(null);
+        setWooWebhookRefreshing(true);
+      }
+      try {
+        const res = await fetch("/api/settings/woocommerce/webhooks/sync", {
+          headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+        });
+        const json = (await res.json()) as {
+          data?: WooWebhookStatusResponse;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(json.error ?? res.statusText);
+        const data = json.data ?? null;
+        setWooWebhookStatus(data);
+        if (data?.deliveryUrl?.trim()) {
+          setWooWebhookCanonical(data.deliveryUrl.trim());
+        }
+        if (data) {
+          setWooSecretConfigured(data.hasWebhookSecret);
+        }
+        if (!options?.silent) {
+          setWooMsg("WooCommerce webhook status refreshed.");
+        }
+      } catch (e) {
+        if (!options?.silent) {
+          setWooErr(e instanceof Error ? e.message : "Webhook status refresh failed");
+        }
+      } finally {
+        if (!options?.silent) {
+          setWooWebhookRefreshing(false);
+        }
+      }
+    },
+    [apiSecret, idToken, tenantId, userId, role],
   );
 
   const saveProfile = useCallback(async () => {
@@ -649,6 +717,15 @@ export default function SettingsPage() {
     };
   }, [authReady, section, apiSecret, idToken, tenantId, userId, role]);
 
+  useEffect(() => {
+    if (!authReady || section !== "api") return;
+    if (!wooRestConfigured) {
+      setWooWebhookStatus(null);
+      return;
+    }
+    void refreshWooWebhookStatus({ silent: true });
+  }, [authReady, section, wooRestConfigured, refreshWooWebhookStatus]);
+
   async function saveWooSecret() {
     setWooMsg(null);
     setWooErr(null);
@@ -821,7 +898,6 @@ export default function SettingsPage() {
   async function syncWooWebhooks() {
     setWooMsg(null);
     setWooErr(null);
-    setWooWebhookSyncResults([]);
     setWooWebhookSyncing(true);
     try {
       const res = await fetch("/api/settings/woocommerce/webhooks/sync", {
@@ -829,18 +905,30 @@ export default function SettingsPage() {
         headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
       });
       const json = (await res.json()) as {
-        data?: { results?: WooWebhookSyncResult[]; deliveryUrl?: string };
+        data?: WooWebhookStatusResponse;
         error?: string;
       };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      const results = json.data?.results ?? [];
-      setWooWebhookSyncResults(results);
+      const data = json.data ?? null;
+      setWooWebhookStatus(data);
+      if (data?.deliveryUrl?.trim()) {
+        setWooWebhookCanonical(data.deliveryUrl.trim());
+      }
+      if (data) {
+        setWooSecretConfigured(data.hasWebhookSecret);
+      }
+      const createdCount = data?.created?.length ?? 0;
+      const reactivatedCount =
+        data?.skipped?.filter((r) => r.action === "reactivated").length ?? 0;
+      const failedCount = data?.failed?.length ?? 0;
       setWooMsg(
-        results.length
-          ? `WooCommerce webhooks synced: ${results
-              .map((r) => `${r.topic} ${r.action}`)
-              .join(", ")}.`
-          : "WooCommerce webhooks sync completed.",
+        failedCount
+          ? `WooCommerce webhook sync finished with ${failedCount} failed topic(s).`
+          : reactivatedCount
+            ? `WooCommerce webhook sync reactivated ${reactivatedCount} webhook(s).`
+          : createdCount
+            ? `WooCommerce webhook sync created ${createdCount} webhook(s).`
+            : "WooCommerce webhooks are already in sync.",
       );
     } catch (e) {
       setWooErr(e instanceof Error ? e.message : "Webhook sync failed");
@@ -852,6 +940,7 @@ export default function SettingsPage() {
   async function sendWooDiagnosticWebhook() {
     setWooErr(null);
     setWooWebhookTestMsg(null);
+    setWooWebhookFireMsg(null);
     setWooWebhookTesting(true);
     try {
       const res = await fetch("/api/settings/woocommerce/webhooks/test", {
@@ -873,6 +962,36 @@ export default function SettingsPage() {
       setWooErr(e instanceof Error ? e.message : "Diagnostic webhook failed");
     } finally {
       setWooWebhookTesting(false);
+    }
+  }
+
+  async function fireTestOrderWebhook() {
+    setWooErr(null);
+    setWooWebhookTestMsg(null);
+    setWooWebhookFireMsg(null);
+    setWooWebhookFiring(true);
+    try {
+      const res = await fetch("/api/settings/woocommerce/webhooks/fire", {
+        method: "POST",
+        headers: buildAuthHeaders({ apiSecret, idToken, tenantId, userId, role }),
+      });
+      const json = (await res.json()) as {
+        data?: { deliveryId?: string; orderId?: string; status?: number };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      setWooWebhookFireMsg(
+        json.data?.orderId
+          ? `Test order created: ${json.data.orderId}.`
+          : `Test order webhook accepted (${json.data?.status ?? 200}); delivery ${
+              json.data?.deliveryId ?? "logged"
+            }.`,
+      );
+      await refreshWooIngestLogs();
+    } catch (e) {
+      setWooErr(e instanceof Error ? e.message : "Test order webhook failed");
+    } finally {
+      setWooWebhookFiring(false);
     }
   }
 
@@ -2156,6 +2275,15 @@ export default function SettingsPage() {
                           type="button"
                           variant="secondary"
                           size="sm"
+                          disabled={wooWebhookRefreshing || !wooRestConfigured}
+                          onClick={() => void refreshWooWebhookStatus()}
+                        >
+                          {wooWebhookRefreshing ? "Refreshing…" : "Refresh webhooks"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
                           disabled={
                             wooWebhookSyncing ||
                             !wooRestConfigured ||
@@ -2164,30 +2292,84 @@ export default function SettingsPage() {
                           onClick={() => void syncWooWebhooks()}
                         >
                           {wooWebhookSyncing
-                            ? "Syncing webhooks…"
-                            : "Sync WooCommerce webhooks"}
+                            ? "Fixing webhooks…"
+                            : "Auto-fix missing webhooks"}
                         </Button>
                       </div>
                     </div>
                     <p className="text-xs text-[color:var(--color-text-muted)]">
-                      Sync creates or reactivates WooCommerce order webhooks using
+                      Auto-fix creates or reactivates WooCommerce order webhooks using
                       this company&apos;s REST keys, delivery URL, and per-company
                       secret.
                     </p>
-                    {wooWebhookSyncResults.length ? (
-                      <ul className="space-y-1 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] p-3 text-xs">
-                        {wooWebhookSyncResults.map((r) => (
-                          <li
-                            key={`${r.topic}-${r.webhookId}`}
-                            className="flex flex-wrap items-center justify-between gap-2"
-                          >
-                            <span className="font-mono">{r.topic}</span>
-                            <span className="text-[color:var(--color-text-secondary)]">
-                              #{r.webhookId} {r.action}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                    {wooWebhookStatus ? (
+                      <div className="space-y-2 rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] p-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[color:var(--color-text-secondary)]">
+                          <span>
+                            Matched {wooWebhookStatus.matchedCount} of{" "}
+                            {wooWebhookStatus.allCount} webhook(s) on this store.
+                          </span>
+                          <span>
+                            Secret:{" "}
+                            {wooWebhookStatus.hasWebhookSecret ? "configured" : "missing"}
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full border-separate border-spacing-y-1">
+                            <thead className="text-left text-[color:var(--color-text-muted)]">
+                              <tr>
+                                <th className="py-1 pr-3 font-medium">Recipe</th>
+                                <th className="py-1 pr-3 font-medium">Topic</th>
+                                <th className="py-1 font-medium">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wooWebhookStatus.recipes.map((recipe) => (
+                                <tr key={recipe.topic}>
+                                  <td className="py-1 pr-3 text-[color:var(--color-text-primary)]">
+                                    {recipe.label}
+                                  </td>
+                                  <td className="py-1 pr-3 font-mono">
+                                    {recipe.topic}
+                                  </td>
+                                  <td className="py-1">
+                                    <span
+                                      className={
+                                        recipe.status === "active"
+                                          ? "font-medium text-[color:var(--color-success)]"
+                                          : recipe.status === "inactive"
+                                            ? "font-medium text-[color:var(--color-warning)]"
+                                            : "font-medium text-[color:var(--color-error)]"
+                                      }
+                                    >
+                                      {recipe.status === "active"
+                                        ? "موجود ونشط"
+                                        : recipe.status === "inactive"
+                                          ? `موجود معطّل (${recipe.webhookStatus ?? "inactive"})`
+                                          : "مفقود"}
+                                    </span>
+                                    {recipe.webhookId ? (
+                                      <span className="ml-2 text-[color:var(--color-text-muted)]">
+                                        #{recipe.webhookId}
+                                      </span>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {wooWebhookStatus.failed?.length ? (
+                          <ul className="space-y-1 border-t border-[color:var(--color-divider)] pt-2 text-[color:var(--color-error)]">
+                            {wooWebhookStatus.failed.map((failure) => (
+                              <li key={failure.topic}>
+                                <span className="font-mono">{failure.topic}</span>:{" "}
+                                {failure.message}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </CardContent>
@@ -2571,24 +2753,43 @@ export default function SettingsPage() {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={wooWebhookTesting || !wooSecretConfigured}
+                        disabled={
+                          wooWebhookTesting || wooWebhookFiring || !wooSecretConfigured
+                        }
                         onClick={() => void sendWooDiagnosticWebhook()}
                       >
                         {wooWebhookTesting
                           ? "Sending diagnostic…"
                           : "Send diagnostic webhook"}
                       </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        disabled={
+                          wooWebhookFiring || wooWebhookTesting || !wooSecretConfigured
+                        }
+                        onClick={() => void fireTestOrderWebhook()}
+                      >
+                        {wooWebhookFiring ? "Creating order…" : "Fire test order"}
+                      </Button>
                       <span className="text-xs text-[color:var(--color-text-muted)]">
-                        Uses this company&apos;s secret and logs{" "}
+                        Diagnostic logs{" "}
                         <code className="rounded bg-[color:var(--color-code-bg)] px-1">
                           diagnostic_200
                         </code>{" "}
-                        without saving an order.
+                        without saving an order; Fire test order creates one test
+                        order.
                       </span>
                     </div>
                     {wooWebhookTestMsg ? (
                       <p className="text-xs font-medium text-[color:var(--color-success)]">
                         {wooWebhookTestMsg}
+                      </p>
+                    ) : null}
+                    {wooWebhookFireMsg ? (
+                      <p className="text-xs font-medium text-[color:var(--color-success)]">
+                        {wooWebhookFireMsg}
                       </p>
                     ) : null}
                     {wooDiagnostic ? (

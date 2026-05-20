@@ -23,6 +23,8 @@ const serverSchema = z.object({
   DEV_MOCK_DATA: z.string().optional(),
   /** Legacy compatibility flag; Supabase access tokens are preferred. */
   STAFF_AUTH_MODE: z.enum(["legacy", "firebase"]).optional(),
+  /** Firebase Admin service account JSON string for onboarding token verification. */
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
   /** Separate internal token for `/api/platform/*` super-admin routes. */
   PLATFORM_ADMIN_SECRET: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
@@ -72,6 +74,7 @@ export function getServerEnv(): ServerEnv {
     DEV_MOCK_DATA: process.env.DEV_MOCK_DATA,
     STAFF_AUTH_MODE:
       process.env.STAFF_AUTH_MODE?.trim() || undefined,
+    FIREBASE_SERVICE_ACCOUNT_JSON: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
     PLATFORM_ADMIN_SECRET: process.env.PLATFORM_ADMIN_SECRET,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,

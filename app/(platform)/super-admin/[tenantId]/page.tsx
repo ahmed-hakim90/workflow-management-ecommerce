@@ -150,7 +150,7 @@ export default function CompanyDetailPage({
       </Link>
 
       {err ? (
-        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)] shadow-none">
+        <p className="rounded-xl bg-[color:var(--color-error)]/10 p-3 text-sm text-[color:var(--color-error)]">
           {err}
         </p>
       ) : null}

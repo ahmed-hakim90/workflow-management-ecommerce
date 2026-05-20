@@ -16,10 +16,17 @@ import { listRecentWebhookIngestLogs } from "../services/webhook-ingest-logs.ser
 import { omitUndefinedForPersistence } from "../util/json-snapshot";
 import { mapWooCommerceOrder } from "./woocommerce-map";
 import { resolveWooCommerceDeliveryId } from "./woocommerce-webhook";
+import {
+  compareWebhooksToRecipes,
+  normalizeWebhookDeliveryUrl,
+} from "./woocommerce-rest";
 import { POST as postWooCommerceWebhook } from "../../app/api/webhooks/woocommerce/route";
 import { POST as postStorefrontOrderWebhook } from "../../app/api/webhooks/storefront-orders/route";
 import { GET as getIntegrationsSettings } from "../../app/api/settings/integrations/route";
-import { POST as syncWooCommerceWebhooks } from "../../app/api/settings/woocommerce/webhooks/sync/route";
+import {
+  GET as getWooCommerceWebhookStatus,
+  POST as syncWooCommerceWebhooks,
+} from "../../app/api/settings/woocommerce/webhooks/sync/route";
 import { POST as testWooCommerceWebhook } from "../../app/api/settings/woocommerce/webhooks/test/route";
 
 const originalDevMockData = process.env.DEV_MOCK_DATA;
@@ -84,6 +91,64 @@ afterAll(() => {
   } else {
     process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
   }
+});
+
+describe("WooCommerce webhook recipe comparison", () => {
+  it("normalizes delivery URLs before comparing recipe status", () => {
+    const deliveryUrl =
+      "https://oms.example.test/api/webhooks/woocommerce?tenant=demo";
+
+    expect(
+      normalizeWebhookDeliveryUrl(
+        "HTTPS://OMS.EXAMPLE.TEST/api/webhooks/woocommerce/?tenant=demo",
+      ),
+    ).toBe(deliveryUrl);
+
+    const status = compareWebhooksToRecipes({
+      deliveryUrl,
+      webhooks: [
+        {
+          id: 101,
+          name: "OMS order.created",
+          status: "active",
+          topic: "order.created",
+          delivery_url:
+            "HTTPS://OMS.EXAMPLE.TEST/api/webhooks/woocommerce/?tenant=demo",
+        },
+        {
+          id: 102,
+          name: "OMS order.updated",
+          status: "paused",
+          topic: "order.updated",
+          delivery_url:
+            "https://oms.example.test/api/webhooks/woocommerce/?tenant=demo",
+        },
+        {
+          id: 999,
+          name: "Other app",
+          status: "active",
+          topic: "order.created",
+          delivery_url: "https://other.example.test/api/webhooks/woocommerce",
+        },
+      ],
+    });
+
+    expect(status.allCount).toBe(3);
+    expect(status.matchedCount).toBe(2);
+    expect(status.recipes).toEqual([
+      expect.objectContaining({
+        topic: "order.created",
+        status: "active",
+        webhookId: 101,
+      }),
+      expect.objectContaining({
+        topic: "order.updated",
+        status: "inactive",
+        webhookId: 102,
+        webhookStatus: "paused",
+      }),
+    ]);
+  });
 });
 
 describe("WooCommerce webhook order flow", () => {
@@ -499,6 +564,73 @@ describe("WooCommerce webhook order flow", () => {
     expect(json.error).toBe("WooCommerce webhook secret is required.");
   });
 
+  it("lists WooCommerce webhook recipe status through REST credentials", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://oms.example.test";
+    const tenant = await createTenantRecord("Webhook Status Co");
+    await setTenantWooCommerceWebhookSecret(tenant.id, "woo-secret");
+    await setTenantWooCommerceRestFields(tenant.id, {
+      storeUrl: "https://shop.example.test",
+      consumerKey: "ck_test",
+      consumerSecret: "cs_test",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            {
+              id: 201,
+              name: "OMS order.created",
+              status: "active",
+              topic: "order.created",
+              delivery_url:
+                "https://oms.example.test/api/webhooks/woocommerce/?tenant=webhook-status-co",
+            },
+            {
+              id: 202,
+              name: "OMS order.updated",
+              status: "disabled",
+              topic: "order.updated",
+              delivery_url:
+                "https://oms.example.test/api/webhooks/woocommerce?tenant=webhook-status-co",
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "x-wp-totalpages": "1",
+            },
+          },
+        ),
+      ),
+    );
+
+    const res = await getWooCommerceWebhookStatus(
+      new Request("https://oms.example.test/api/settings/woocommerce/webhooks/sync", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${tenant.staffApiKey}`,
+          "x-tenant-id": tenant.id,
+          "x-user-id": "admin-1",
+          "x-user-role": "admin",
+        },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data).toMatchObject({
+      hasWebhookSecret: true,
+      allCount: 2,
+      matchedCount: 2,
+    });
+    expect(json.data.recipes).toEqual([
+      expect.objectContaining({ topic: "order.created", status: "active" }),
+      expect.objectContaining({ topic: "order.updated", status: "inactive" }),
+    ]);
+  });
+
   it("syncs active WooCommerce order webhooks through REST credentials", async () => {
     process.env.NEXT_PUBLIC_APP_URL = "https://oms.example.test";
     const tenant = await createTenantRecord("Webhook Sync Co");
@@ -508,31 +640,40 @@ describe("WooCommerce webhook order flow", () => {
       consumerKey: "ck_test",
       consumerSecret: "cs_test",
     });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
+    const createdWebhooks: unknown[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return new Response(JSON.stringify(createdWebhooks), {
           status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockImplementation(async (_url: string, init?: RequestInit) => {
+          headers: {
+            "content-type": "application/json",
+            "x-wp-totalpages": "1",
+          },
+        });
+      }
+
+      if (init.method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           name: string;
           topic: string;
           delivery_url: string;
         };
-        return new Response(
-          JSON.stringify({
-            id: body.topic === "order.created" ? 101 : 102,
-            name: body.name,
-            status: "active",
-            topic: body.topic,
-            delivery_url: body.delivery_url,
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      });
+        const webhook = {
+          id: body.topic === "order.created" ? 101 : 102,
+          name: body.name,
+          status: "active",
+          topic: body.topic,
+          delivery_url: body.delivery_url,
+        };
+        createdWebhooks.push(webhook);
+        return new Response(JSON.stringify(webhook), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response("Unexpected WooCommerce REST method", { status: 500 });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await syncWooCommerceWebhooks(
@@ -552,11 +693,15 @@ describe("WooCommerce webhook order flow", () => {
     expect(json.data.deliveryUrl).toBe(
       "https://oms.example.test/api/webhooks/woocommerce?tenant=webhook-sync-co",
     );
-    expect(json.data.results).toEqual([
-      expect.objectContaining({ topic: "order.created", action: "created" }),
-      expect.objectContaining({ topic: "order.updated", action: "created" }),
+    expect(json.data.created).toEqual([
+      expect.objectContaining({ topic: "order.created", webhookId: 101 }),
+      expect.objectContaining({ topic: "order.updated", webhookId: 102 }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(json.data.recipes).toEqual([
+      expect.objectContaining({ topic: "order.created", status: "active" }),
+      expect.objectContaining({ topic: "order.updated", status: "active" }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     const createdBody = JSON.parse(
       String(fetchMock.mock.calls[1]?.[1]?.body ?? "{}"),
     ) as { secret?: string; delivery_url?: string };

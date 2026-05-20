@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /out/
+.open-next/
 
 # PWA (generated during production build)
 /public/sw.js

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { getSupabaseServiceRoleClient } from "@/lib/db/supabase-server";
+import { getServerEnv } from "@/lib/config/env";
+import { getFirebaseAuth } from "@/lib/db/firebase-admin";
 import { jsonOk, jsonError } from "@/lib/http/json";
 import { getRequestClientIp } from "@/lib/http/client-ip";
 import { handleRouteError } from "@/lib/http/with-api";
@@ -22,26 +23,8 @@ const mockBodySchema = z.object({
 const prodBodySchema = z.object({
   companyName: z.string().min(1).max(200),
   adminName: z.string().min(1).max(200),
-  email: z.string().email(),
-  password: z.string().min(6),
+  idToken: z.string().min(1),
 });
-
-function registrationSetupError(err: unknown) {
-  const message = err instanceof Error ? err.message : "";
-  const lower = message.toLowerCase();
-  if (
-    lower.includes("relation") ||
-    lower.includes("does not exist") ||
-    lower.includes("schema cache")
-  ) {
-    const setupErr = new Error(
-      "Registration could not finish because the app database is not ready. Apply the Supabase migrations and try again.",
-    ) as Error & { status: number };
-    setupErr.status = 503;
-    return setupErr;
-  }
-  return err;
-}
 
 export async function POST(req: Request) {
   try {
@@ -76,40 +59,48 @@ export async function POST(req: Request) {
       });
     }
 
-    const body = prodBodySchema.parse(await req.json());
-    const supabase = getSupabaseServiceRoleClient();
-    const created = await supabase.auth.admin.createUser({
-      email: body.email,
-      password: body.password,
-      email_confirm: true,
-      user_metadata: { name: body.adminName },
-    });
-    if (created.error || !created.data.user) {
-      const msg = created.error?.message ?? "Could not create Supabase user";
-      return jsonError(msg, msg.toLowerCase().includes("already") ? 409 : 400);
+    const env = getServerEnv();
+    if (!env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim()) {
+      return jsonError("Registration requires Firebase Admin on the server", 503);
     }
 
+    const body = prodBodySchema.parse(await req.json());
+    let decoded: { uid: string; email?: string };
     try {
-      const tenant = await createTenantRecord(body.companyName);
-      const user = await createUser({
-        tenantId: tenant.id,
-        name: body.adminName,
-        email: body.email,
-        supabaseUserId: created.data.user.id,
-        role: "admin",
-        actorUserId: "system:onboarding",
-      });
-      await setTenantOwner(tenant.id, user.id);
-      return jsonOk({
-        tenantId: tenant.id,
-        tenantSlug: tenant.slug,
-        userId: user.id,
-        staffApiKey: tenant.staffApiKey,
-      });
-    } catch (err) {
-      await supabase.auth.admin.deleteUser(created.data.user.id).catch(() => undefined);
-      throw registrationSetupError(err);
+      decoded = await getFirebaseAuth().verifyIdToken(body.idToken);
+    } catch {
+      return jsonError(
+        "Could not verify ID token. Use one Firebase project for both: NEXT_PUBLIC_FIREBASE_* (web app) and FIREBASE_SERVICE_ACCOUNT_JSON (service account JSON from the same project). Then restart the dev server.",
+        401,
+      );
     }
+
+    const existingUser = await getUserBySupabaseUserId(decoded.uid);
+    if (existingUser) {
+      return jsonError("This Firebase account is already registered", 409);
+    }
+
+    const email = decoded.email?.trim();
+    if (!email) {
+      return jsonError("Your Firebase account has no email claim", 400);
+    }
+
+    const tenant = await createTenantRecord(body.companyName);
+    const user = await createUser({
+      tenantId: tenant.id,
+      name: body.adminName,
+      email,
+      supabaseUserId: decoded.uid,
+      role: "admin",
+      actorUserId: "system:onboarding",
+    });
+    await setTenantOwner(tenant.id, user.id);
+    return jsonOk({
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      userId: user.id,
+      staffApiKey: tenant.staffApiKey,
+    });
   } catch (e) {
     return handleRouteError(e);
   }

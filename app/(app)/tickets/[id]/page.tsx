@@ -3,14 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Lock, PackagePlus, Trash2 } from "lucide-react";
+import { ArrowLeft, PackagePlus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  NotionPropertyList,
-  NotionPropertyRow,
-} from "@/components/ui/notion-blocks";
 import { Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { TableWrap, Td, Th, Tr } from "@/components/ui/table";
@@ -63,6 +59,23 @@ function displayOrderId(order: Order) {
   return order.wooCommerceOrderId?.trim() || order.id.slice(0, 8).toUpperCase();
 }
 
+function Detail({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+        {label}
+      </p>
+      <div className="text-sm text-[color:var(--color-text-primary)]">{children}</div>
+    </div>
+  );
+}
+
 export default function TicketDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -96,6 +109,7 @@ export default function TicketDetailPage() {
   const canAssignTicket = can(permissionSubject, "ticket:assign");
   const canDeleteTicket = role === "admin" && can(permissionSubject, "ticket:delete");
   const canViewFinance = can(permissionSubject, "finance:view");
+
   const userName = useCallback(
     (id?: string | null) =>
       id ? bundle?.users.find((u) => u.id === id)?.name ?? id : "—",
@@ -200,20 +214,6 @@ export default function TicketDetailPage() {
     }
   }
 
-  async function closeCurrentTicket() {
-    if (!canWorkTicket || ticket?.status !== "resolved" || busy) return;
-    setBusy(true);
-    try {
-      await postJson(`/api/tickets/${ticketId}/close`, {});
-      setMsg("تم إغلاق التذكرة.");
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to close ticket");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function deleteCurrentTicket() {
     if (!canDeleteTicket || busy) return;
     const confirmed = window.confirm(
@@ -252,18 +252,6 @@ export default function TicketDetailPage() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            {canWorkTicket && ticket?.status === "resolved" ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                loading={busy}
-                onClick={() => void closeCurrentTicket()}
-              >
-                <Lock className="size-4" aria-hidden />
-                إغلاق التذكرة
-              </Button>
-            ) : null}
             {canDeleteTicket && ticket ? (
               <Button
                 type="button"
@@ -287,20 +275,20 @@ export default function TicketDetailPage() {
       />
 
       {!loading && err ? (
-        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-error)]/25 bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-none">
+        <p className="rounded-xl bg-[color:var(--color-error)]/12 p-3 text-sm text-[color:var(--color-error)] shadow-[var(--shadow-neo-raised-sm)]">
           {err}
         </p>
       ) : null}
       {msg ? (
-        <p className="rounded-[var(--ds-radius-md)] border border-[color:var(--color-callout-success-border)] bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-none">
+        <p className="rounded-xl bg-[color:var(--color-callout-success-bg)] p-3 text-sm text-[color:var(--color-callout-success-text)] shadow-[var(--shadow-neo-raised-sm)]">
           {msg}
         </p>
       ) : null}
 
       {loading ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-64 rounded-[var(--ds-radius-md)]" />
-          <Skeleton className="h-64 rounded-[var(--ds-radius-md)]" />
+          <Skeleton className="h-64 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
         </div>
       ) : ticket ? (
         <>
@@ -313,43 +301,37 @@ export default function TicketDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <TicketStatusBadge status={ticket.status} />
                   <TicketTypeBadge type={ticket.type} />
-                  {ticket.status === "closed" ? (
-                    <Badge tone="warning" className="gap-1">
-                      <Lock className="size-3" aria-hidden />
-                      Locked
-                    </Badge>
-                  ) : null}
                   {ticket.resolution ? (
                     <Badge tone="success">{ticket.resolution.kind}</Badge>
                   ) : null}
                 </div>
-                <NotionPropertyList>
-                  <NotionPropertyRow name="كلام العميل">
-                    <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-3 text-[13px] leading-relaxed">
-                      {ticket.notes ?? "—"}
-                    </div>
-                  </NotionPropertyRow>
-                  <NotionPropertyRow name="Assigned to">
+                <Detail label="كلام العميل">
+                  <div className="rounded-xl bg-[color:var(--color-bg-subtle)] p-3 shadow-[var(--shadow-neo-inset)]">
+                    {ticket.notes ?? "—"}
+                  </div>
+                </Detail>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Detail label="Assigned to">
                     {userName(ticket.assigned_to)}
-                  </NotionPropertyRow>
-                  <NotionPropertyRow name="Shipments from ticket">
+                  </Detail>
+                  <Detail label="Shipments from ticket">
                     {ticket.shipmentIds.length}
-                  </NotionPropertyRow>
-                  {ticket.resolution ? (
-                    <NotionPropertyRow name="Resolution">
-                      <div className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-success)]/10 p-3 text-[13px]">
-                        {ticket.resolution.details || ticket.resolution.kind}
-                        {ticket.resolution.refundAmount != null
-                          ? ` · ${formatMoney(ticket.resolution.refundAmount)}`
-                          : ""}
-                        <div className="mt-1 text-xs text-[color:var(--color-text-muted)]">
-                          By {userName(ticket.resolution.resolvedByUserId)} ·{" "}
-                          {formatWhen(ticket.resolution.resolvedAt)}
-                        </div>
+                  </Detail>
+                </div>
+                {ticket.resolution ? (
+                  <Detail label="Resolution">
+                    <div className="rounded-xl bg-[color:var(--color-success)]/10 p-3">
+                      {ticket.resolution.details || ticket.resolution.kind}
+                      {ticket.resolution.refundAmount != null
+                        ? ` · ${formatMoney(ticket.resolution.refundAmount)}`
+                        : ""}
+                      <div className="mt-1 text-xs text-[color:var(--color-text-muted)]">
+                        By {userName(ticket.resolution.resolvedByUserId)} ·{" "}
+                        {formatWhen(ticket.resolution.resolvedAt)}
                       </div>
-                    </NotionPropertyRow>
-                  ) : null}
-                </NotionPropertyList>
+                    </div>
+                  </Detail>
+                ) : null}
               </CardContent>
             </Card>
 
@@ -364,27 +346,23 @@ export default function TicketDetailPage() {
                       <OrderStatusBadge status={order.status} />
                       <PaymentBadge status={order.payment.payment_status} />
                     </div>
-                    <NotionPropertyList>
-                      <NotionPropertyRow name="Order">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Detail label="Order">
                         <Link
                           href={`/orders/${order.id}`}
                           className="font-mono text-[color:var(--color-primary)] hover:underline"
                         >
                           #{displayOrderId(order)}
                         </Link>
-                      </NotionPropertyRow>
-                      <NotionPropertyRow name="Customer">
-                        {order.customer.name}
-                      </NotionPropertyRow>
-                      <NotionPropertyRow name="Phone">
-                        {order.customer.phone ?? "—"}
-                      </NotionPropertyRow>
-                      <NotionPropertyRow name="Total">
+                      </Detail>
+                      <Detail label="Customer">{order.customer.name}</Detail>
+                      <Detail label="Phone">{order.customer.phone ?? "—"}</Detail>
+                      <Detail label="Total">
                         {canViewFinance
                           ? formatMoney(order.payment.total_amount)
                           : "Hidden"}
-                      </NotionPropertyRow>
-                    </NotionPropertyList>
+                      </Detail>
+                    </div>
                   </>
                 ) : (
                   <p className="text-sm text-[color:var(--color-text-muted)]">
@@ -402,7 +380,7 @@ export default function TicketDetailPage() {
             <CardContent className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-3">
                 <textarea
-                  className="min-h-28 w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
+                  className="min-h-28 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 py-2 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="أضف كلام العميل أو ملاحظة متابعة..."
@@ -410,9 +388,7 @@ export default function TicketDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
-                    disabled={
-                      !canWorkTicket || !note.trim() || ticket.status === "closed"
-                    }
+                    disabled={!canWorkTicket || !note.trim()}
                     loading={busy}
                     onClick={addNote}
                   >
@@ -421,7 +397,7 @@ export default function TicketDetailPage() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={!canAssignTicket || ticket.status === "closed"}
+                    disabled={!canAssignTicket}
                     onClick={openAssignModal}
                   >
                     تعيين / تغيير المسؤول
@@ -444,18 +420,14 @@ export default function TicketDetailPage() {
                   </option>
                 </Select>
                 <textarea
-                  className="min-h-24 w-full rounded-[var(--ds-radius-md)] border border-[color:var(--color-border)] bg-[color:var(--color-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-[color:var(--color-text-primary)] shadow-none outline-none transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus:border-[color:var(--color-primary)] focus:shadow-[var(--shadow-focus-ring)] focus:ring-0"
+                  className="min-h-24 w-full rounded-xl border-0 bg-[color:var(--color-input-bg)] px-3 py-2 text-sm text-[color:var(--color-text-primary)] shadow-[var(--shadow-neo-inset)] outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]"
                   value={resolutionDetails}
                   onChange={(e) => setResolutionDetails(e.target.value)}
                   placeholder="تفاصيل الحل أو سبب الاسترجاع/الاستبدال..."
                 />
                 <Button
                   type="button"
-                  disabled={
-                    !canWorkTicket ||
-                    ticket.status === "resolved" ||
-                    ticket.status === "closed"
-                  }
+                  disabled={!canWorkTicket || ticket.status === "resolved"}
                   loading={busy}
                   onClick={resolveTicket}
                 >
@@ -480,7 +452,7 @@ export default function TicketDetailPage() {
                   (ticket.notesHistory ?? []).map((n) => (
                     <div
                       key={n.id}
-                      className="rounded-[var(--ds-radius-md)] bg-[color:var(--color-bg-subtle)] p-3 text-sm"
+                      className="rounded-xl bg-[color:var(--color-bg-subtle)] p-3 text-sm shadow-[var(--shadow-neo-inset)]"
                     >
                       <p>{n.body}</p>
                       <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
