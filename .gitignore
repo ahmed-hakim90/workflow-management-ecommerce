@@ -17,6 +17,7 @@
 /.next/
 /out/
 .open-next/
+.wrangler/
 
 # PWA (generated during production build)
 /public/sw.js
